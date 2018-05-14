@@ -213,7 +213,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                     case LeastKeys of
                         nil ->
                             %% TODO this is a must change: iterate the range queries and filter
-                            iterate_conditions(Conditions, Table, TxId, []);
+                            ObjsData = iterate_ranges(RangeQueries, Table, TxId),
+                            get_shadow_columns(Table, ObjsData, TxId);
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
                             Objects = read_records(KeyList, TableName, TxId),
@@ -225,7 +226,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             end, Objects, Remain),
                             get_shadow_columns(Table, ObjsData, TxId)
                     end;
-                CurrentData -> %% TODO
+                CurrentData ->
                     %io:format("CurrentData: ~p~n", [CurrentData]),
                     ObjsData = lists:foldl(fun(Condition, PartRes) ->
                         filter_objects(Condition, Table, PartRes, TxId)
@@ -236,49 +237,60 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
     end.
 
 
-iterate_conditions([{sub, Conds} = _Cond | Tail], Table, TxId, Acc) ->
-    %io:format(">> iterate_conditions:~n", []),
-    %io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
-    iterate_conditions([Conds | Tail], Table, TxId, Acc);
-iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
-    %io:format(">> iterate_conditions:~n", []),
-    case is_disjunction(Cond) of
-        true ->
-            %io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
-            FiltObjects = apply_filter(Cond, Table, TxId),
-            ResultToList = case is_list(FiltObjects) of
-                               false -> sets:to_list(FiltObjects);
-                               true -> FiltObjects
-                           end,
-            %%io:format("RecordObjs: ~p~n", [ResultToList]),
-            iterate_conditions(Tail, Table, TxId, ResultToList);
-        false ->
-            %io:format("Current Cond: ~p~n", [Cond]),
-            RecordObjs = case Acc of
-                             [] -> retrieve_and_filter(Cond, Table, TxId);
-                             _Else -> filter_objects(Cond, Table, Acc, TxId)
-                         end,
-            %%io:format("RecordObjs: ~p~n", [RecordObjs]),
-            iterate_conditions(Tail, Table, TxId, RecordObjs)
-    end;
-iterate_conditions([], _Table, _TxId, Acc) ->
-    Acc.
+%%iterate_conditions([{sub, Conds} = _Cond | Tail], Table, TxId, Acc) ->
+%%    %io:format(">> iterate_conditions:~n", []),
+%%    %io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
+%%    iterate_conditions([Conds | Tail], Table, TxId, Acc);
+%%iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
+%%    %io:format(">> iterate_conditions:~n", []),
+%%    case is_disjunction(Cond) of
+%%        true ->
+%%            %io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
+%%            FiltObjects = apply_filter(Cond, Table, TxId),
+%%            ResultToList = case is_list(FiltObjects) of
+%%                               false -> sets:to_list(FiltObjects);
+%%                               true -> FiltObjects
+%%                           end,
+%%            %%io:format("RecordObjs: ~p~n", [ResultToList]),
+%%            iterate_conditions(Tail, Table, TxId, ResultToList);
+%%        false ->
+%%            %io:format("Current Cond: ~p~n", [Cond]),
+%%            RecordObjs = case Acc of
+%%                             [] -> retrieve_and_filter(Cond, Table, TxId);
+%%                             _Else -> filter_objects(Cond, Table, Acc, TxId)
+%%                         end,
+%%            %%io:format("RecordObjs: ~p~n", [RecordObjs]),
+%%            iterate_conditions(Tail, Table, TxId, RecordObjs)
+%%    end;
+%%iterate_conditions([], _Table, _TxId, Acc) ->
+%%    Acc.
 
-retrieve_and_filter(Condition, Table, TxId) ->
-    %io:format(">> retrieve_and_filter:~n", []),
+iterate_ranges(RangeQueries, Table, TxId) ->
+    %io:format(">> iterate_ranges:~n"),
+    TableName = table_utils:table(Table),
+    Keys = indexing:read_index(primary, TableName, TxId),
+    %io:format("Keys: ~p~n", [Keys]),
+    Data = read_records(Keys, TableName, TxId),
+    dict:fold(fun(Column, Range, AccObjs) ->
+        FilterFun = read_predicate(Range),
+        filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
+    end, Data, RangeQueries).
 
-    ?CONDITION(Column, _Comparison, _Value) = Condition,
-    %TableName = table_utils:table(Table),
-    %io:format("Condition: ~p~n", [Condition]),
-    %io:format("TableName: ~p~n", [TableName]),
-    ObjData = case is_func(Column) of
-                  true -> function_filtering(Condition, Table, TxId);
-                  false -> column_filtering(Condition, Table, TxId)
-    end,
-    %io:format("ObjData: ~p~n", [ObjData]),
-    %ObjData.
-    %% read shadow columns as well and add them and their resp. values to the object
-    get_shadow_columns(Table, ObjData, TxId).
+%%retrieve_and_filter(Condition, Table, TxId) ->
+%%    %io:format(">> retrieve_and_filter:~n", []),
+%%
+%%    ?CONDITION(Column, _Comparison, _Value) = Condition,
+%%    %TableName = table_utils:table(Table),
+%%    %io:format("Condition: ~p~n", [Condition]),
+%%    %io:format("TableName: ~p~n", [TableName]),
+%%    ObjData = case is_func(Column) of
+%%                  true -> function_filtering(Condition, Table, TxId);
+%%                  false -> column_filtering(Condition, Table, TxId)
+%%    end,
+%%    %io:format("ObjData: ~p~n", [ObjData]),
+%%    %ObjData.
+%%    %% read shadow columns as well and add them and their resp. values to the object
+%%    get_shadow_columns(Table, ObjData, TxId).
 
 %% Restriction: only functions are allowed to access foreign key states
 function_filtering({Func, Predicate}, Table, Records, TxId) ->
@@ -328,56 +340,56 @@ function_filtering(Condition, Table, Records, TxId) ->
     Predicate = comp_to_predicate(Op, querying_utils:to_atom(Value)),
     function_filtering({Func, Predicate}, Table, Records, TxId).
 
-function_filtering(Condition, Table, TxId) ->
-    TableName = table_utils:table(Table),
-    ReadKeys = indexing:read_index(primary, TableName, TxId),
-    Records = read_records(ReadKeys, TableName, TxId),
-    function_filtering(Condition, Table, Records, TxId).
-
-column_filtering(Condition, Table, TxId) ->
-    %% TODO need to validate the column (i.e. the column is part of the table)
-    ?CONDITION(_Column, Comparison, Value) = Condition,
-    {Op, _} = Comparison,
-    TableName = table_utils:table(Table),
-    ValueAtom = querying_utils:to_atom(Value),
-    ReadKeys = compute_readkeys(Condition, Table, TxId),
-    case ReadKeys of
-        Pks when is_list(Pks) ->
-            FilteredPks = filter_keys(comp_to_predicate(Op, ValueAtom), Pks),
-            read_records(FilteredPks, TableName, TxId);
-        {index, Index} ->
-            IndexedKeys = indexing:get_indexed_values(Index),
-            FilteredIdxKeys = filter_keys(comp_to_predicate(Op, Value), IndexedKeys),
-            PKs = indexing:get_primary_keys(FilteredIdxKeys, Index),
-            read_records(PKs, TableName, TxId);
-        {full, Keys} ->
-            Records = read_records(Keys, TableName, TxId),
-            filter_objects(Condition, Table, Records, TxId)
-    end.
+%%function_filtering(Condition, Table, TxId) ->
+%%    TableName = table_utils:table(Table),
+%%    ReadKeys = indexing:read_index(primary, TableName, TxId),
+%%    Records = read_records(ReadKeys, TableName, TxId),
+%%    function_filtering(Condition, Table, Records, TxId).
+%%
+%%column_filtering(Condition, Table, TxId) ->
+%%    %% TODO need to validate the column (i.e. the column is part of the table)
+%%    ?CONDITION(_Column, Comparison, Value) = Condition,
+%%    {Op, _} = Comparison,
+%%    TableName = table_utils:table(Table),
+%%    ValueAtom = querying_utils:to_atom(Value),
+%%    ReadKeys = compute_readkeys(Condition, Table, TxId),
+%%    case ReadKeys of
+%%        Pks when is_list(Pks) ->
+%%            FilteredPks = filter_keys(comp_to_predicate(Op, ValueAtom), Pks),
+%%            read_records(FilteredPks, TableName, TxId);
+%%        {index, Index} ->
+%%            IndexedKeys = indexing:get_indexed_values(Index),
+%%            FilteredIdxKeys = filter_keys(comp_to_predicate(Op, Value), IndexedKeys),
+%%            PKs = indexing:get_primary_keys(FilteredIdxKeys, Index),
+%%            read_records(PKs, TableName, TxId);
+%%        {full, Keys} ->
+%%            Records = read_records(Keys, TableName, TxId),
+%%            filter_objects(Condition, Table, Records, TxId)
+%%    end.
 
 %% Given a condition, read all the necessary keys for computing and filtering the
 %% final result. The necessary keys may be retrieved in the form of a primary key
 %% or in the form of indexes.
-compute_readkeys(?CONDITION(Column, Op, Value), Table, TxId) when is_atom(Column) ->
-    TableName = table_utils:table(Table),
-    case table_utils:is_primary_key(Column, Table) of
-        true ->
-            case Op of
-                {equality, _} -> [querying_utils:to_atom(Value)];
-                _Op -> indexing:read_index(primary, TableName, TxId)
-            end;
-        false ->
-            SIndexes = table_utils:indexes(Table),
-            SIndex = find_index_by_attribute(Column, SIndexes),
-            case SIndex of
-                [] ->
-                    %% full table scan
-                    {full, indexing:read_index(primary, TableName, TxId)};
-                [{IdxName, TName, _Cols}] -> %% TODO support more than one index
-                    %% read the index object denoted by '#2i_tablename.index'
-                    {index, indexing:read_index(secondary, {TName, IdxName}, TxId)}
-            end
-    end.
+%%compute_readkeys(?CONDITION(Column, Op, Value), Table, TxId) when is_atom(Column) ->
+%%    TableName = table_utils:table(Table),
+%%    case table_utils:is_primary_key(Column, Table) of
+%%        true ->
+%%            case Op of
+%%                {equality, _} -> [querying_utils:to_atom(Value)];
+%%                _Op -> indexing:read_index(primary, TableName, TxId)
+%%            end;
+%%        false ->
+%%            SIndexes = table_utils:indexes(Table),
+%%            SIndex = find_index_by_attribute(Column, SIndexes),
+%%            case SIndex of
+%%                [] ->
+%%                    %% full table scan
+%%                    {full, indexing:read_index(primary, TableName, TxId)};
+%%                [{IdxName, TName, _Cols}] -> %% TODO support more than one index
+%%                    %% read the index object denoted by '#2i_tablename.index'
+%%                    {index, indexing:read_index(secondary, {TName, IdxName}, TxId)}
+%%            end
+%%    end.
 
 filter_objects({Column, Predicate}, Table, Objects, TxId) ->
     case is_func(Column) of
