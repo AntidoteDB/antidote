@@ -77,9 +77,9 @@
 | {read_objects, {Objects :: [bound_object()], TxId :: binary()}}.
 
 -type response() ::
-  {error_resp, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_resp, Resp :: {ok, TxId :: binary} | {error, Reason::any()}}
-| {error_response, {error_code(), Message :: binary()}}
+  {error_response, {ErrorCode :: error_code(), Message :: binary()}}
+| {start_transaction_resp, Resp :: {ok, TxId :: binary()} | {error, Reason::error_code()}}
+| {commit_response, {ok, CommitTime :: any()} | {error, Reason :: error_code()}}
 | {static_read_objects_resp, {ok, Results :: list(), CommitTime :: binary()}}
 | {read_objects_resp, Resp :: list()}.
 
