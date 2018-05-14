@@ -78,10 +78,10 @@
 
 -type response() ::
   {error_response, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_resp, Resp :: {ok, TxId :: binary()} | {error, Reason::error_code()}}
+| {start_transaction_response, Resp :: {ok, TxId :: binary()} | {error, Reason::error_code()}}
 | {commit_response, {ok, CommitTime :: any()} | {error, Reason :: error_code()}}
-| {static_read_objects_resp, {ok, Results :: list(), CommitTime :: binary()}}
-| {read_objects_resp, Resp :: list()}.
+| {static_read_objects_response, {ok, Results :: [{bound_object(), read_result()}], CommitTime :: binary()}}
+| {read_objects_response, Resp :: [{bound_object(), read_result()}]}.
 
 -type message() :: request() | response().
 
