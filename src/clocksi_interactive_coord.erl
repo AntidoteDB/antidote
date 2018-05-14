@@ -646,7 +646,7 @@ terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = T
     Locks = lists:keyfind(locks,1,Properties),
     case Locks of
         false -> ok;
-        {locks,Locks} -> 
+        {locks,_Locks} -> 
             ?LOCK_MGR:release_locks(TransactionId),
             ok
     end;
@@ -891,6 +891,16 @@ reply_to_client(State = #coord_state{
     transactionid=TransactionId,
     properties=Properties
 }) ->
+    
+    Locks = lists:keyfind(locks,1,Properties),
+    case Locks of
+        false -> ok;
+        {locks,_Locks} -> 
+            ?LOCK_MGR:release_locks(TransactionId),
+            ok
+    end,
+    
+    
     case From of
         undefined ->
             ok;
@@ -945,12 +955,6 @@ reply_to_client(State = #coord_state{
 
     case StayAlive of
         true ->
-            Locks = lists:keyfind(locks,1,Properties),
-            case Locks of
-                false -> ok;
-                {locks,Locks} -> 
-                    ?LOCK_MGR:release_locks(TransactionId)
-            end,
             {start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
         false ->
             {stop, normal, State}

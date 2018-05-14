@@ -64,7 +64,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    %lager:info("Started Lock manager at node ~p", [node()]),
+    %%lager:info("Started Lock manager at node ~p", [node()]),
     Timer=erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
     {ok, Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     {ok, #state{req_queue=orddict:new(),local_locks = orddict:new(),lock_requests=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new(),dets_ref=Ref }}.
@@ -418,7 +418,7 @@ request_response(_BinaryRep, _RequestCacheEntry) -> ok.
 
 %% Adds the specified locks to the lock_requests list under the specified DcId
 handle_cast({lock_request,Locks,DcId}, #state{lock_requests=Lock_Requests}=State) ->
-        lager:info("handle_cast({lock_request,~w,~w},state)~n",[Locks,DcId]),
+        %lager:info("handle_cast({lock_request,~w,~w},state)~n",[Locks,DcId]),
         New_Lock_Requests = requested(Locks, DcId, erlang:timestamp(), Lock_Requests),
         {noreply, State#state{lock_requests=New_Lock_Requests}};
 
@@ -432,7 +432,7 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 %%DEPRECATED
 %% Adds the send lock information to the dets_ref table
 handle_cast({sent_lock,Lock,From,Amount}, #state{dets_ref=Dets_Ref}=State) ->
-        lager:info("handle_cast({sent_lock,~w,~w,~w},state)~n",[Lock,From,Amount]),
+        %lager:info("handle_cast({sent_lock,~w,~w,~w},state)~n",[Lock,From,Amount]),
         New_Dets_Ref = received_lock(Lock,From,Amount,Dets_Ref),
         {noreply, State#state{dets_ref=New_Dets_Ref}};
 
@@ -440,7 +440,7 @@ handle_cast({sent_lock,Lock,From,Amount}, #state{dets_ref=Dets_Ref}=State) ->
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
 handle_cast({remote_send_lock, {Lock,Amount,From,MyDCID1}}, #state{dets_ref=Dets_Ref}=State) ->
-        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w},state)~n",[Lock,Amount,From,MyDCID1]),
+        %lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w},state)~n",[Lock,Amount,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
@@ -453,7 +453,7 @@ handle_cast({remote_send_lock, {Lock,Amount,From,MyDCID1}}, #state{dets_ref=Dets
 %% Adds {dcid,[{lock,timestamp}]} to lock_requests to remember which DC requested which Locks
 %% Adds a timestamp to filter too old requests
 handle_cast({remote_lock_request, {Locks, Sender}}, #state{lock_requests=Lock_Requests}=State) ->
-    lager:info("handle_cast({remote_lock_request,~w,~w},from,state)~n",[Locks,Sender]),
+    %lager:info("handle_cast({remote_lock_request,~w,~w},from,state)~n",[Locks,Sender]),
     Timestamp = erlang:timestamp(),
     New_Lock_Requests = requested(Locks, Sender, Timestamp, Lock_Requests),
         {noreply, State#state{lock_requests=New_Lock_Requests}}.
@@ -475,22 +475,22 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    lager:info("handle_call({get_locks,~w,~w},from,state)~n",[TxId,Locks]),
+    %lager:info("handle_call({get_locks,~w,~w},from,state)~n",[TxId,Locks]),
     case using(Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
             New_Local_Locks2=required(Locks, TxId, erlang:timestamp(), Local_Locks),
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
             {reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
         {locks_in_use, Transactions_Using_The_Locks} ->
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Started locks_in_use-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Started locks_in_use-- ~n",[TxId,Locks]),
             New_Local_Locks3=required(Locks, TxId, erlang:timestamp(), Local_Locks),
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Finished locks_in_use-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished locks_in_use-- ~n",[TxId,Locks]),
             {reply, {locks_in_use, Transactions_Using_The_Locks} , State#state{local_locks=New_Local_Locks3}};
         New_Lokal_Locks1 ->
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Started ok-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Started ok-- ~n",[TxId,Locks]),
             {ok,Snapshot_Time} =get_snapshot_time(),
-            lager:info("handle_call({get_locks,~w,~w},from,state) --Finished ok-- ~n",[TxId,Locks]),
+            %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished ok-- ~n",[TxId,Locks]),
             {reply, {ok,Snapshot_Time}, State#state{local_locks=New_Lokal_Locks1}} % TODO is this the right way to get the snapshot time?
 
     end.
@@ -505,7 +505,7 @@ handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State
 
 %% Periodically transfers locks requested by other DCs to them, if they are currently not used
 handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_locks= Local_Locks, transfer_timer=OldTimer, dets_ref = Dets_Ref}=State) ->
-    %lager:info("handle_info({transfer_periodic},local_locks=~w~n",[Local_Locks]),
+    %%lager:info("handle_info({transfer_periodic},local_locks=~w~n",[Local_Locks]),
     erlang:cancel_timer(OldTimer),
     Clean_Lock_Requests = clear_old_lock_requests(Old_Lock_Requests, ?LOCK_REQUEST_TIMEOUT),
         Clear_Local_Locks = remove_old_required_locks(Local_Locks,?LOCK_REQUIRED_TIMEOUT),

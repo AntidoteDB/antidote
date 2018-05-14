@@ -81,7 +81,7 @@ simple_transaction_tests_with_locks(Config) ->
     Updates = lists:map(fun({Object, IncVal}) ->
                                 {Object, increment, IncVal}
                         end, lists:zip(Objects, IncValues)),
-    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [locks,Keys]]),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     %% update objects one by one.
     txn_seq_update_check(Node, TxId, Updates),
     %% read objects one by one
@@ -134,7 +134,7 @@ locks_required_by_another_transaction_1(Config) ->
     
     
     
-    timer:sleep(500),
+
     Lock_Info2 = rpc:call(Node, lock_mgr, local_locks_info, []),
     false = lists:keyfind(TxId,1,Lock_Info2),
     ok.
@@ -164,7 +164,6 @@ locks_required_by_another_transaction_2(Config) ->
     ?assertEqual(length(tl(Keys)),length(Missing_Keys3)),
     ?assertEqual([],tl(Keys) -- Missing_Keys3),
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
-    timer:sleep(500),
     Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
     false = lists:keyfind(TxId,1,Lock_Info2),
     ok.
@@ -173,33 +172,34 @@ lock_aquisition_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Keys = [lock21, lock22, lock23, lock24],
+    
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    {_,{using,Used_Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
-    ?assertEqual(length(Keys),length(Used_Keys)),
-    ?assertEqual([],Keys--Used_Keys),
-    {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    timer:wait(500),
+    {_,{using,Used_Keys1}} = lists:keyfind(TxId1,1,Lock_Info1),
+    ?assertEqual(length(Keys),length(Used_Keys1)),
+    ?assertEqual([],Keys--Used_Keys1),
+    {ok, _Clock1} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+    
+    
     {ok, TxId2} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
-    Lock_Info1 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    {_,{using,Used_Keys}} = lists:keyfind(TxId2,1,Lock_Info1),
-    ?assertEqual(length(Keys),length(Used_Keys)),
-    ?assertEqual([],Keys--Used_Keys),
-    {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId2]),
+    Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    {_,{using,Used_Keys2}} = lists:keyfind(TxId2,1,Lock_Info2),
+    ?assertEqual(length(Keys),length(Used_Keys2)),
+    ?assertEqual([],Keys--Used_Keys2),
+    {ok, _Clock2} = rpc:call(Node1, antidote, commit_transaction, [TxId2]),
+    
     
     {ok, TxId3} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
-    Lock_Info1 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    {_,{using,Used_Keys}} = lists:keyfind(TxId3,1,Lock_Info1),
-    ?assertEqual(length(Keys),length(Used_Keys)),
-    ?assertEqual([],Keys--Used_Keys),
-    {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId3]),
+    Lock_Info3 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    {_,{using,Used_Keys3}} = lists:keyfind(TxId3,1,Lock_Info3),
+    ?assertEqual(length(Keys),length(Used_Keys3)),
+    ?assertEqual([],Keys--Used_Keys3),
+    {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId3]),
     
-    
-    timer:sleep(500),
-    Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    false = lists:keyfind(TxId1,1,Lock_Info2),
-    false = lists:keyfind(TxId2,1,Lock_Info2),
-    false = lists:keyfind(TxId3,1,Lock_Info2),
+    Lock_Info4 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info4),
+    false = lists:keyfind(TxId2,1,Lock_Info4),
+    false = lists:keyfind(TxId3,1,Lock_Info4),
     ok.
 
 txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->
