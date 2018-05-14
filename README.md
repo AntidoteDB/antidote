@@ -13,7 +13,7 @@ For benchmarking Antidote deployments, we currently use [basho bench](https://gi
 Development
 -----------
 
-Antidote requires Erlang 18 or greater.
+Antidote requires Erlang 19 or greater.
 
 Use the following `Makefile` targets to build and test antidote:
 

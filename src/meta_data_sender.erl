@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 -module(meta_data_sender).
--behaviour(gen_fsm).
+-behaviour(gen_statem).
 
 -include("antidote.hrl").
 
@@ -35,26 +35,23 @@
 
 
 -export([start_link/5,
-         start/1,
-         put_meta_dict/3,
-         put_meta_dict/4,
-         put_meta_data/4,
-         put_meta_data/5,
-         get_meta_dict/2,
-         get_node_list/0,
-         get_node_and_partition_list/0,
-         get_merged_data/1,
-         remove_partition/2,
-         get_name/2,
-         send_meta_data/3,
-         send_meta_data/2]).
+    start/1,
+    put_meta_dict/3,
+    put_meta_dict/4,
+    put_meta_data/4,
+    put_meta_data/5,
+    get_meta_dict/2,
+    get_node_list/0,
+    get_node_and_partition_list/0,
+    get_merged_data/1,
+    remove_partition/2,
+    get_name/2,
+    send_meta_data/3,
+    callback_mode/0]).
 
 %% Callbacks
 -export([init/1,
          code_change/4,
-         handle_event/3,
-         handle_info/3,
-         handle_sync_event/4,
          terminate/3]).
 
 
@@ -106,13 +103,12 @@
 
 -spec start_link(atom(), fun((term(), term())->boolean()), fun((dict:dict())->dict:dict()), dict:dict(), dict:dict()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
-    gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
+    gen_statem:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
                ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
 
 -spec start(atom()) -> ok.
 start(Name) ->
-    gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
-                start).
+    gen_statem:call(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)), start).
 
 -spec put_meta_dict(atom(), partition_id(), dict:dict()) -> ok.
 put_meta_dict(Name, Partition, Dict) ->
@@ -217,10 +213,15 @@ init([Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged]) ->
                                 name = Name,
                                 should_check_nodes=true}}.
 
-send_meta_data(start, _Sender, State) ->
-    {reply, ok, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP}.
+send_meta_data({call, Sender}, start, State) ->
+    {next_state, send_meta_data, State#state{should_check_nodes=true},
+        [ {reply, Sender, ok}, {state_timeout, ?META_DATA_SLEEP, timeout} ]
+    };
 
-send_meta_data(timeout, State = #state{last_result = LastResult,
+%% internal timeout transition
+send_meta_data(state_timeout, timeout, State) ->
+    send_meta_data(cast, timeout, State);
+send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        update_function = UpdateFunction,
                                        merge_function = MergeFunction,
                                        name = Name,
@@ -241,21 +242,15 @@ send_meta_data(timeout, State = #state{last_result = LastResult,
                 false ->
                     LastResult
             end,
-    {next_state, send_meta_data, State#state{last_result = Store, should_check_nodes=WillChange}, ?META_DATA_SLEEP}.
+    {next_state, send_meta_data, State#state{last_result = Store, should_check_nodes=WillChange},
+        [ {state_timeout, ?META_DATA_SLEEP, timeout} ]
+    }.
 
-handle_info(_Info, _StateName, StateData) ->
-    {stop, badmsg, StateData}.
-
-handle_event(_Event, _StateName, StateData) ->
-    {stop, badmsg, StateData}.
-
-handle_sync_event(_Event, _From, _StateName, StateData) ->
-    {stop, badmsg, StateData}.
+callback_mode() -> state_functions.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
-    ok.
+terminate(_Reason, _SN, _SD) -> ok.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
