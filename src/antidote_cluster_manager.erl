@@ -59,6 +59,7 @@ create_dc(Nodes) ->
     ok = inter_dc_manager:start_bg_processes(stable),
     ok.
 
+%% Start receiving updates from other DCs
 -spec subscribe_updates_from([#descriptor{}]) -> ok.
 subscribe_updates_from(DCDescriptors) ->
     _Connected = inter_dc_manager:observe_dcs_sync(DCDescriptors),
@@ -66,6 +67,7 @@ subscribe_updates_from(DCDescriptors) ->
     ok = inter_dc_manager:dc_successfully_started(),
     ok.
 
+%% Get the DC connection descriptor to be given to other DCs
 -spec get_connection_descriptor() -> {ok, #descriptor{}}.
 get_connection_descriptor() ->
     inter_dc_manager:get_descriptor().
