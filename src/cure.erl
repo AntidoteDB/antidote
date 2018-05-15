@@ -80,7 +80,7 @@ get_objects(Objects, TxId) ->
 -spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
 obtain_objects(Objects, TxId, StateOrValue) ->
     FormattedObjects = format_read_params(Objects),
-    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
+    case gen_statem:call(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
         {ok, Res} ->
             {ok, transform_reads(Res, StateOrValue, Objects)};
         {error, Reason} -> {error, Reason}
@@ -90,7 +90,7 @@ obtain_objects(Objects, TxId, StateOrValue) ->
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     FormattedUpdates = format_update_params(Updates),
-    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {update_objects, FormattedUpdates}, ?OP_TIMEOUT) of
+    case gen_statem:call(TxId#tx_id.server_pid, {update_objects, FormattedUpdates}, ?OP_TIMEOUT) of
         ok ->
             ok;
         {aborted, TxId} ->
@@ -137,7 +137,7 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
         true -> %% Execute the fast path
             FormattedObjects = format_read_params(Objects),
             [{Key, Type}] = FormattedObjects,
-            {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
+            {ok, Val, CommitTime} = clocksi_interactive_coord:
                 perform_singleitem_operation(Clock, Key, Type, Properties),
             {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
@@ -192,16 +192,16 @@ transform_reads(States, StateOrValue, Objects) ->
 clocksi_istart_tx(Clock, Properties, KeepAlive) ->
     TxPid = case KeepAlive of
                 true ->
-                    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
+                    whereis(clocksi_interactive_coord:generate_name(self()));
                 false ->
                     undefined
             end,
     _ = case TxPid of
             undefined ->
-                {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock,
+                {ok, _} = clocksi_interactive_coord_sup:start_fsm([self(), Clock,
                                                                       Properties, KeepAlive]);
             TxPid ->
-                ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Properties})
+                ok = gen_statem:cast(TxPid, {start_tx, self(), Clock, Properties})
         end,
     receive
         {ok, TxId} ->
@@ -213,9 +213,9 @@ clocksi_istart_tx(Clock, Properties, KeepAlive) ->
 -spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}
                                           | {error, reason()}.
 clocksi_full_icommit(TxId)->
-    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
+    case gen_statem:call(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
         {ok, _PrepareTime} ->
-            gen_fsm:sync_send_event(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
+            gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
     end.
@@ -259,7 +259,7 @@ format_update_params(Updates) ->
 %% The following function are usefull for testing. They shouldn't be used in normal operations.
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare(TxId)->
-    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of
+    case gen_statem:call(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of
         {error, {aborted, TxId}} ->
             {aborted, TxId};
         Reply ->
@@ -268,4 +268,4 @@ clocksi_iprepare(TxId)->
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit(TxId)->
-    gen_fsm:sync_send_event(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).
+    gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).

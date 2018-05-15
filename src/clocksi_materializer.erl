@@ -37,7 +37,7 @@ new(Type) ->
 %% Each update operation has an id number that is one larger than
 %% the previous.  This function takes as input that tuple and returns the id number of the first update
 %% operation (i.e. the one with the largest id)
--spec get_first_id([{non_neg_integer(), #clocksi_payload{}}] | tuple()) ->
+-spec get_first_id([{non_neg_integer(), clocksi_payload()}] | tuple()) ->
                           non_neg_integer().
 get_first_id([]) ->
     0;
@@ -64,12 +64,12 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
 %%      TxId: The Id of the transaction requesting the snapshot
-%%      Output: A tuple. The first element is ok, the seond is the CRDT after appliying the operations,
+%%      Output: A tuple. The first element is ok, the second is the CRDT after applying the operations,
 %%      the third element 1 minus the number of the operation with the smallest id not included in the snapshot,
 %%      the fourth element is the smallest vectorclock that describes this snapshot,
-%%      the fifth element is a boolean, it it is true it means that the returned snapshot contains
+%%      the fifth element is a boolean, if it is true it means that the returned snapshot contains
 %%      more operations than the one given as input, false otherwise.
-%%      the sixth element is an integer the counts the number of operations applied to make the snapshot
+%%      The sixth element is an integer representing the number of operations applied to make the snapshot
 -spec materialize(type(),
                   txid() | ignore,
                   snapshot_time() | ignore,
@@ -170,32 +170,21 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
                      case (is_op_in_snapshot(TxId, Op, OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime, LastOpCt)) of
                          {true, _, NewOpCt} ->
                              %% Include the new op because it has a timestamp bigger than the snapshot being generated
-                             {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
+                             {ok, [Op | OpList], NewOpCt, true, FirstHole};
                          {false, false, _} ->
                              %% Dont include the op
-                             {ok, OpList, LastOpCt, false, NewSS, OpId-1}; % no update
+                             {ok, OpList, LastOpCt, NewSS, OpId-1}; % no update
                          {false, true, _} ->
                              %% Dont Include the op, because it was already in the SS
-                             {ok, OpList, LastOpCt, true, NewSS, FirstHole}
+                             {ok, OpList, LastOpCt, NewSS, FirstHole}
                      end;
                  false -> %% Op is not for this {Key, Type}
-                     %% @todo THIS CASE PROBABLY SHOULD NOT HAPPEN?!
-                     {ok, OpList, LastOpCt, false, NewSS, FirstHole} %% no update
+                     erlang:error(corrupted_ops_cache)
              end,
     case Result of
-        {ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole} ->
+        {ok, NewOpList1, NewLastOpCt, NewSS1, NewHole} ->
             materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location);
-        {ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
-            case OpId - 1 =< LastOp of
-                true ->
-                    %% can skip the rest of the ops because they are already included in the SS
-                    materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                                       MinSnapshotTime, [], TxId, NewLastOpCt, NewSS1, Location);
-                false ->
-                    materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                                       MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
-            end
+                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -218,7 +207,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
-    case materializer_vnode:belongs_to_snapshot_op(
+    case materializer:belongs_to_snapshot_op(
            LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime) or (TxId == Op#clocksi_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot

@@ -622,8 +622,7 @@ check_prepared(_TxId, PreparedTx, Key) ->
             false
     end.
 
--spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
+-spec update_materializer([{key(), type(), effect()}], tx(), non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),

@@ -24,18 +24,18 @@
          check_ready/1
         ]).
 
-%% @doc This function takes a list of pysical nodes connected to the an
-%% instance of the antidote distributed system.  For each of the phyisical nodes
-%% it checks if all of the vnodes have been initialized, meaning ets tables
-%% and gen_servers serving read have been started.
-%% Returns true if all vnodes are initialized for all phyisical nodes,
+%% @doc This function takes a list of physical nodes connected to the an
+%% instance of the antidote distributed system.  For each of the physical nodes,
+%% it checks if all of the vnodes have been initialized, i.e. ets tables
+%% and readitem gen_servers have been started.
+%% Returns true if all vnodes are initialized for all physical nodes,
 %% false otherwise
 -spec check_ready_nodes([node()]) -> true.
 check_ready_nodes(Nodes) ->
     lists:all(fun check_ready/1, Nodes).
 
-%% @doc This calls the check_ready function repatabliy
-%% until it returns true
+%% @doc This calls the check_ready function repeatedly
+%% until it returns true.
 -spec wait_ready(node()) -> true.
 wait_ready(Node) ->
     case check_ready(Node) of
@@ -43,11 +43,11 @@ wait_ready(Node) ->
             true;
         false ->
             timer:sleep(1000),
-            check_ready(Node)
+            wait_ready(Node)
     end.
 
-%% @doc This function provides the same functionality as wait_ready_nodes
-%% except it takes as input a sinlge physical node instead of a list
+%% @doc This function provides the same functionality as check_ready_nodes
+%% except it takes as input a single physical node instead of a list
 -spec check_ready(node()) -> boolean().
 check_ready(Node) ->
     lager:debug("Checking if node ~w is ready ~n", [Node]),
