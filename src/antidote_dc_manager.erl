@@ -18,7 +18,7 @@
 %%
 %% -----------------------------------------------------------------
 
--module(antidote_cluster_manager).
+-module(antidote_dc_manager).
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").

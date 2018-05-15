@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(antidote_pb_cluster).
+-module(antidote_pb_dc).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -62,7 +62,7 @@ process(#apbcreatedc{nodes = Nodes}, State) ->
                             list_to_atom(Node)
                           end, Nodes),
     try
-      ok = antidote_cluster_manager:create_dc(NodeNames),
+      ok = antidote_dc_manager:create_dc(NodeNames),
       {reply, antidote_pb_codec:encode(operation_response, ok), State}
     catch
      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
@@ -72,7 +72,7 @@ process(#apbcreatedc{nodes = Nodes}, State) ->
 
 process(apbgetconnectiondescriptor, State) ->
     try
-       {ok, Descriptor} = antidote_cluster_manager:get_connection_descriptor(),
+       {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
        {reply, #apbgetconnectiondescriptorresponse{success=true, descriptor = term_to_binary(Descriptor)}, State}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
@@ -85,7 +85,7 @@ process(#apbconnecttodcs{descriptors = BinDescriptors}, State) ->
                               binary_to_term(BinDesc)
                             end, BinDescriptors),
     try
-       ok = antidote_cluster_manager:subscribe_updates_from(Descriptors),
+       ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
        {reply, antidote_pb_codec:encode(operation_response, ok), State}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
