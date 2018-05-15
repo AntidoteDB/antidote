@@ -47,7 +47,7 @@ decode(Code, Bin) ->
     case Msg of
         #apbcreatedc{} ->
             {ok, Msg, {"antidote.createdc",<<>>}};
-        #apbgetconnectiondescriptor{} ->
+        apbgetconnectiondescriptor ->
             {ok, Msg, {"antidote.getconnectiondescriptor",<<>>}};
         #apbconnecttodcs{} ->
             {ok, Msg, {"antidote.connecttodcs",<<>>}}
@@ -70,7 +70,7 @@ process(#apbcreatedc{nodes = Nodes}, State) ->
        {reply, antidote_pb_codec:encode(operation_response, {error, create_dc_failed}), State}
     end;
 
-process(#apbgetconnectiondescriptor{}, State) ->
+process(apbgetconnectiondescriptor{}, State) ->
     try
        {ok, Descriptor} = antidote_cluster_manager:get_connection_descriptor(),
        {reply, #apbgetconnectiondescriptorresponse{success=true, descriptor = term_to_binary(Descriptor)}, State}
