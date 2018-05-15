@@ -23,13 +23,12 @@
 
 -compile({parse_transform, lager_transform}).
 
+-define(TIMEOUT, 60000). %1 minute
+
 -export([at_init_testsuite/0,
-         %get_cluster_members/1,
          pmap/2,
          wait_until/3,
          wait_until_result/4,
-         %wait_until_left/2,
-         %wait_until_joined/2,
          wait_until_offline/1,
          wait_until_disconnected/2,
          wait_until_connected/2,
@@ -54,11 +53,6 @@ at_init_testsuite() ->
         {error, {already_started, _}} -> ok;
         {error, {{already_started, _}, _}} -> ok
     end.
-
-
-%get_cluster_members(Node) ->
-%    {Node, {ok, Res}} = {Node, rpc:call(Node, plumtree_peer_service_manager, get_local_state, [])},
-%    ?SET:value(Res).
 
 pmap(F, L) ->
     Parent = self(),
@@ -87,26 +81,6 @@ wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
             timer:sleep(Delay),
             wait_until_result(Fun, Result, Retry-1, Delay)
     end.
-
-
-%wait_until_left(Nodes, LeavingNode) ->
-%    wait_until(fun() ->
-%                lists:all(fun(X) -> X == true end,
-%                          pmap(fun(Node) ->
-%                                not
-%                                lists:member(LeavingNode,
-%                                             get_cluster_members(Node))
-%                        end, Nodes))
-%        end, 60*2, 500).
-
-%wait_until_joined(Nodes, ExpectedCluster) ->
-%    wait_until(fun() ->
-%                lists:all(fun(X) -> X == true end,
-%                          pmap(fun(Node) ->
-%                                lists:sort(ExpectedCluster) ==
-%                                lists:sort(get_cluster_members(Node))
-%                        end, Nodes))
-%        end, 60*2, 500).
 
 wait_until_offline(Node) ->
     wait_until(fun() ->
@@ -238,38 +212,6 @@ heal_cluster(ANodes, BNodes) ->
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
 
-connect_cluster(Nodes) ->
-  Clusters = [[Node] || Node <- Nodes],
-  ct:pal("Connecting DC clusters..."),
-
-  pmap(fun(Cluster) ->
-              Node1 = hd(Cluster),
-              ct:print("Waiting until vnodes start on node ~p", [Node1]),
-              wait_until_registered(Node1, inter_dc_pub),
-              wait_until_registered(Node1, inter_dc_query_receive_socket),
-              wait_until_registered(Node1, inter_dc_query_response_sup),
-              wait_until_registered(Node1, inter_dc_query),
-              wait_until_registered(Node1, inter_dc_sub),
-              wait_until_registered(Node1, meta_data_sender_sup),
-              wait_until_registered(Node1, meta_data_manager_sup),
-              ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
-              ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
-          end, Clusters),
-    Descriptors = descriptors(Clusters),
-    ct:print("the clusters ~w", [Clusters]),
-    Res = [ok || _ <- Clusters],
-    pmap(fun(Cluster) ->
-              Node = hd(Cluster),
-              ct:print("Making node ~p observe other DCs...", [Node]),
-              %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-              Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
-          end, Clusters),
-    pmap(fun(Cluster) ->
-              Node = hd(Cluster),
-              ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
-          end, Clusters),
-    ct:pal("DC clusters connected!").
-
 % Waits until a certain registered name pops up on the remote node.
 wait_until_registered(Node, Name) ->
     ct:print("Wait until ~p is up on ~p", [Name, Node]),
@@ -280,12 +222,6 @@ wait_until_registered(Node, Name) ->
     Delay = rt_retry_delay(),
     Retry = 360000 div Delay,
     wait_until(F, Retry, Delay).
-
-descriptors(Clusters) ->
-  lists:map(fun(Cluster) ->
-    {ok, Descriptor} = rpc:call(hd(Cluster), inter_dc_manager, get_descriptor, []),
-    Descriptor
-  end, Clusters).
 
 %TODO Move to config
 rt_retry_delay() -> 500.
@@ -299,116 +235,28 @@ web_ports(dev3) ->
 web_ports(dev4) ->
     10045.
 
-%% Build clusters
+pb_ports(Node) ->
+    %% remove hostname from Node name
+    NodeName = get_node_name(Node),
+    web_ports(list_to_atom(NodeName)) + 2.
+
+%% Build DC
 join_cluster(Nodes) ->
-    %% Ensure each node owns 100% of it's own ring
-    [?assertEqual([Node], owners_according_to(Node)) || Node <- Nodes],
-    %% Join nodes
-    [Node1|OtherNodes] = Nodes,
-    case OtherNodes of
-        [] ->
-            %% no other nodes, nothing to join/plan/commit
-            ok;
-        _ ->
-            %% ok do a staged join and then commit it, this eliminates the
-            %% large amount of redundant handoff done in a sequential join
-            [staged_join(Node, Node1) || Node <- OtherNodes],
-            plan_and_commit(Node1),
-            try_nodes_ready(Nodes, 3, 500)
-    end,
+    ct:print("Join nodes in to a DC ~p", [Nodes]),
+    HeadNode = hd(Nodes),
+    create_dc_pb('127.0.0.1', pb_ports(HeadNode), Nodes).
 
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
+%% Connect DCs for replication
+connect_cluster(Nodes) ->
+   ct:print("Connect dcs ~p", [Nodes]),
+   Descriptors = [descriptor(Node) || Node <- Nodes],
+   [ok = connect_to_dcs('127.0.0.1', pb_ports(Node), Descriptors) || Node <- Nodes].
 
-    %% Ensure each node owns a portion of the ring
-    wait_until_nodes_agree_about_ownership(Nodes),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)),
-    wait_until_ring_converged(Nodes),
-    wait_until(hd(Nodes), fun wait_init:check_ready/1),
-    ok.
-
-%% @doc Return a list of nodes that own partitions according to the ring
-%%      retrieved from the specified node.
-owners_according_to(Node) ->
-    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
-        {ok, Ring} ->
-            lager:info("Ring ~p", [Ring]),
-            Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
-            lager:info("Owners ~p", [lists:usort(Owners)]),
-            lists:usort(Owners);
-        {badrpc, _}=BadRpc ->
-            lager:info("Badrpc"),
-            BadRpc
-    end.
-
-%% @doc Have `Node' send a join request to `PNode'
-staged_join(Node, PNode) ->
-    timer:sleep(5000),
-    R = rpc:call(Node, riak_core, staged_join, [PNode]),
-    lager:info("[join] ~p to (~p): ~p", [Node, PNode, R]),
-    ?assertEqual(ok, R),
-    ok.
-
-plan_and_commit(Node) ->
-    timer:sleep(5000),
-    lager:info("planning and committing cluster join"),
-    case rpc:call(Node, riak_core_claimant, plan, []) of
-        {error, ring_not_ready} ->
-            lager:info("plan: ring not ready"),
-            timer:sleep(5000),
-            maybe_wait_for_changes(Node),
-            plan_and_commit(Node);
-        {ok, _, _} ->
-            do_commit(Node)
-    end.
-do_commit(Node) ->
-    lager:info("Committing"),
-    case rpc:call(Node, riak_core_claimant, commit, []) of
-        {error, plan_changed} ->
-            lager:info("commit: plan changed"),
-            timer:sleep(100),
-            maybe_wait_for_changes(Node),
-            plan_and_commit(Node);
-        {error, ring_not_ready} ->
-            lager:info("commit: ring not ready"),
-            timer:sleep(100),
-            maybe_wait_for_changes(Node),
-            do_commit(Node);
-        {error, nothing_planned} ->
-            %% Assume plan actually committed somehow
-            ok;
-        ok ->
-            ok
-    end.
-
-try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
-      lager:info("Nodes not ready after initial plan/commit, retrying"),
-      plan_and_commit(Node1);
-  try_nodes_ready(Nodes, N, SleepMs) ->
-      ReadyNodes = [Node || Node <- Nodes, is_ready(Node) =:= true],
-      case ReadyNodes of
-          Nodes ->
-              ok;
-          _ ->
-              timer:sleep(SleepMs),
-              try_nodes_ready(Nodes, N-1, SleepMs)
-      end.
-
-maybe_wait_for_changes(Node) ->
-    wait_until_no_pending_changes([Node]).
-
-%% @doc Given a list of nodes, wait until all nodes believe there are no
-%% on-going or pending ownership transfers.
--spec wait_until_no_pending_changes([node()]) -> ok | fail.
-wait_until_no_pending_changes(Nodes) ->
-    lager:info("Wait until no pending changes on ~p", [Nodes]),
-    F = fun() ->
-                rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
-                {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
-                Changes = [ riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings ],
-                BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)
-        end,
-    ?assertEqual(ok, wait_until(F)),
-    ok.
+descriptor(Node) ->
+  Address = '127.0.0.1',
+  Port = pb_ports(Node),
+  {ok, Descriptor} = get_connection_descriptor(Address, Port),
+  Descriptor.
 
 %% @doc Utility function used to construct test predicates. Retries the
 %%      function `Fun' until it returns `true', or until the maximum
@@ -419,42 +267,10 @@ wait_until(Fun) when is_function(Fun) ->
         Retry = MaxTime div Delay,
     wait_until(Fun, Retry, Delay).
 
-%% @doc Given a list of nodes, wait until all nodes are considered ready.
-%%      See {@link wait_until_ready/1} for definition of ready.
-wait_until_nodes_ready(Nodes) ->
-    lager:info("Wait until nodes are ready : ~p", [Nodes]),
-    [?assertEqual(ok, wait_until(Node, fun is_ready/1)) || Node <- Nodes],
-    ok.
-
-%% @private
-is_ready(Node) ->
-    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
-        {ok, Ring} ->
-            case lists:member(Node, riak_core_ring:ready_members(Ring)) of
-                true -> true;
-                false -> {not_ready, Node}
-            end;
-        Other ->
-            Other
-    end.
-
-wait_until_nodes_agree_about_ownership(Nodes) ->
-    lager:info("Wait until nodes agree about ownership ~p", [Nodes]),
-    Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
-    ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
-
 %% @doc Convenience wrapper for wait_until for the myriad functions that
 %% take a node as single argument.
 wait_until(Node, Fun) when is_atom(Node), is_function(Fun) ->
     wait_until(fun() -> Fun(Node) end).
-
-wait_until_owners_according_to(Node, Nodes) ->
-  SortedNodes = lists:usort(Nodes),
-  F = fun(N) ->
-      owners_according_to(N) =:= SortedNodes
-  end,
-  ?assertEqual(ok, wait_until(Node, F)),
-  ok.
 
 %% @private
 is_ring_ready(Node) ->
@@ -471,6 +287,20 @@ wait_until_ring_converged(Nodes) ->
     lager:info("Wait until ring converged on ~p", [Nodes]),
     [?assertEqual(ok, wait_until(Node, fun is_ring_ready/1)) || Node <- Nodes],
     ok.
+
+%% @doc Return a list of nodes that own partitions according to the ring
+%%      retrieved from the specified node.
+owners_according_to(Node) ->
+    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
+        {ok, Ring} ->
+            lager:info("Ring ~p", [Ring]),
+            Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
+            lager:info("Owners ~p", [lists:usort(Owners)]),
+            lists:usort(Owners);
+        {badrpc, _}=BadRpc ->
+            lager:info("Badrpc"),
+            BadRpc
+    end.
 
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
@@ -492,3 +322,69 @@ set_up_clusters_common(Config) ->
         connect_cluster(Clusterheads)
    end,
    [Cluster1, Cluster2, Cluster3].
+
+%% Join Nodes to create a DC
+create_dc_pb(Address, Port, Nodes) ->
+  {ok, Pid} = antidotec_pb_socket:start(Address, Port),
+  NodesString = lists:map(fun(Node) ->
+                            atom_to_list(Node)
+                          end, Nodes),
+  Request = antidote_pb_codec:encode(create_dc, NodesString),
+  Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+  Response = case Result of
+      {error, timeout} ->
+          {error, timeout};
+      _ ->
+          case antidote_pb_codec:decode_response(Result) of
+              {opresponse, ok} ->
+                  ok;
+              {error, Reason} ->
+                  {error, Reason};
+              Other ->
+                  {error, Other}
+          end
+  end,
+  _Disconnected = antidotec_pb_socket:stop(Pid),
+  Response.
+
+%% Connect DC in Address/Port to other DCs given by their Descriptors
+connect_to_dcs(Address, Port, Descriptors) ->
+    {ok, Pid} = antidotec_pb_socket:start(Address, Port),
+    Request = antidote_pb_codec:encode(connect_to_dcs, Descriptors),
+    Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+    Response = case Result of
+        {error, timeout} ->
+            {error, timeout};
+        _ ->
+            case antidote_pb_codec:decode_response(Result) of
+                {opresponse, ok} ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason};
+                Other ->
+                    {error, Other}
+            end
+    end,
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    Response.
+
+%% Get the DC descriptor to be given to other DCs
+get_connection_descriptor(Address, Port) ->
+    {ok, Pid} = antidotec_pb_socket:start(Address, Port),
+    Request = antidote_pb_codec:encode(get_connection_descriptor, ignore),
+    Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+    Response = case Result of
+        {error, timeout} ->
+            {error, timeout};
+        _ ->
+            case antidote_pb_codec:decode_response(Result) of
+                {connection_descriptor, Descriptor} ->
+                        {ok, Descriptor};
+                {error, Reason} ->
+                    {error, Reason};
+                Other ->
+                    {error, Other}
+            end
+    end,
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    Response.
