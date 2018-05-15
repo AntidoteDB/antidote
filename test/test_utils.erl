@@ -238,7 +238,7 @@ web_ports(dev4) ->
 pb_ports(Node) ->
     %% remove hostname from Node name
     NodeName = get_node_name(Node),
-    web_ports(list_to_atom(NodeName)) + 2.
+    web_ports(NodeName) + 2.
 
 %% Build DC
 join_cluster(Nodes) ->
