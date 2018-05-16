@@ -109,7 +109,7 @@ apply_filter(Conditions, Table, TxId) ->
                 PartialResult = read_remaining(RemainConds, Table, PartialRes, TxId),
 
                 ResultSet = sets:from_list(PartialResult),
-                %%io:format("ResultSet: ~p~n", [ResultSet]),
+                %io:format("ResultSet: ~p~n", [ResultSet]),
                 sets:union(FinalRes, ResultSet)
             end, sets:new(), Conditions);
         false -> throw("The current condition is not valid")
@@ -152,58 +152,11 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
         _Else ->
             case CurrentData of
                 nil ->
-                    {Remain, Indexes} = dict:fold(fun(Column, _Range, {RemainAcc, IdxAcc}) ->
-                        %?CONDITION(Column, _Comp, _Val) = Col,
-                        case is_func(Column) of
-                            true -> {lists:append(RemainAcc, [Column]), IdxAcc};
-                            false ->
-                                case table_utils:is_primary_key(Column, Table) of
-                                    true -> {RemainAcc, lists:append(IdxAcc, [{primary, TableName}])};
-                                    false ->
-                                        SIndexes = table_utils:indexes(Table),
-                                        case find_index_by_attribute(Column, SIndexes) of
-                                            [] -> {lists:append(RemainAcc, [Column]), IdxAcc};
-                                            [SIndex] -> {RemainAcc, lists:append(IdxAcc, [{secondary, SIndex}])}
-                                        end
-                                end
-                        end
-                    end, {[], []}, RangeQueries),
+                    {Remain, Indexes} = read_indexes(RangeQueries, Table),
                     %io:format("Remain: ~p~n", [Remain]),
                     %io:format("Indexes: ~p~n", [Indexes]),
                     LeastKeys = lists:foldl(fun(Index, Curr) ->
-                        ReadKeys = case Index of
-                                       {primary, TableName} ->
-                                           IdxData = indexing:read_index(primary, TableName, TxId),
-                                           [PKCol] = table_utils:primary_key_name(Table),
-                                           %io:format("IdxData: ~p~n", [IdxData]),
-                                           %io:format("PKCol: ~p~n", [PKCol]),
-                                           GetRange = range_queries:lookup_range(PKCol, RangeQueries),
-                                           %io:format("GetRange: ~p~n", [GetRange]),
-                                           FilterFun = read_pk_predicate(GetRange),
-                                           ordsets:from_list(filter_keys(FilterFun, IdxData));
-                                       {secondary, {Name, TName, [Col]}} -> %% TODO support more columns
-                                           GetRange = range_queries:lookup_range(Col, RangeQueries),
-                                           %io:format("GetRange: ~p~n", [GetRange]),
-                                           IdxData = case range_type(GetRange) of
-                                                         equality ->
-                                                             {{_, Val}, {_, Val}} = GetRange,
-                                                             Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
-                                                             [Res];
-                                                         notequality ->
-                                                             {{_, Val}, {_, Val}} = GetRange,
-                                                             Aux = indexing:read_index(secondary, {TName, Name}, TxId),
-                                                             lists:filter(fun({IdxVal, Set}) -> IdxVal /= Set end, Aux);
-                                                         range ->
-                                                             indexing:read_index_function(secondary,
-                                                                 {TName, Name}, {range, range_queries:to_condition(GetRange)}, TxId)
-                                                     end,
-                                           %io:format("IdxData: ~p~n", [IdxData]),
-                                           %IdxData = indexing:read_index_function(secondary, {TName, Name}, {range, GetRange}, TxId),
-                                           lists:foldl(fun({_IdxCol, PKs}, Set) ->
-                                               %% there's an assumption that the accumulator will never have repeated keys
-                                               ordsets:union(Set, PKs)
-                                           end, ordsets:new(), IdxData)
-                                   end,
+                        ReadKeys = interpret_index(Index, Table, RangeQueries, TxId),
                         case Curr of
                             nil -> ReadKeys;
                             Curr -> ordsets:intersection(Curr, ReadKeys)
@@ -212,8 +165,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                     %io:format("LeastKeys: ~p~n", [LeastKeys]),
                     case LeastKeys of
                         nil ->
-                            %% TODO this is a must change: iterate the range queries and filter
                             ObjsData = iterate_ranges(RangeQueries, Table, TxId),
+                            %io:format("ObjsData: ~p~n", [ObjsData]),
                             get_shadow_columns(Table, ObjsData, TxId);
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
@@ -224,73 +177,34 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                                 FilterFun = read_predicate(GetRange),
                                 filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
                             end, Objects, Remain),
+                            %io:format("ObjsData: ~p~n", [ObjsData]),
                             get_shadow_columns(Table, ObjsData, TxId)
                     end;
                 CurrentData ->
                     %io:format("CurrentData: ~p~n", [CurrentData]),
-                    ObjsData = lists:foldl(fun(Condition, PartRes) ->
-                        filter_objects(Condition, Table, PartRes, TxId)
-                    end, CurrentData, Conditions),
-                    ObjsData
-                    %get_shadow_columns(Table, ObjsData, TxId)
+                    %lists:foldl(fun(Condition, PartRes) ->
+                    %    filter_objects(Condition, Table, PartRes, TxId)
+                    %end, CurrentData, Conditions)
+                    iterate_ranges(RangeQueries, Table, CurrentData, TxId)
             end
     end.
 
 
-%%iterate_conditions([{sub, Conds} = _Cond | Tail], Table, TxId, Acc) ->
-%%    %io:format(">> iterate_conditions:~n", []),
-%%    %io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
-%%    iterate_conditions([Conds | Tail], Table, TxId, Acc);
-%%iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
-%%    %io:format(">> iterate_conditions:~n", []),
-%%    case is_disjunction(Cond) of
-%%        true ->
-%%            %io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
-%%            FiltObjects = apply_filter(Cond, Table, TxId),
-%%            ResultToList = case is_list(FiltObjects) of
-%%                               false -> sets:to_list(FiltObjects);
-%%                               true -> FiltObjects
-%%                           end,
-%%            %%io:format("RecordObjs: ~p~n", [ResultToList]),
-%%            iterate_conditions(Tail, Table, TxId, ResultToList);
-%%        false ->
-%%            %io:format("Current Cond: ~p~n", [Cond]),
-%%            RecordObjs = case Acc of
-%%                             [] -> retrieve_and_filter(Cond, Table, TxId);
-%%                             _Else -> filter_objects(Cond, Table, Acc, TxId)
-%%                         end,
-%%            %%io:format("RecordObjs: ~p~n", [RecordObjs]),
-%%            iterate_conditions(Tail, Table, TxId, RecordObjs)
-%%    end;
-%%iterate_conditions([], _Table, _TxId, Acc) ->
-%%    Acc.
-
 iterate_ranges(RangeQueries, Table, TxId) ->
-    %io:format(">> iterate_ranges:~n"),
     TableName = table_utils:table(Table),
     Keys = indexing:read_index(primary, TableName, TxId),
-    %io:format("Keys: ~p~n", [Keys]),
     Data = read_records(Keys, TableName, TxId),
+    iterate_ranges(RangeQueries, Table, Data, TxId).
+    %dict:fold(fun(Column, Range, AccObjs) ->
+    %    FilterFun = read_predicate(Range),
+    %    filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
+    %end, Data, RangeQueries).
+
+iterate_ranges(RangeQueries, Table, Data, TxId) ->
     dict:fold(fun(Column, Range, AccObjs) ->
         FilterFun = read_predicate(Range),
         filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
     end, Data, RangeQueries).
-
-%%retrieve_and_filter(Condition, Table, TxId) ->
-%%    %io:format(">> retrieve_and_filter:~n", []),
-%%
-%%    ?CONDITION(Column, _Comparison, _Value) = Condition,
-%%    %TableName = table_utils:table(Table),
-%%    %io:format("Condition: ~p~n", [Condition]),
-%%    %io:format("TableName: ~p~n", [TableName]),
-%%    ObjData = case is_func(Column) of
-%%                  true -> function_filtering(Condition, Table, TxId);
-%%                  false -> column_filtering(Condition, Table, TxId)
-%%    end,
-%%    %io:format("ObjData: ~p~n", [ObjData]),
-%%    %ObjData.
-%%    %% read shadow columns as well and add them and their resp. values to the object
-%%    get_shadow_columns(Table, ObjData, TxId).
 
 %% Restriction: only functions are allowed to access foreign key states
 function_filtering({Func, Predicate}, Table, Records, TxId) ->
@@ -324,7 +238,6 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                 %io:format("ColValue: ~p~n", [ColValue]),
                 ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
                 Result = builtin_functions:exec({FuncName, ReplaceArgs}),
-                %Pred = comp_to_predicate(Op, querying_utils:to_atom(Value)),
                 %io:format("Result: ~p~n", [Result]),
                 case Predicate(Result) of
                     true -> %io:format("Predicate(Result) = true~n", []),
@@ -340,57 +253,6 @@ function_filtering(Condition, Table, Records, TxId) ->
     Predicate = comp_to_predicate(Op, querying_utils:to_atom(Value)),
     function_filtering({Func, Predicate}, Table, Records, TxId).
 
-%%function_filtering(Condition, Table, TxId) ->
-%%    TableName = table_utils:table(Table),
-%%    ReadKeys = indexing:read_index(primary, TableName, TxId),
-%%    Records = read_records(ReadKeys, TableName, TxId),
-%%    function_filtering(Condition, Table, Records, TxId).
-%%
-%%column_filtering(Condition, Table, TxId) ->
-%%    %% TODO need to validate the column (i.e. the column is part of the table)
-%%    ?CONDITION(_Column, Comparison, Value) = Condition,
-%%    {Op, _} = Comparison,
-%%    TableName = table_utils:table(Table),
-%%    ValueAtom = querying_utils:to_atom(Value),
-%%    ReadKeys = compute_readkeys(Condition, Table, TxId),
-%%    case ReadKeys of
-%%        Pks when is_list(Pks) ->
-%%            FilteredPks = filter_keys(comp_to_predicate(Op, ValueAtom), Pks),
-%%            read_records(FilteredPks, TableName, TxId);
-%%        {index, Index} ->
-%%            IndexedKeys = indexing:get_indexed_values(Index),
-%%            FilteredIdxKeys = filter_keys(comp_to_predicate(Op, Value), IndexedKeys),
-%%            PKs = indexing:get_primary_keys(FilteredIdxKeys, Index),
-%%            read_records(PKs, TableName, TxId);
-%%        {full, Keys} ->
-%%            Records = read_records(Keys, TableName, TxId),
-%%            filter_objects(Condition, Table, Records, TxId)
-%%    end.
-
-%% Given a condition, read all the necessary keys for computing and filtering the
-%% final result. The necessary keys may be retrieved in the form of a primary key
-%% or in the form of indexes.
-%%compute_readkeys(?CONDITION(Column, Op, Value), Table, TxId) when is_atom(Column) ->
-%%    TableName = table_utils:table(Table),
-%%    case table_utils:is_primary_key(Column, Table) of
-%%        true ->
-%%            case Op of
-%%                {equality, _} -> [querying_utils:to_atom(Value)];
-%%                _Op -> indexing:read_index(primary, TableName, TxId)
-%%            end;
-%%        false ->
-%%            SIndexes = table_utils:indexes(Table),
-%%            SIndex = find_index_by_attribute(Column, SIndexes),
-%%            case SIndex of
-%%                [] ->
-%%                    %% full table scan
-%%                    {full, indexing:read_index(primary, TableName, TxId)};
-%%                [{IdxName, TName, _Cols}] -> %% TODO support more than one index
-%%                    %% read the index object denoted by '#2i_tablename.index'
-%%                    {index, indexing:read_index(secondary, {TName, IdxName}, TxId)}
-%%            end
-%%    end.
-
 filter_objects({Column, Predicate}, Table, Objects, TxId) ->
     case is_func(Column) of
         true -> function_filtering({Column, Predicate}, Table, Objects, TxId);
@@ -403,7 +265,6 @@ filter_objects(Condition, Table, Objects, TxId) ->
     {Op, _} = Comparison,
     Predicate = comp_to_predicate(Op, Value),
     filter_objects({Column, Predicate}, Table, Objects, TxId).
-    %filter_objects(Column, Predicate, Objects, []).
 
 filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
     Find = lists:filter(fun(Attr) ->
@@ -420,9 +281,6 @@ filter_objects(_Column, _Predicate, [], _TxId, Acc) ->
 
 filter_keys(_Predicate, []) -> [];
 filter_keys(Predicate, Keys) when is_list(Keys) ->
-    %io:format(">> filter_keys:~n", []),
-    %io:format("Predicate: ~p~n", [Predicate]),
-    %io:format("Keys: ~p~n", [Keys]),
     lists:filter(Predicate, Keys).
 
 comp_to_predicate(Comparator, Value) ->
@@ -505,25 +363,85 @@ is_disjunction(Query) ->
 is_func(?FUNCTION(_Name, _Params)) -> true;
 is_func(_) -> false.
 
-range_type({{greatereq, _Val}, {lessereq, _Val}}) -> equality;
-range_type({{greater, _Val}, {lesser, _Val}}) -> notequality;
+range_type({{{greatereq, _Val}, {lessereq, _Val}}, _}) -> equality;
+range_type({{{nil, infinity}, {nil, infinity}}, Excluded}) when length(Excluded) > 0 -> notequality;
 range_type(_) -> range.
 
 read_predicate(Range) ->
     case range_queries:to_predicate(Range) of
-        {{_, LPred}, infinity} ->
-            fun(V) -> LPred(V) end;
-        {infinity, {_, RPred}} ->
-            fun(V) -> RPred(V) end;
-        {{_, LPred}, {_, RPred}} ->
-            fun(V) -> LPred(V) andalso RPred(V) end;
-        Pred when is_function(Pred) -> Pred
+        {{{_, LPred}, infinity}, Inequality} ->
+            fun(V) -> LPred(V) andalso Inequality(V) end;
+        {{infinity, {_, RPred}}, Inequality} ->
+            fun(V) -> RPred(V) andalso Inequality(V) end;
+        {{{_, LPred}, {_, RPred}}, Inequality} ->
+            fun(V) -> LPred(V) andalso RPred(V) andalso Inequality(V) end;
+        {ignore, Pred} when is_function(Pred) ->
+            Pred;
+        {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
+            fun(V) -> Pred1(V) andalso Pred2(V) end
+        %Pred when is_function(Pred) -> Pred
     end.
 
 read_pk_predicate(Range) ->
-    {{LB, Val1}, {RB, Val2}} = Range,
+    {{{LB, Val1}, {RB, Val2}}, Excluded} = Range,
     NewRange = {{LB, querying_utils:to_atom(Val1)}, {RB, querying_utils:to_atom(Val2)}},
-    read_predicate(NewRange).
+    read_predicate({NewRange, Excluded}).
+
+read_indexes(RangeQueries, Table) ->
+    TableName = table_utils:table(Table),
+    dict:fold(fun(Column, _Range, {RemainAcc, IdxAcc}) ->
+        %?CONDITION(Column, _Comp, _Val) = Col,
+        case is_func(Column) of
+            true -> {lists:append(RemainAcc, [Column]), IdxAcc};
+            false ->
+                case table_utils:is_primary_key(Column, Table) of
+                    true -> {RemainAcc, lists:append(IdxAcc, [{primary, TableName}])};
+                    false ->
+                        SIndexes = table_utils:indexes(Table),
+                        case find_index_by_attribute(Column, SIndexes) of
+                            [] -> {lists:append(RemainAcc, [Column]), IdxAcc};
+                            [SIndex] -> {RemainAcc, lists:append(IdxAcc, [{secondary, SIndex}])}
+                        end
+                end
+        end
+    end, {[], []}, RangeQueries).
+
+interpret_index({primary, TableName}, Table, RangeQueries, TxId) ->
+    IdxData = indexing:read_index(primary, TableName, TxId),
+    [PKCol] = table_utils:primary_key_name(Table),
+    %io:format("IdxData: ~p~n", [IdxData]),
+    %io:format("PKCol: ~p~n", [PKCol]),
+    GetRange = range_queries:lookup_range(PKCol, RangeQueries),
+    %io:format("GetRange: ~p~n", [GetRange]),
+    FilterFun = read_pk_predicate(GetRange),
+    ordsets:from_list(filter_keys(FilterFun, IdxData));
+interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -> %% TODO support more columns
+    %io:format(">> interpret_index:~n"),
+    GetRange = range_queries:lookup_range(Col, RangeQueries),
+    %io:format("GetRange: ~p~n", [GetRange]),
+    IdxData = case range_type(GetRange) of
+                  equality ->
+                      {{{_, Val}, {_, Val}}, _} = GetRange,
+                      Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
+                      [Res];
+                  notequality ->
+                      {_, InequalityPred} = range_queries:to_predicate(GetRange),
+                      Aux = indexing:read_index(secondary, {TName, Name}, TxId),
+                      lists:filter(fun({IdxVal, _Set}) -> InequalityPred(IdxVal) end, Aux);
+                  range ->
+                      {RangePred, InequalityPred} = range_queries:to_predicate(GetRange),
+                      Index = indexing:read_index_function(secondary,
+                          {TName, Name}, {range, RangePred}, TxId),
+
+                      lists:filter(fun({IdxCol, _PKs}) -> InequalityPred(IdxCol) end, Index)
+              end,
+
+    %io:format("IdxData: ~p~n", [IdxData]),
+
+    lists:foldl(fun({_IdxCol, PKs}, Set) ->
+        %% there's an assumption that the accumulator will never have repeated keys
+        ordsets:union(Set, PKs)
+    end, ordsets:new(), IdxData).
 
 %%====================================================================
 %% Eunit tests

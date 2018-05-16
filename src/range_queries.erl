@@ -32,8 +32,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(RANGE(Lower, Upper), {Lower, Upper}).
--define(INFINITY, {open, infinity}).
+-define(RANGE(LowerBound, LowerVal, UpperBound, UpperVal), {{LowerBound, LowerVal}, {UpperBound, UpperVal}}).
+-define(RANGE_INFINITY, {{open, infinity}, {open, infinity}}).
+-define(RANGE_INEQ(Val), {{open, Val}, {open, Val}}).
+-define(RANGE_EQ(Val), {{close, Val}, {close, Val}}).
 -define(EQUALITY, {greatereq, lessereq}).
 -define(NOTEQUALITY, {greater, lesser}).
 
@@ -53,11 +55,13 @@ get_range_query(Conditions) ->
         case CurrStatus of
             nil -> {DictAcc, CurrStatus};
             ok ->
-                Range = get_range(CList, {?INFINITY, ?INFINITY}),
+                Range = get_range(CList, {?RANGE_INFINITY, []}),
                 case Range of
                     nil -> {DictAcc, nil};
-                    ?RANGE({LB, LV}, {RB, RV}) ->
-                        NewRange = ?RANGE(to_readable_bound({lower, LB}, LV), to_readable_bound({upper, RB}, RV)),
+                    Range ->
+                        %io:format(">> get_range_query:~n", []),
+                        %io:format("Range: ~p~n", [Range]),
+                        NewRange = to_readable_bound(Range),
                         {dict:store(Col, NewRange, DictAcc), CurrStatus}
                 end
         end
@@ -73,44 +77,89 @@ lookup_range(Key, Ranges) ->
         error -> []
     end.
 
-to_predicate(?RANGE({LBound, Val}, {RBound, Val})) ->
-    case {LBound, RBound} of
-        ?EQUALITY -> fun(V) -> V == Val end;
-        ?NOTEQUALITY -> fun(V) -> V /= Val end
-    end;
-to_predicate(?RANGE({LBound, LVal}, {RBound, RVal})) ->
+to_predicate({?RANGE(nil, infinity, nil, infinity), Expected}) ->
+    {ignore, fun(V) -> not lists:member(V, Expected) end};
+to_predicate({?RANGE_EQ(Val), Expected}) ->
+    Equality = fun(V) -> V == Val end,
+    Inequality = fun(V) -> not lists:member(V, Expected) end,
+    {Equality, Inequality};
+to_predicate({?RANGE(LBound, LVal, UBound, UVal), Expected}) ->
     LowerComp = to_pred(LBound, LVal),
-    UpperComp = to_pred(RBound, RVal),
-    {LowerComp, UpperComp}.
+    UpperComp = to_pred(UBound, UVal),
+    Inequality = fun(V) -> not lists:member(V, Expected) end,
+    {{LowerComp, UpperComp}, Inequality}.
 
-to_condition(?RANGE({LBound, LVal}, {RBound, RVal})) ->
+to_condition({?RANGE(LBound, LVal, UBound, UVal), _Expected}) ->
     %LowerBound = to_cond(LBound, LVal),
     %UpperBound = to_cond(RBound, RVal),
-    ?RANGE(to_pred(LBound, LVal), to_pred(RBound, RVal)).
+    {to_pred(LBound, LVal), to_pred(UBound, UVal)}.
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+%%get_range([{Comparator, Value} | Tail], Range) ->
+%%    io:format(">> get_range:~n"),
+%%    io:format("Range: ~p~n", [Range]),
+%%    case Range of
+%%        ?RANGE(?RANGE({_, _}, {_, _}) = RangeL, ?RANGE({_, _}, {_, _}) = RangeR) ->
+%%            RecRangeL = update_range(Comparator, Value, RangeL),
+%%            RecRangeR = update_range(Comparator, Value, RangeR),
+%%            NewRangeL = case RecRangeL of
+%%                            ?RANGE({close, Val}, {close, Val}) ->
+%%                                {close, Val};
+%%                            _ -> RecRangeL
+%%                        end,
+%%            NewRangeR = case RecRangeR of
+%%                            ?RANGE({close, Val2}, {close, Val2}) ->
+%%                                {close, Val2};
+%%                            _ -> RecRangeR
+%%                        end,
+%%            get_range(Tail, ?RANGE(NewRangeL, NewRangeR));
+%%        _ ->
+%%            NewRange = update_range(Comparator, Value, Range),
+%%            get_range(Tail, NewRange)
+%%    end;
+%%get_range([], Range) -> Range.
+
 get_range([{Comparator, Value} | Tail], Range) ->
+%%    {Inters, NewRange} = lists:foldl(fun(Range1, {Intersects, Acc}) ->
+%%        case update_range(Comparator, Value, Range1) of
+%%            nil -> {Intersects or false, lists:append(Acc, [Range1])};
+%%            Result -> {Intersects or true, lists:flatten([Acc, Result])}
+%%        end
+%%    end, [], Range),
+%%    case Inters of
+%%        true -> get_range(Tail, NewRange);
+%%        false -> get_range(Tail, nil)
+%%    end;
     NewRange = update_range(Comparator, Value, Range),
     get_range(Tail, NewRange);
 get_range([], Range) -> Range.
 
 update_range(_Comp, _Val, nil) -> nil;
-update_range(Comparator, Value, ?RANGE({_, LVal} = Lower, {_, RVal} = Upper) = Range) ->
+update_range(Comparator, Value, {Range, Excluded}) -> %%?RANGE(LBound, LVal, RBound, RVal) = Range) ->
+    %% Range = {<range>, <excluded>}
+    %% , where <range> is a range and <excluded> are values from inequalities
     ToRange = to_range(Comparator, Value),
-    case intersects(ToRange, Range) of
+    case intersects(ToRange, {Range, Excluded}) of
         true ->
             CompToBound = check_bound(Comparator),
+            ?RANGE(LBound, LVal, UBound, UVal) = Range,
             case bound_type(Comparator) of
                 lower when LVal == infinity orelse Value > LVal ->
-                    ?RANGE({CompToBound, Value}, Upper);
-                upper when RVal == infinity orelse Value < RVal ->
-                    ?RANGE(Lower, {CompToBound, Value});
-                both ->
-                    ?RANGE({CompToBound, Value}, {CompToBound, Value});
+                    {?RANGE(CompToBound, Value, UBound, UVal), Excluded};
+                upper when UVal == infinity orelse Value < UVal ->
+                    {?RANGE(LBound, LVal, CompToBound, Value), Excluded};
+                equal ->
+                    {?RANGE(CompToBound, Value, CompToBound, Value), Excluded};
+                notequal ->
+                    ?RANGE_INEQ(Val) = ToRange,
+                    case lists:member(Val, Excluded) of
+                        true -> {Range, Excluded};
+                        false -> {Range, lists:append(Excluded, [Val])}
+                    end;
                 _ ->
-                    ?RANGE(Lower, Upper)
+                    {Range, Excluded}
             end;
         false ->
             nil
@@ -120,7 +169,8 @@ bound_type(greater) -> lower;
 bound_type(greatereq) -> lower;
 bound_type(lesser) -> upper;
 bound_type(lessereq) -> upper;
-bound_type(_) -> both.
+bound_type(equality) -> equal;
+bound_type(notequality) -> notequal.
 
 check_bound(greater) -> open;
 check_bound(greatereq) -> close;
@@ -134,12 +184,12 @@ to_cond(lower, close) -> greatereq;
 to_cond(upper, open) -> lesser;
 to_cond(upper, close) -> lessereq.
 
-to_range(greater, Val) -> ?RANGE({open, Val}, ?INFINITY);
-to_range(greatereq, Val) -> ?RANGE({close, Val}, ?INFINITY);
-to_range(lesser, Val) -> ?RANGE(?INFINITY, {open, Val});
-to_range(lessereq, Val) -> ?RANGE(?INFINITY, {close, Val});
-to_range(equality, Val) -> ?RANGE({close, Val}, {close, Val});
-to_range(notequality, Val) -> ?RANGE({open, Val}, {open, Val}).
+to_range(greater, Val) -> ?RANGE(open, Val, open, infinity);
+to_range(greatereq, Val) -> ?RANGE(close, Val, open, infinity);
+to_range(lesser, Val) -> ?RANGE(open, infinity, open, Val);
+to_range(lessereq, Val) -> ?RANGE(open, infinity, close, Val);
+to_range(equality, Val) -> ?RANGE_EQ(Val);
+to_range(notequality, Val) -> ?RANGE_INEQ(Val).
 
 to_pred(_, infinity) -> infinity;
 to_pred({BType, Bound}, Val) ->
@@ -148,25 +198,50 @@ to_pred({BType, Bound}, Val) ->
 to_pred(CondType, Val) ->
     {CondType, func(CondType, Val)}.
 
+to_readable_bound({Range, Excluded}) ->
+    ?RANGE(LB, LV, UB, UV) = Range,
+    {Cond1, Val1} = to_readable_bound({lower, LB}, LV),
+    {Cond2, Val2} = to_readable_bound({upper, UB}, UV),
+
+    {?RANGE(Cond1, Val1, Cond2, Val2) , Excluded}.
+
 to_readable_bound(_, infinity) -> {nil, infinity};
 to_readable_bound({BType, Bound}, Val) ->
     {to_cond(BType, Bound), Val}.
 
-intersects(_, ?RANGE(?INFINITY, ?INFINITY)) -> true;
-intersects(?RANGE({open, Val}, {open, Val}), Range) ->
-    not intersects(?RANGE({close, Val}, {close, Val}), Range);
-intersects(Range1, Range2) ->
-    ?RANGE({LBound1, LVal1}, {RBound1, RVal1}) = Range1,
-    ?RANGE({LBound2, LVal2}, {RBound2, RVal2}) = Range2,
-    Comp1 = case det_bound_pred(RBound1, LBound2) of
+%intersects(_, {?RANGE_INFINITY, _}) -> true;
+%intersects(?RANGE_INFINITY, _) -> true;
+%intersects(?RANGE_INEQUALITY(_Val), _) -> true;
+intersects(?RANGE_EQ(Val) = Range1, {Range2, Expected}) ->
+    %io:format(">> intersects 1:~n", []),
+    %io:format("~p~n", [Range1]),
+    %io:format("~p~n", [Range2]),
+    %io:format("~p~n", [Expected]),
+    not lists:member(Val, Expected) and intersects_ranges(Range1, Range2);
+%intersects(?RANGE_INEQUALITY(Val), {?RANGE(Bound, Val, Bound, Val), _}) -> false;
+intersects(Range1, {Range2, _Excluded}) ->
+    %io:format(">> intersects 2:~n", []),
+    %io:format("~p~n", [Range1]),
+    %io:format("~p~n", [Range2]),
+
+    intersects_ranges(Range1, Range2).
+
+intersects_ranges(_, ?RANGE_INFINITY) -> true;
+intersects_ranges(?RANGE_INFINITY, _) -> true;
+intersects_ranges(?RANGE_INEQ(Val), ?RANGE(Bound, Val, Bound, Val)) -> false;
+intersects_ranges(?RANGE_INEQ(_Val), _) -> true;
+intersects_ranges(Range1, Range2) ->
+    ?RANGE(LBound1, LVal1, UBound1, UVal1) = Range1,
+    ?RANGE(LBound2, LVal2, UBound2, UVal2) = Range2,
+    Comp1 = case det_bound_pred(UBound1, LBound2) of
                 open -> lesser;
                 close -> lessereq
             end,
-    Comp2 = case det_bound_pred(LBound1, RBound2) of
+    Comp2 = case det_bound_pred(LBound1, UBound2) of
                 open -> greater;
                 close -> greatereq
             end,
-    not (compare(Comp1, RVal1, LVal2) orelse compare(Comp2, LVal1, RVal2)).
+    not (compare(Comp1, UVal1, LVal2) orelse compare(Comp2, LVal1, UVal2)).
 
 compare(_Op, _Val, infinity) -> false;
 compare(_Op, infinity, _Val) -> false;
@@ -191,18 +266,37 @@ det_bound_pred(_, _) -> close.
 -ifdef(TEST).
 
 intersection_test() ->
-    Range1 = ?RANGE({open, 5}, {open, 10}),
-    Range2 = ?RANGE({close, 6}, {close, 6}),
-    Range3 = ?RANGE(?INFINITY, ?INFINITY),
-    Range4 = ?RANGE(?INFINITY, {open, 15}),
-    Range5 = ?RANGE({open, 11}, ?INFINITY),
-    Range6 = ?RANGE({open, 4}, {open, 4}),
-    ?assertEqual(true, intersects(Range1, Range3)),
-    ?assertEqual(true, intersects(Range2, Range1)),
-    ?assertEqual(true, intersects(Range4, Range1)),
-    ?assertEqual(false, intersects(Range1, Range5)),
-    ?assertEqual(true, intersects(Range6, Range1)),
-    ?assertEqual(false, intersects(Range6, Range4)).
+    Range1 = ?RANGE(open, 5, open, 10),
+    Range2 = ?RANGE_EQ(6),
+    Range3 = ?RANGE_INFINITY,
+    Range4 = ?RANGE(open, infinity, open, 15),
+    Range5 = ?RANGE(open, 11, open, infinity),
+    Range6 = ?RANGE_INEQ(4),
+    Range7 = ?RANGE_EQ(5),
+
+    ?assertEqual(true, intersects(Range1, {Range3, []})),
+    ?assertEqual(true, intersects(Range2, {Range1, []})),
+    ?assertEqual(true, intersects(Range4, {Range1, []})),
+    ?assertEqual(false, intersects(Range1, {Range5, []})),
+    ?assertEqual(true, intersects(Range6, {Range1, []})),
+    ?assertEqual(true, intersects(Range4, {Range3, [4]})),
+    ?assertEqual(true, intersects(Range5, {Range3, [4]})),
+    ?assertEqual(false, intersects(Range7, {Range1, []})).
+
+%%notequality_intersection_test() ->
+%%    Infinity = ?RANGE_INFINITY,
+%%    Range1 = to_range(notequality, 2005),
+%%    Range2 = to_range(lessereq, 2008),
+%%    Range3 = to_range(greatereq, 2003),
+%%    Range4 = to_range(equality, 2005),
+%%    Range5 = to_range(notequality, 2010),
+%%
+%%    ?assertEqual(true, intersects(Infinity, Range1)),
+%%    ?assertEqual(true, intersects(Range1, Infinity)),
+%%    ?assertEqual(true, intersects(Range1, Range2)),
+%%    ?assertEqual(true, intersects(Range1, Range3)),
+%%    ?assertEqual(false, intersects(Range1, Range4)),
+%%    ?assertEqual(true, intersects(Range5, Range1)).
 
 range_test() ->
     Conditions = [
@@ -216,14 +310,39 @@ range_test() ->
     Conditions4 = lists:append(Conditions, [{'Col2', {equality, ignore}, 2000}]),
     Conditions5 = [{'Col1', {greater, ignore}, 2008}],
 
-    Expected = [{'Col1', ?RANGE({greater, 2008}, {lesser, 2016})}, {'Col2', ?RANGE({greater, 500}, {lesser, 1000})}],
-    Expected2 = [{'Col1', ?RANGE({greatereq, 2010}, {lessereq, 2010})}, {'Col2', ?RANGE({greater, 500}, {lesser, 1000})}],
-    Expected3 = [{'Col1', ?RANGE({greater, 2008}, {nil, infinity})}],
+    Expected = [{'Col1', {?RANGE(greater, 2008, lesser, 2016), []}}, {'Col2', {?RANGE(greater, 500, lesser, 1000), []}}],
+    Expected2 = [{'Col1', {?RANGE(greatereq, 2010, lessereq, 2010), []}}, {'Col2', {?RANGE(greater, 500, lesser, 1000), []}}],
+    Expected3 = [{'Col1', {?RANGE(greater, 2008, nil, infinity), []}}],
 
     ?assertEqual(Expected, dict:to_list(get_range_query(Conditions))),
     ?assertEqual(Expected, dict:to_list(get_range_query(Conditions2))),
     ?assertEqual(Expected2, dict:to_list(get_range_query(Conditions3))),
     ?assertEqual(nil, get_range_query(Conditions4)),
     ?assertEqual(Expected3, dict:to_list(get_range_query(Conditions5))).
+
+notequal_test() ->
+    Conditions1 = [
+        {'Col1', {lessereq, ignore}, 2008},
+        {'Col1', {notequality, ignore}, 2005}
+    ],
+    Conditions2 = [
+        {'Col1', {notequality, ignore}, 2008},
+        {'Col1', {notequality, ignore}, 2005}
+    ],
+    Conditions3 = [
+        {'Col1', {equality, ignore}, 2005},
+        {'Col1', {notequality, ignore}, 2005}
+    ],
+
+    Expected1 = [{'Col1', {?RANGE(nil, infinity, lessereq, 2008), [2005]}}],
+    Expected2 = [{'Col1', {?RANGE(nil, infinity, nil, infinity), [2008, 2005]}}],
+    Expected3 = nil,
+
+    Result1 = get_range_query(Conditions1),
+    Result2 = get_range_query(Conditions2),
+    Result3 = get_range_query(Conditions3),
+    ?assertEqual(Expected1, dict:to_list(Result1)),
+    ?assertEqual(Expected2, dict:to_list(Result2)),
+    ?assertEqual(Expected3, Result3).
 
 -endif.
