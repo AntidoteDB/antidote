@@ -32,7 +32,8 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--define(How_LONG_TO_WAIT_FOR_LOCKS,501).
+-define(How_LONG_TO_WAIT_FOR_LOCKS,1501).
+-define(GET_LOCKS_INTERVAL,500).
 -define(LOCK_MGR,mock_partition).
 -define(DC_META_UTIL, mock_partition).
 -define(DC_UTIL, mock_partition).
@@ -46,7 +47,8 @@
 
 
 -else.
--define(How_LONG_TO_WAIT_FOR_LOCKS,501).
+-define(How_LONG_TO_WAIT_FOR_LOCKS,1501).
+-define(GET_LOCKS_INTERVAL,500).
 -define(LOCK_MGR,lock_mgr).
 -define(DC_META_UTIL, dc_meta_data_utilities).
 -define(DC_UTIL, dc_utilities).
@@ -681,11 +683,16 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
 %% #Locks
 start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic},Locks) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
+    %lager:info("start_tx_internal(From: ~w, Properties: ~w, StayAlive: ~w, IsStatic: ~w)",[From,Properties,StayAlive,IsStatic]),
     case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
         {ok,Snapshot} -> wait_for_clock(Snapshot),
             case IsStatic of
-            true -> ok;
-            false -> From ! {ok, TransactionId}   
+            true ->
+                %lager:info("start_tx_internal- ok",[]),
+                ok;
+            false -> 
+                %lager:info("start_tx_internal- {ok, TransactionId}  Msg Send",[]),
+                From ! {ok, TransactionId}   
             end,
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
@@ -693,9 +700,11 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
         
         % TODO Necessary to send an error message to From, when the lock were not aquired ?
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
+            %lager:info("start_tx_internal- {error,Missing_Locks}  Msg Send",[]),
             From ! {error,Missing_Locks},
             {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))};
         {locks_in_use,Tx_Using_The_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
+            %lager:info("start_tx_internal- {error,Tx_Using_The_Locks}  Msg Send",[]),
             From ! {error,Tx_Using_The_Locks},
             {stop, "Transaction using the locks: "}   %%TODO
     end.
@@ -710,18 +719,18 @@ get_locks(Timeout,TransactionId,Locks) ->
     case Result of
         {ok,Snapshot_Time} -> {ok,Snapshot_Time};
         {locks_in_use,Tx_Using_The_Locks} ->
-            case Timeout > 100 of
+            case Timeout > ?GET_LOCKS_INTERVAL of
                 true ->
-                    timer:sleep(100),
-                    NewTimeout1 = Timeout-100,
+                    timer:sleep(?GET_LOCKS_INTERVAL),
+                    NewTimeout1 = Timeout-?GET_LOCKS_INTERVAL,
                     get_locks(NewTimeout1, TransactionId, Locks);
                 false -> {locks_in_use,Tx_Using_The_Locks}
             end;
         {missing_locks, Missing_Locks} ->
-            case Timeout > 100 of
+            case Timeout > ?GET_LOCKS_INTERVAL of
                 true ->
-                    timer:sleep(100),
-                    NewTimeout2 = Timeout-100,
+                    timer:sleep(?GET_LOCKS_INTERVAL),
+                    NewTimeout2 = Timeout-?GET_LOCKS_INTERVAL,
                     get_locks(NewTimeout2, TransactionId, Locks);
                 false -> {locks_not_available,Missing_Locks}
             end

@@ -32,15 +32,19 @@
 -export([simple_transaction_tests_with_locks/1,
 		locks_required_by_another_transaction_1/1,
 		locks_required_by_another_transaction_2/1,
-         lock_aquisition_test/1
+         lock_aquisition_test/1,
+         some_test/1,
+         get_lock_owned_by_other_dc_1/1,
+         get_lock_owned_by_other_dc_2/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
+-include("../include/antidote.hrl").
+-include("../include/inter_dc_repl.hrl").
 
 
--define(BUCKET, bcounter_bucket).
 
 
 
@@ -64,7 +68,9 @@ all() -> [
          simple_transaction_tests_with_locks,
          locks_required_by_another_transaction_1,
          locks_required_by_another_transaction_2,
-         lock_aquisition_test
+         lock_aquisition_test,
+         some_test,
+         get_lock_owned_by_other_dc_2
         ].
 
 
@@ -142,9 +148,8 @@ locks_required_by_another_transaction_1(Config) ->
 locks_required_by_another_transaction_2(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
-    Node2 = hd(tl(hd(Nodes))),
-    Node3 = hd(tl(Nodes)),
-    Node4 = hd(tl(tl(Nodes))),
+    Node3 = hd(hd(tl(Nodes))),
+    Node4 = hd(hd(tl(tl(Nodes)))),
     Keys = [lock14, lock13, lock12, lock11],
     {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr, local_locks_info, []),
@@ -152,13 +157,10 @@ locks_required_by_another_transaction_2(Config) ->
     ?assertEqual(length(Keys),length(Used_Keys)),
     ?assertEqual([],Keys--Used_Keys),
     {error,{error,[{_TxId,Missing_Keys0}]}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
-    {error,{error,[{_TxId,Missing_Keys1}]}} = rpc:call(Node2, antidote, start_transaction, [ignore, [{locks,[hd(Keys)]}]]),
-    {error,{error,[{_TxId,Missing_Keys2}]}} = rpc:call(Node3, antidote, start_transaction, [ignore, [{locks,[hd(tl(Keys))]}]]),
-    {error,{error,[{_TxId,Missing_Keys3}]}} = rpc:call(Node4, antidote, start_transaction, [ignore, [{locks,tl(Keys)}]]),
+    {error,{error,Missing_Keys2}} = rpc:call(Node3, antidote, start_transaction, [ignore, [{locks,[hd(tl(Keys))]}]]),
+    {error,{error,Missing_Keys3}} = rpc:call(Node4, antidote, start_transaction, [ignore, [{locks,tl(Keys)}]]),
     ?assertEqual(length(Keys),length(Missing_Keys0)),
     ?assertEqual([],Keys -- Missing_Keys0),
-    ?assertEqual(length([hd(Keys)]),length(Missing_Keys1)),
-    ?assertEqual([],[hd(Keys)] -- Missing_Keys1),
     ?assertEqual(length([hd(tl(Keys))]),length(Missing_Keys2)),
     ?assertEqual([],[hd(tl(Keys))] -- Missing_Keys2),
     ?assertEqual(length(tl(Keys)),length(Missing_Keys3)),
@@ -201,6 +203,92 @@ lock_aquisition_test(Config) ->
     false = lists:keyfind(TxId2,1,Lock_Info4),
     false = lists:keyfind(TxId3,1,Lock_Info4),
     ok.
+
+get_lock_owned_by_other_dc_1(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node3 = hd(hd(tl(Nodes))),
+    Node4 = hd(hd(tl(tl(Nodes)))),
+    Keys = [lock31, lock32, lock33, lock34],
+    
+    {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
+    Lock_Info1 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    {_,{using,Used_Keys1}} = lists:keyfind(TxId1,1,Lock_Info1),
+    ?assertEqual(length(Keys),length(Used_Keys1)),
+    ?assertEqual([],Keys--Used_Keys1),
+    {ok, _Clock1} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+    Lock_Info1_2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info1_2),
+    
+    {ok, TxId2} = rpc:call(Node3, antidote, start_transaction, [ignore, [{locks,[lock31]}]]),
+    Lock_Info2 = rpc:call(Node3, lock_mgr, local_locks_info, []),
+    {_,{using,Used_Keys2}} = lists:keyfind(TxId2,1,Lock_Info2),
+    ?assertEqual(1,length(Used_Keys2)),
+    ?assertEqual([],[lock31]--Used_Keys2),
+    {ok, _Clock2} = rpc:call(Node3, antidote, commit_transaction, [TxId2]),
+    
+    {ok, TxId3} = rpc:call(Node4, antidote, start_transaction, [ignore, [{locks,[lock32,lock33,lock34]}]]),
+    Lock_Info3 = rpc:call(Node4, lock_mgr, local_locks_info, []),
+    {_,{using,Used_Keys3}} = lists:keyfind(TxId3,1,Lock_Info3),
+    ?assertEqual(3,length(Used_Keys3)),
+    ?assertEqual([],[lock32,lock33,lock34]--Used_Keys3),
+    {ok, _Clock3} = rpc:call(Node4, antidote, commit_transaction, [TxId3]),
+    ok.
+
+get_lock_owned_by_other_dc_2(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node3 = hd(hd(tl(Nodes))),
+    Node4 = hd(hd(tl(tl(Nodes)))),
+    Keys = [lock41, lock42, lock43, lock44],
+    
+    Lock_request_order = [Node3,Node1,Node1,Node3,Node4,Node3,Node4,Node1],
+    helper_do_lock_requests(Lock_request_order, Keys).
+    
+helper_do_lock_requests([],_)-> ok;
+helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
+    case rpc:call(Current_Node, antidote, start_transaction, [ignore, [{locks,Keys}]]) of 
+        {ok, TxId1} ->
+            Lock_Info1 = rpc:call(Current_Node, lock_mgr, local_locks_info, []),
+            {_,{using,Used_Keys1}} = lists:keyfind(TxId1,1,Lock_Info1),
+            ?assertEqual(length(Keys),length(Used_Keys1)),
+            ?assertEqual([],Keys--Used_Keys1),
+            {ok, _Clock1} = rpc:call(Current_Node, antidote, commit_transaction, [TxId1]),
+            Lock_Info1_2 = rpc:call(Current_Node, lock_mgr, local_locks_info, []),
+            ?assertEqual(false, lists:keyfind(TxId1,1,Lock_Info1_2));
+        {error,{error,_Missing_Locks}} ->
+            helper_do_lock_requests([Current_Node|Remaining_Nodes], Keys)
+    end.
+
+    
+    
+    
+    
+some_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node3 = hd(hd(tl(Nodes))),
+    Node4 = hd(hd(tl(tl(Nodes)))),
+    A = rpc:call(Node1, lock_mgr, am_i_leader, []),
+    B = rpc:call(Node3, lock_mgr, am_i_leader, []),
+    C = rpc:call(Node4, lock_mgr, am_i_leader, []),
+    [true,false,false] = [A,B,C],
+    ok.
+    
+    %Nodesss=lists:flatten(Nodes),
+    %DC_IDS = lists:foldl(fun(Nodee,Acc)-> 
+    %                             MyDCId = rpc:call(Nodee,dc_meta_data_utilities,get_my_dc_id,[]),
+    %                             DCDescriptors = rpc:call(Nodee,dc_meta_data_utilities,get_dc_descriptors,[]),
+    %                             AllDCIDs = lists:foldl(fun(#descriptor{dcid=Idd}, IdsList) ->
+    %                                 [Idd | IdsList]
+    %                             end, [], DCDescriptors),
+    %                             Ordd = orddict:new(),
+    %                             OrddAllDCIDs = lists:foldl(fun(Id, DCIDss) -> orddict:store(Id,0,DCIDss) end, Ordd, AllDCIDs),
+    %                             _New_Acc=[{MyDCId,OrddAllDCIDs}|Acc]
+    %                             end,
+    %                     [],Nodesss),
+    
+
 
 txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->
     lists:map(fun({Object, Expected}) ->
