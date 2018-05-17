@@ -32,7 +32,7 @@
 %% This CRDT does not support entry deletions.
 %% ------------------------------------------------------------------
 
--module(antidote_crdt_gindex).
+-module(antidote_crdt_gindex_dict).
 -behaviour(antidote_crdt).
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).
@@ -57,8 +57,7 @@
 
 -type gindex() :: {gindex_type(), indexmap(), indirectionmap()}.
 -type gindex_type() :: atom().
--type gb_tree_node() :: nil | {_, _, _, _}.
--type indexmap() :: {non_neg_integer(), gb_tree_node()}.
+-type indexmap() :: dict:dict(Key::term(), NestedState::term()).
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
 -type pred_type() :: greater | greatereq | lesser | lessereq.
@@ -84,36 +83,34 @@
 
 -spec new() -> gindex().
 new() ->
-    {undefined, gb_trees:empty(), dict:new()}. %% TODO benchmark the possible choices for the index: dict, orddict, gb_trees
+    {undefined, dict:new(), dict:new()}.
 
 -spec new(term()) -> gindex().
 new(Type) ->
     case antidote_crdt:is_type(Type) of
-        true -> {Type, gb_trees:empty(), dict:new()};
+        true -> {Type, dict:new(), dict:new()};
         false -> new()
     end.
 
 -spec value(gindex()) -> value_output().
 value({_Type, Index, _Indirection}) ->
-    gb_trees:to_list(Index).
+    lists:sort(dict:to_list(Index)).
 
 -spec value(gindex_query(), gindex()) -> value_output().
 value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
     case validate_pred(lower, LowerPred) andalso validate_pred(upper, UpperPred) of
         true ->
-            %io:format("gindex: ~p~n", [Index]),
-            Iterator = case LowerPred of
-                           infinity -> gb_trees:iterator(Index);
-                           _ -> gb_trees:iterator_from(lookup_lower_bound(LowerPred, Index), Index)
-                       end,
-            iterate_and_filter({UpperPred, [key]}, gb_trees:next(Iterator), []);
+            Filtered = dict:filter(fun(Key, _Value) ->
+                apply_pred(LowerPred, Key) andalso apply_pred(UpperPred, Key)
+            end, Index),
+            lists:sort(dict:to_list(Filtered));
         false ->
             throw(?WRONG_PRED)
     end;
 value({get, Key}, {_Type, Index, _Indirection}) ->
-    case gb_trees:lookup(Key, Index) of
-        {value, Value} -> {Key, Value};
-        none -> {error, key_not_found}
+    case dict:find(Key, Index) of
+        {ok, Value} -> {Key, Value};
+        error -> {error, key_not_found}
     end;
 value({lookup, Key}, {Type, _Index, Indirection} = GIndex) ->
     case dict:find(Key, Indirection) of
@@ -141,14 +138,14 @@ downstream({update, Ops}, GIndex) when is_list(Ops) ->
 -spec update(gindex_effect(), gindex()) -> {ok, gindex()}.
 update({update, {Type, Key, Op}}, {_Type, Index, Indirection}) ->
     {OldValue, NewValue} = case dict:find(Key, Indirection) of
-        {ok, Value} ->
-            {ok, ValueUpdated} = Type:update(Op, Value),
-            {Value, ValueUpdated};
-        error ->
-            NewCRDT = Type:new(),
-            {ok, NewValueUpdated} = Type:update(Op, NewCRDT),
-            {undefined, NewValueUpdated}
-    end,
+                               {ok, Value} ->
+                                   {ok, ValueUpdated} = Type:update(Op, Value),
+                                   {Value, ValueUpdated};
+                               error ->
+                                   NewCRDT = Type:new(),
+                                   {ok, NewValueUpdated} = Type:update(Op, NewCRDT),
+                                   {undefined, NewValueUpdated}
+                           end,
 
     NewIndirection = dict:store(Key, NewValue, Indirection),
 
@@ -213,18 +210,18 @@ index_type({_Index, Indirection}, Default) ->
     end.
 
 update_index(OldEntryKey, NewEntryKey, EntryValue, Index) ->
-    Removed = case gb_trees:lookup(OldEntryKey, Index) of
-        {value, Set} ->
-            case ordsets:is_element(EntryValue, Set) of
-                true -> gb_trees:update(OldEntryKey, ordsets:del_element(EntryValue, Set), Index);
-                false -> full_search(EntryValue, Index)
-            end;
-        none -> Index
-    end,
+    Removed = case dict:find(OldEntryKey, Index) of
+                  {ok, Set} ->
+                      case ordsets:is_element(EntryValue, Set) of
+                          true -> dict:update(OldEntryKey, fun(_OldSet) -> ordsets:del_element(EntryValue, Set) end, Index);
+                          false -> full_search(EntryValue, Index)
+                      end;
+                  error -> Index
+              end,
 
-    case gb_trees:lookup(NewEntryKey, Removed) of
-         {value, Set2} -> gb_trees:update(NewEntryKey, ordsets:add_element(EntryValue, Set2), Removed);
-         none -> gb_trees:insert(NewEntryKey, ordsets:add_element(EntryValue, ordsets:new()), Removed)
+    case dict:find(NewEntryKey, Removed) of
+        {ok, Set2} -> dict:update(NewEntryKey, fun(_OldSet) -> ordsets:add_element(EntryValue, Set2) end, Removed);
+        error -> dict:store(NewEntryKey, ordsets:add_element(EntryValue, ordsets:new()), Removed)
     end.
 
 get_value(_Type, undefined) -> undefined;
@@ -267,39 +264,30 @@ distinct([]) -> true;
 distinct([X | Xs]) ->
     not lists:member(X, Xs) andalso distinct(Xs).
 
-lookup_lower_bound(_LowerPred, {0, _Tree}) -> nil;
-lookup_lower_bound(LowerPred, {Size, Tree}) when Size > 0 ->
-    lookup_lower_bound(LowerPred, Tree, nil).
-lookup_lower_bound(_LowerPred, nil, Final) ->
-    Final;
-lookup_lower_bound(LowerPred, {Key, _Value, Left, Right}, Final) ->
-    case apply_pred(LowerPred, Key) of
-        true -> lookup_lower_bound(LowerPred, Left, Key);
-        false -> lookup_lower_bound(LowerPred, Right, Final)
-    end.
-
-iterate_and_filter(_Predicate, none, Acc) ->
-    Acc;
-iterate_and_filter({infinity, _} = Predicate, {Key, Value, Iter}, Acc) ->
-    iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
-iterate_and_filter({Fun, Params} = Predicate, {Key, Value, Iter}, Acc) ->
+filter(_Predicate, none, Acc) -> Acc;
+filter({infinity, _}, {Key, Value}, Acc) ->
+    lists:append(Acc, [{Key, Value}]);
+filter({Fun, Params}, {Key, Value}, Acc) ->
     Result = case Params of
                  [key] -> apply_pred(Fun, Key);
                  [value, V] -> apply_pred(Fun, [Value, V])
              end,
     case Result of
-        true -> iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
-        false -> iterate_and_filter(Predicate, gb_trees:next(Iter), Acc)
+        true -> lists:append(Acc, [{Key, Value}]);
+        false -> Acc
     end.
 
 full_search(EntryValue, Index) ->
-    Iterator = gb_trees:iterator(Index),
     FilterFun = fun([Set, V]) -> ordsets:is_element(V, Set) end,
-    case iterate_and_filter({FilterFun, [value, EntryValue]}, gb_trees:next(Iterator), []) of
+    FilterRes = dict:fold(fun(Key, Value, Acc) ->
+        filter({FilterFun, [value, EntryValue]}, {Key, Value}, Acc)
+    end, [], Index),
+
+    case FilterRes of
         [] -> Index;
         Entries ->
             lists:foldl(fun({Key, Value}, AccIndex) ->
-                gb_trees:update(Key, ordsets:del_element(EntryValue, Value), AccIndex)
+                dict:update(Key, fun(_OldSet) -> ordsets:del_element(EntryValue, Value) end, AccIndex)
             end, Index, Entries)
     end.
 
@@ -309,6 +297,7 @@ validate_pred(lower, {Type, _Func}) ->
 validate_pred(upper, {Type, _Func}) ->
     lists:member(Type, ?UPPER_BOUND_PRED).
 
+apply_pred(infinity, _Param) -> true;
 apply_pred({_Type, Func}, Param) ->
     Func(Param).
 
@@ -317,13 +306,10 @@ apply_pred({_Type, Func}, Param) ->
 %% ===================================================================
 -ifdef(TEST).
 
-tree_insertions(Number, TreeAcc) ->
-    gb_trees:enter(Number, Number, TreeAcc).
-
 new_test() ->
-    ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new()),
-    ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new(dummytype)),
-    ?assertEqual({antidote_crdt_lwwreg, gb_trees:empty(), dict:new()}, new(antidote_crdt_lwwreg)).
+    ?assertEqual({undefined, dict:new(), dict:new()}, new()),
+    ?assertEqual({undefined, dict:new(), dict:new()}, new(dummytype)),
+    ?assertEqual({antidote_crdt_lwwreg, dict:new(), dict:new()}, new(antidote_crdt_lwwreg)).
 
 update_test() ->
     Index1 = new(antidote_crdt_lwwreg),
@@ -365,23 +351,6 @@ equal_test() ->
     ?assertEqual(false, equal(Index1, Index2)),
     ?assertEqual(false, equal(Index2, Index3)),
     ?assertEqual(false, equal(Index2, Index4)).
-
-bound_search_test() ->
-    Func = fun(Key) -> Key >= 3 end,
-    Pred = {greatereq, Func},
-    Tree1 = gb_trees:empty(),
-    Tree2 = gb_trees:enter(1, 1, Tree1),
-    Tree3 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(1, 10)),
-    Tree4 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(2, 20, 2)),
-    Tree5 = lists:foldl(fun tree_insertions/2, Tree1, lists:reverse(lists:seq(1, 5))),
-    Tree6 = lists:foldl(fun tree_insertions/2, Tree1, [1, 2]),
-
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree1)),
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree2)),
-    ?assertEqual(3, lookup_lower_bound(Pred, Tree3)),
-    ?assertEqual(4, lookup_lower_bound(Pred, Tree4)),
-    ?assertEqual(3, lookup_lower_bound(Pred, Tree5)),
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree6)).
 
 range_test() ->
     Index1 = new(),

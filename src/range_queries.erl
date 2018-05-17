@@ -50,7 +50,7 @@ get_range_query(Conditions) ->
             false -> dict:store(Column, [{Comparison, Value}], MapAcc)
         end
     end, dict:new(), Conditions),
-    %GroupedConds = iterate_conditions(Conditions, []),
+
     {RangeQueries, Status} = dict:fold(fun(Col, CList, {DictAcc, CurrStatus}) ->
         case CurrStatus of
             nil -> {DictAcc, CurrStatus};
@@ -90,48 +90,12 @@ to_predicate({?RANGE(LBound, LVal, UBound, UVal), Expected}) ->
     {{LowerComp, UpperComp}, Inequality}.
 
 to_condition({?RANGE(LBound, LVal, UBound, UVal), _Expected}) ->
-    %LowerBound = to_cond(LBound, LVal),
-    %UpperBound = to_cond(RBound, RVal),
     {to_pred(LBound, LVal), to_pred(UBound, UVal)}.
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-%%get_range([{Comparator, Value} | Tail], Range) ->
-%%    io:format(">> get_range:~n"),
-%%    io:format("Range: ~p~n", [Range]),
-%%    case Range of
-%%        ?RANGE(?RANGE({_, _}, {_, _}) = RangeL, ?RANGE({_, _}, {_, _}) = RangeR) ->
-%%            RecRangeL = update_range(Comparator, Value, RangeL),
-%%            RecRangeR = update_range(Comparator, Value, RangeR),
-%%            NewRangeL = case RecRangeL of
-%%                            ?RANGE({close, Val}, {close, Val}) ->
-%%                                {close, Val};
-%%                            _ -> RecRangeL
-%%                        end,
-%%            NewRangeR = case RecRangeR of
-%%                            ?RANGE({close, Val2}, {close, Val2}) ->
-%%                                {close, Val2};
-%%                            _ -> RecRangeR
-%%                        end,
-%%            get_range(Tail, ?RANGE(NewRangeL, NewRangeR));
-%%        _ ->
-%%            NewRange = update_range(Comparator, Value, Range),
-%%            get_range(Tail, NewRange)
-%%    end;
-%%get_range([], Range) -> Range.
-
 get_range([{Comparator, Value} | Tail], Range) ->
-%%    {Inters, NewRange} = lists:foldl(fun(Range1, {Intersects, Acc}) ->
-%%        case update_range(Comparator, Value, Range1) of
-%%            nil -> {Intersects or false, lists:append(Acc, [Range1])};
-%%            Result -> {Intersects or true, lists:flatten([Acc, Result])}
-%%        end
-%%    end, [], Range),
-%%    case Inters of
-%%        true -> get_range(Tail, NewRange);
-%%        false -> get_range(Tail, nil)
-%%    end;
     NewRange = update_range(Comparator, Value, Range),
     get_range(Tail, NewRange);
 get_range([], Range) -> Range.
@@ -209,21 +173,16 @@ to_readable_bound(_, infinity) -> {nil, infinity};
 to_readable_bound({BType, Bound}, Val) ->
     {to_cond(BType, Bound), Val}.
 
-%intersects(_, {?RANGE_INFINITY, _}) -> true;
-%intersects(?RANGE_INFINITY, _) -> true;
-%intersects(?RANGE_INEQUALITY(_Val), _) -> true;
 intersects(?RANGE_EQ(Val) = Range1, {Range2, Expected}) ->
     %io:format(">> intersects 1:~n", []),
     %io:format("~p~n", [Range1]),
     %io:format("~p~n", [Range2]),
     %io:format("~p~n", [Expected]),
     not lists:member(Val, Expected) and intersects_ranges(Range1, Range2);
-%intersects(?RANGE_INEQUALITY(Val), {?RANGE(Bound, Val, Bound, Val), _}) -> false;
 intersects(Range1, {Range2, _Excluded}) ->
     %io:format(">> intersects 2:~n", []),
     %io:format("~p~n", [Range1]),
     %io:format("~p~n", [Range2]),
-
     intersects_ranges(Range1, Range2).
 
 intersects_ranges(_, ?RANGE_INFINITY) -> true;
@@ -282,21 +241,6 @@ intersection_test() ->
     ?assertEqual(true, intersects(Range4, {Range3, [4]})),
     ?assertEqual(true, intersects(Range5, {Range3, [4]})),
     ?assertEqual(false, intersects(Range7, {Range1, []})).
-
-%%notequality_intersection_test() ->
-%%    Infinity = ?RANGE_INFINITY,
-%%    Range1 = to_range(notequality, 2005),
-%%    Range2 = to_range(lessereq, 2008),
-%%    Range3 = to_range(greatereq, 2003),
-%%    Range4 = to_range(equality, 2005),
-%%    Range5 = to_range(notequality, 2010),
-%%
-%%    ?assertEqual(true, intersects(Infinity, Range1)),
-%%    ?assertEqual(true, intersects(Range1, Infinity)),
-%%    ?assertEqual(true, intersects(Range1, Range2)),
-%%    ?assertEqual(true, intersects(Range1, Range3)),
-%%    ?assertEqual(false, intersects(Range1, Range4)),
-%%    ?assertEqual(true, intersects(Range5, Range1)).
 
 range_test() ->
     Conditions = [

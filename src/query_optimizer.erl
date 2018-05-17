@@ -104,7 +104,6 @@ apply_filter(Conditions, Table, TxId) ->
     case is_disjunction(Conditions) of
         true ->
             lists:foldl(fun(Conjunction, FinalRes) ->
-                %PartialResult = iterate_conditions(Conjunction, Table, TxId, []),
                 {RemainConds, PartialRes} = read_subqueries(Conjunction, Table, TxId, [], nil),
                 PartialResult = read_remaining(RemainConds, Table, PartialRes, TxId),
 
@@ -182,9 +181,6 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                     end;
                 CurrentData ->
                     %io:format("CurrentData: ~p~n", [CurrentData]),
-                    %lists:foldl(fun(Condition, PartRes) ->
-                    %    filter_objects(Condition, Table, PartRes, TxId)
-                    %end, CurrentData, Conditions)
                     iterate_ranges(RangeQueries, Table, CurrentData, TxId)
             end
     end.
@@ -195,10 +191,6 @@ iterate_ranges(RangeQueries, Table, TxId) ->
     Keys = indexing:read_index(primary, TableName, TxId),
     Data = read_records(Keys, TableName, TxId),
     iterate_ranges(RangeQueries, Table, Data, TxId).
-    %dict:fold(fun(Column, Range, AccObjs) ->
-    %    FilterFun = read_predicate(Range),
-    %    filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
-    %end, Data, RangeQueries).
 
 iterate_ranges(RangeQueries, Table, Data, TxId) ->
     dict:fold(fun(Column, Range, AccObjs) ->
@@ -379,7 +371,6 @@ read_predicate(Range) ->
             Pred;
         {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
             fun(V) -> Pred1(V) andalso Pred2(V) end
-        %Pred when is_function(Pred) -> Pred
     end.
 
 read_pk_predicate(Range) ->
@@ -390,7 +381,6 @@ read_pk_predicate(Range) ->
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:table(Table),
     dict:fold(fun(Column, _Range, {RemainAcc, IdxAcc}) ->
-        %?CONDITION(Column, _Comp, _Val) = Col,
         case is_func(Column) of
             true -> {lists:append(RemainAcc, [Column]), IdxAcc};
             false ->
