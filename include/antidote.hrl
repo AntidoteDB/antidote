@@ -176,11 +176,14 @@
 }).
 
 %%---------------------------------------------------------------------
--type downstream_record() :: term().
 -type actor() :: term().
 -type key() :: term().
--type op() :: {update | merge, downstream_record()}.
 -type type() :: atom().
+-type op_name() :: atom().
+-type op_param() :: term().
+-type op() :: {op_name(), op_param()}.
+-type effect() :: term().
+
 -type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
 -type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
@@ -194,7 +197,7 @@
 -record(clocksi_payload, {
     key :: key(),
     type :: type(),
-    op_param :: op(),
+    op_param :: effect(),
     snapshot_time :: snapshot_time(),
     commit_time :: dc_and_commit_time(),
     txid :: txid()
@@ -230,14 +233,12 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()}
                            | {error, connection_error}}.
 
--type op_name() :: atom().
--type op_param() :: term().
 -type bound_object() :: {key(), type(), bucket()}.
 
 -type module_name() :: atom().
 -type function_name() :: atom().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
+-export_type([key/0, effect/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
               bucket/0,
@@ -245,44 +246,9 @@
               op_param/0, op_name/0,
               bound_object/0,
               module_name/0,
-              function_name/0]).
+              function_name/0,
+              clocksi_payload/0]).
 
-%%---------------------------------------------------------------------
-%% @doc Data Type: state
-%% where:
-%%    from: the pid of the calling process.
-%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
-%%    updated_partitions: the partitions where update operations take place.
-%%    num_to_ack: when sending prepare_commit,
-%%                number of partitions that have acked.
-%%    num_to_read: when sending read requests
-%%                 number of partitions that are asked.
-%%    prepare_time: transaction prepare time.
-%%    commit_time: transaction commit time.
-%%    state: state of the transaction: {active|prepared|committing|committed}
-%%----------------------------------------------------------------------
-
--record(tx_coord_state, {
-    from :: undefined | {pid(), term()} | pid(),
-    transaction :: undefined | tx(),
-    updated_partitions :: list(),
-    client_ops :: list(), % list of upstream updates, used for post commit hooks
-    num_to_ack :: non_neg_integer(),
-    num_to_read :: non_neg_integer(),
-    prepare_time :: clock_time(),
-    commit_time :: undefined | clock_time(),
-    commit_protocol :: term(),
-    state :: active | prepared | committing
-           | committed | committed_read_only
-           | undefined | aborted,
-    operations :: undefined | list() | {update_objects, list()},
-    return_accumulator :: list() | ok | {error, reason()},
-    internal_read_set :: orddict:orddict(),
-    is_static :: boolean(),
-    full_commit :: boolean(),
-    properties :: txn_properties(),
-    stay_alive :: boolean()
-}).
 
 %% The record is using during materialization to keep the
 %% state needed to materialize an object from the cache (or log)
@@ -297,14 +263,4 @@
     snapshot_time :: snapshot_time() | ignore,
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
-}).
-
-%% This record keeps the state of the materializer vnode
-%% It is defined here as it is also used by the
-%% clocksi_read_item_fsm as pointers to the materializer's ets caches
--record(mat_state, {
-    partition :: partition_id(),
-    ops_cache :: cache_id(),
-    snapshot_cache :: cache_id(),
-    is_ready :: boolean()
 }).

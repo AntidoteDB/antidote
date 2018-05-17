@@ -52,7 +52,6 @@
 %% Spawn
 -record(state, {partition :: partition_id(),
                 id :: non_neg_integer(),
-                mat_state :: #mat_state{},
                 prepared_cache ::  cache_id(),
                 self :: atom()}).
 
@@ -188,13 +187,9 @@ generate_random_server_name(Node, Partition) ->
 
 init([Partition, Id]) ->
     Addr = node(),
-    OpsCache = materializer_vnode:get_cache_name(Partition, ops_cache),
-    SnapshotCache = materializer_vnode:get_cache_name(Partition, snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition, prepared),
-    MatState = #mat_state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
     Self = generate_server_name(Addr, Partition, Id),
     {ok, #state{partition=Partition, id=Id,
-                mat_state = MatState,
                 prepared_cache=PreparedCache, self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction, PropertyList}, Coordinator, SD0) ->
@@ -211,7 +206,7 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyLis
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
                    ok.
 perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
-              SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
+              _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
@@ -220,7 +215,7 @@ perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
         _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}),
         ok;
     ready ->
-        return(Coordinator, Key, Type, Transaction, PropertyList, SD0)
+        return(Coordinator, Key, Type, Transaction, PropertyList, Partition)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -261,23 +256,22 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm, pid()} | {pid(), term()}, key(), type(), #transaction{}, read_property_list(), #state{}) -> ok.
-return(Coordinator, Key, Type, Transaction, PropertyList,
-       #state{mat_state = MatState}) ->
+-spec return({fsm, pid()} | {pid(), term()}, key(), type(), #transaction{}, read_property_list(), partition_id()) -> ok.
+return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, MatState) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
+                    gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
             end;
         {error, Reason} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_fsm:send_event(Sender, {error, Reason});
+                    gen_statem:cast(Sender, {error, Reason});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {error, Reason})
             end

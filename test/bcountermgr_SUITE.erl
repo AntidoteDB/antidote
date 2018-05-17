@@ -41,7 +41,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(TYPE, antidote_crdt_bcounter).
+-define(TYPE, antidote_crdt_counter_b).
 -define(BUCKET, bcounter_bucket).
 -define(RETRY_COUNT, 5).
 
@@ -129,7 +129,7 @@ test_dec_multi_success1(Config) ->
 conditional_write_test_run(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     [Node1, Node2 | _OtherNodes] = Nodes,
-    Type = antidote_crdt_bcounter,
+    Type = antidote_crdt_counter_b,
     Key = bcounter6_mgr,
     BObj = {Key, Type, ?BUCKET},
 

@@ -61,7 +61,7 @@ all() -> [object_log_state_test].
 object_log_state_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    Type = antidote_crdt_orset,
+    Type = antidote_crdt_set_aw,
     Key = object_log_state_test,
     Bucket = object_log_state_bucket,
     BoundObject = {Key, Type, Bucket},
@@ -93,7 +93,7 @@ object_log_state_test(Config) ->
 check_orset_ops([], [], _KeyBucket) ->
     ok;
 check_orset_ops([Val|Rest1],
-        [{_Id, #clocksi_payload{key = KeyBucket, type = antidote_crdt_orset, op_param = [{Val, _Binary, []}]}}
+        [{_Id, #clocksi_payload{key = KeyBucket, type = antidote_crdt_set_aw, op_param = [{Val, _Binary, []}]}}
          | Rest2],
         KeyBucket) ->
     check_orset_ops(Rest1, Rest2, KeyBucket).

@@ -15,10 +15,13 @@
                   antidote_pb,
                   erlzmq,
                   rand_compat,
+                  runtime_tools,
+                  tools,
                   prometheus,
                   elli,
                   elli_prometheus,
-                  prometheus_process_collector
+                  prometheus_process_collector,
+                  vectorclock
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables

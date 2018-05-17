@@ -3,6 +3,7 @@ REBAR ?= $(shell pwd)/rebar3
 test:
 	mkdir -p logs
 	${REBAR} eunit skip_deps=true
+	${REBAR} cover
 
 systests: rel
 	rm -f test/*.beam

@@ -85,7 +85,7 @@ Start a new transaction and increment the value of a bounded counter. By default
 
 ```erlang
 {ok, TxId} = antidote:start_transaction(ignore, []).
-antidote:update_objects([{ {counter_key, antidote_crdt_bcounter, test_bucket}, increment, {10, client1}}], TxId).
+antidote:update_objects([{ {counter_key, antidote_crdt_counter_b, test_bucket}, increment, {10, client1}}], TxId).
 antidote:commit_transaction(TxId).
 # output: {ok, ...}
 ```
@@ -94,7 +94,7 @@ The counter can be decremented in the replica where it was created:
 
 ```erlang
 {ok, TxId1} = antidote:start_transaction(ignore, []).
-antidote:update_objects([{ {counter_key, antidote_crdt_bcounter, test_bucket}, decrement, {1, client1}}], TxId1).
+antidote:update_objects([{ {counter_key, antidote_crdt_counter_b, test_bucket}, decrement, {1, client1}}], TxId1).
 antidote:commit_transaction(TxId1).
 # output: {ok, ...}
 ```
@@ -103,15 +103,15 @@ And the value of the counter can be read on the other replica (use the other ter
 
 ```erlang
 {ok, TxId} = antidote:start_transaction(ignore, []).
-{ok, [Obj]} = antidote:read_objects([{counter_key, antidote_crdt_bcounter, test_bucket}], TxId).
-antidote_crdt_bcounter:permissions(Obj).
+{ok, [Obj]} = antidote:read_objects([{counter_key, antidote_crdt_counter_b, test_bucket}], TxId).
+antidote_crdt_counter_b:permissions(Obj).
 # output: 9
 ```
 
 But cannot be decremented:
 
 ```erlang
-{error, _} = antidote:update_objects([{ {counter_key, antidote_crdt_bcounter, test_bucket}, decrement, {1, client2}}], TxId).
+{error, _} = antidote:update_objects([{ {counter_key, antidote_crdt_counter_b, test_bucket}, decrement, {1, client2}}], TxId).
 # output: {error,{aborted, ...}}
 ```
 
@@ -120,7 +120,7 @@ After the resources are transfered between nodes, it is possible to decrement th
 
 ```erlang
 {ok, TxId1} = antidote:start_transaction(ignore, []).
-antidote:update_objects([{ {counter_key, antidote_crdt_bcounter, test_bucket}, decrement, {1, client2}}], TxId1).
+antidote:update_objects([{ {counter_key, antidote_crdt_counter_b, test_bucket}, decrement, {1, client2}}], TxId1).
 antidote:commit_transaction(TxId1).
 # output: {ok, ...}
 ```

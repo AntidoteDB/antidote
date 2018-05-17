@@ -31,7 +31,7 @@ RUN chmod a+x /opt/antidote/start_and_attach.sh \
   && chmod a+x /entrypoint.sh
 
 # Distributed Erlang Port Mapper
-EXPOSE 4368
+EXPOSE 4369
 # Ports for Antidote
 EXPOSE 8085 8086 8087 8099
 
