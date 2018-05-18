@@ -153,7 +153,7 @@ lookup_value(ColumnName, Record) ->
         undefined -> undefined
     end.
 
-crdt_to_op(?CRDT_INTEGER, Value) -> {set, Value};
+crdt_to_op(?CRDT_INTEGER, Value) -> {assign, Value};
 crdt_to_op(?CRDT_VARCHAR, Value) -> {assign, Value};
 crdt_to_op(?CRDT_BOOLEAN, Value) ->
     case Value of

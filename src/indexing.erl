@@ -100,6 +100,7 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
                 _Else ->
                     %lager:info("A table exists! Metadata: ~p~n", [Table]),
                     [PIdxKey] = querying_utils:build_keys(generate_pindex_key(TableName), ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+
                     PIdxUpdate = {PIdxKey, add, Key},
                     Indexes = table_utils:indexes(Table),
                     SIdxUpdates = lists:foldl(fun(Operation, IdxUpdates2) ->
@@ -113,8 +114,9 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
                                 lists:append(IdxUpdates2, AuxUpdates)
                         end
                     end, [], Updates),
+                    %lager:info("SIdxUpdates: ~p~n", [SIdxUpdates]),
                     ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, ignore)),
-                    %io:format("ToDBUpdate: ~p~n", [ToDBUpdate]),
+                    %lager:info("ToDBUpdate: ~p~n", [ToDBUpdate]),
                     ToDBUpdate
             end;
         _ -> []
@@ -188,6 +190,7 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
         %IdxUpdate = lists:map(fun({CRDT, Pk, Op}) ->
         %    querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {CRDT, Pk, Op})
         %end, EntryValue),
+        %lager:info("IndexKey: ~p~n", [IndexKey]),
         IdxUpdate = case is_list(Op) of
                         true ->
                             lists:map(fun(Op2) ->
@@ -196,6 +199,7 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
                         false -> [querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op})]
                     end,
 
+        %lager:info("IdxUpdate: ~p~n", [IdxUpdate]),
         %UpdEntry = {EntryKey, EntryValue},
         %io:format("UpdEntry: ~p~n", [UpdEntry]),
         %PrepareUpd = prepare_update(IndexKey, add_all, UpdEntry),

@@ -235,7 +235,7 @@ get_value(Type, CRDTValue) ->
 %% A special case for a bounded counter, where the value of an index entry
 %% supported by this CRDT corresponds to the difference between the sum of
 %% increments and the sum of decrements.
-calc_value(antidote_crdt_bcounter, {Inc, Dec}) ->
+calc_value(antidote_crdt_counter_b, {Inc, Dec}) ->
     IncList = orddict:to_list(Inc),
     DecList = orddict:to_list(Dec),
     SumInc = sum_values(IncList),
@@ -323,22 +323,22 @@ tree_insertions(Number, TreeAcc) ->
 new_test() ->
     ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new()),
     ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new(dummytype)),
-    ?assertEqual({antidote_crdt_lwwreg, gb_trees:empty(), dict:new()}, new(antidote_crdt_lwwreg)).
+    ?assertEqual({antidote_crdt_register_lww, gb_trees:empty(), dict:new()}, new(antidote_crdt_register_lww)).
 
 update_test() ->
-    Index1 = new(antidote_crdt_lwwreg),
-    {ok, DownstreamOp} = downstream({update, {antidote_crdt_lwwreg, key1, {assign, "col"}}}, Index1),
-    ?assertMatch({update, {antidote_crdt_lwwreg, key1, {_TS, "col"}}}, DownstreamOp),
+    Index1 = new(antidote_crdt_register_lww),
+    {ok, DownstreamOp} = downstream({update, {antidote_crdt_register_lww, key1, {assign, "col"}}}, Index1),
+    ?assertMatch({update, {antidote_crdt_register_lww, key1, {_TS, "col"}}}, DownstreamOp),
     {ok, Index2} = update(DownstreamOp, Index1),
     Set = ordsets:add_element(key1, ordsets:new()),
     ?assertEqual([{"col", Set}], value(Index2)).
 
 update2_test() ->
     Index1 = new(),
-    {ok, DownstreamOp} = downstream({update, {antidote_crdt_orset, key1, {add, <<"elem">>}}}, Index1),
+    {ok, DownstreamOp} = downstream({update, {antidote_crdt_set_aw, key1, {add, <<"elem">>}}}, Index1),
     {ok, Index2} = update(DownstreamOp, Index1),
 
-    {ok, DownstreamOp2} = downstream({update, {antidote_crdt_integer, key1, {increment, 5}}}, Index1),
+    {ok, DownstreamOp2} = downstream({update, {antidote_crdt_counter_pn, key1, {increment, 5}}}, Index1),
     {ok, Index3} = update(DownstreamOp2, Index1),
     Set = ordsets:add_element(key1, ordsets:new()),
 
@@ -347,16 +347,16 @@ update2_test() ->
 
 update3_test() ->
     Index1 = new(),
-    {ok, DownstreamOp} = downstream({update, {antidote_crdt_lwwreg, key1, {assign, "col"}}}, Index1),
+    {ok, DownstreamOp} = downstream({update, {antidote_crdt_register_lww, key1, {assign, "col"}}}, Index1),
     {ok, Index2} = update(DownstreamOp, Index1),
-    Response = downstream({update, {antidote_crdt_integer, key2, {assign, 2}}}, Index2),
+    Response = downstream({update, {antidote_crdt_counter_pn, key2, {assign, 2}}}, Index2),
     ?assertEqual({error, wrong_type}, Response).
 
 equal_test() ->
     Index1 = new(),
-    {ok, DownstreamOp1} = downstream({update, {antidote_crdt_lwwreg, key1, {assign, "col1"}}}, Index1),
-    {ok, DownstreamOp2} = downstream({update, {antidote_crdt_lwwreg, key1, {assign, "col2"}}}, Index1),
-    {ok, DownstreamOp3} = downstream({update, {antidote_crdt_integer, key1, {increment, 1}}}, Index1),
+    {ok, DownstreamOp1} = downstream({update, {antidote_crdt_register_lww, key1, {assign, "col1"}}}, Index1),
+    {ok, DownstreamOp2} = downstream({update, {antidote_crdt_register_lww, key1, {assign, "col2"}}}, Index1),
+    {ok, DownstreamOp3} = downstream({update, {antidote_crdt_counter_pn, key1, {increment, 1}}}, Index1),
     {ok, Index2} = update(DownstreamOp1, Index1),
     {ok, Index3} = update(DownstreamOp2, Index1),
     {ok, Index4} = update(DownstreamOp3, Index1),
@@ -386,9 +386,9 @@ bound_search_test() ->
 range_test() ->
     Index1 = new(),
     Updates = [
-        {antidote_crdt_lwwreg, "col1", {assign, 1}}, {antidote_crdt_lwwreg, "col2", {assign, 2}},
-        {antidote_crdt_lwwreg, "col3", {assign, 3}}, {antidote_crdt_lwwreg, "col4", {assign, 4}},
-        {antidote_crdt_lwwreg, "col5", {assign, 5}}, {antidote_crdt_lwwreg, "col6", {assign, 6}}
+        {antidote_crdt_register_lww, "col1", {assign, 1}}, {antidote_crdt_register_lww, "col2", {assign, 2}},
+        {antidote_crdt_register_lww, "col3", {assign, 3}}, {antidote_crdt_register_lww, "col4", {assign, 4}},
+        {antidote_crdt_register_lww, "col5", {assign, 5}}, {antidote_crdt_register_lww, "col6", {assign, 6}}
     ],
     {ok, DownstreamOp1} = downstream({update, Updates}, Index1),
     {ok, Index2} = update(DownstreamOp1, Index1),
