@@ -330,7 +330,7 @@ create_dc_pb(Address, Port, Nodes) ->
                             atom_to_list(Node)
                           end, Nodes),
   Request = antidote_pb_codec:encode(create_dc, NodesString),
-  Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+  Result = antidotec_pb_socket:call_infinity(Pid, {req, Request, ?TIMEOUT}),
   Response = case Result of
       {error, timeout} ->
           {error, timeout};
@@ -351,7 +351,7 @@ create_dc_pb(Address, Port, Nodes) ->
 connect_to_dcs(Address, Port, Descriptors) ->
     {ok, Pid} = antidotec_pb_socket:start(Address, Port),
     Request = antidote_pb_codec:encode(connect_to_dcs, Descriptors),
-    Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+    Result = antidotec_pb_socket:call_infinity(Pid, {req, Request, ?TIMEOUT}),
     Response = case Result of
         {error, timeout} ->
             {error, timeout};
@@ -372,7 +372,7 @@ connect_to_dcs(Address, Port, Descriptors) ->
 get_connection_descriptor(Address, Port) ->
     {ok, Pid} = antidotec_pb_socket:start(Address, Port),
     Request = antidote_pb_codec:encode(get_connection_descriptor, ignore),
-    Result = antidotec_pb_socket:call_infinity(Pid,{req, Request, ?TIMEOUT}),
+    Result = antidotec_pb_socket:call_infinity(Pid, {req, Request, ?TIMEOUT}),
     Response = case Result of
         {error, timeout} ->
             {error, timeout};
