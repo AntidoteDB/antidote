@@ -20,7 +20,7 @@
 
 %% ------------------------------------------------------------------
 %% @author pedrolopes
-%% @doc module antidote_crdt_gindex - A grow-only index
+%% @doc module antidote_crdt_index_go - A grow-only index
 %%
 %% An operation-based CRDT, very similar to antidote_crdt_gmap.
 %% It keeps two maps, the index map and the indirection map:
@@ -32,7 +32,7 @@
 %% This CRDT does not support entry deletions.
 %% ------------------------------------------------------------------
 
--module(antidote_crdt_gindex).
+-module(antidote_crdt_index_go).
 -behaviour(antidote_crdt).
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).

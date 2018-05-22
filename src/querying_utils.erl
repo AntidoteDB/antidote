@@ -28,7 +28,7 @@
 %%%-------------------------------------------------------------------
 -module(querying_utils).
 
--define(CRDT_INDEX, antidote_crdt_gindex).
+-define(CRDT_INDEX, antidote_crdt_index_go).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
 -define(INVALID_OP_MSG(Operation, CRDT), ["The operation ", Operation, " is not part of the ", CRDT, " specification"]).

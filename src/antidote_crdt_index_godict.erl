@@ -32,7 +32,7 @@
 %% This CRDT does not support entry deletions.
 %% ------------------------------------------------------------------
 
--module(antidote_crdt_gindex_orddict).
+-module(antidote_crdt_index_godict).
 -behaviour(antidote_crdt).
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).
@@ -57,7 +57,7 @@
 
 -type gindex() :: {gindex_type(), indexmap(), indirectionmap()}.
 -type gindex_type() :: atom().
--type indexmap() :: orddict:orddict(Key::term(), NestedState::term()).
+-type indexmap() :: dict:dict(Key::term(), NestedState::term()).
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
 -type pred_type() :: greater | greatereq | lesser | lessereq.
@@ -83,31 +83,32 @@
 
 -spec new() -> gindex().
 new() ->
-    {undefined, orddict:new(), dict:new()}.
+    {undefined, dict:new(), dict:new()}.
 
 -spec new(term()) -> gindex().
 new(Type) ->
     case antidote_crdt:is_type(Type) of
-        true -> {Type, orddict:new(), dict:new()};
+        true -> {Type, dict:new(), dict:new()};
         false -> new()
     end.
 
 -spec value(gindex()) -> value_output().
 value({_Type, Index, _Indirection}) ->
-    Index.
+    lists:sort(dict:to_list(Index)).
 
 -spec value(gindex_query(), gindex()) -> value_output().
 value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
     case validate_pred(lower, LowerPred) andalso validate_pred(upper, UpperPred) of
         true ->
-            orddict:filter(fun(Key, _Value) ->
+            Filtered = dict:filter(fun(Key, _Value) ->
                 apply_pred(LowerPred, Key) andalso apply_pred(UpperPred, Key)
-            end, Index);
+            end, Index),
+            lists:sort(dict:to_list(Filtered));
         false ->
             throw(?WRONG_PRED)
     end;
 value({get, Key}, {_Type, Index, _Indirection}) ->
-    case orddict:find(Key, Index) of
+    case dict:find(Key, Index) of
         {ok, Value} -> {Key, Value};
         error -> {error, key_not_found}
     end;
@@ -209,18 +210,18 @@ index_type({_Index, Indirection}, Default) ->
     end.
 
 update_index(OldEntryKey, NewEntryKey, EntryValue, Index) ->
-    Removed = case orddict:find(OldEntryKey, Index) of
+    Removed = case dict:find(OldEntryKey, Index) of
                   {ok, Set} ->
                       case ordsets:is_element(EntryValue, Set) of
-                          true -> orddict:update(OldEntryKey, fun(_OldSet) -> ordsets:del_element(EntryValue, Set) end, Index);
+                          true -> dict:update(OldEntryKey, fun(_OldSet) -> ordsets:del_element(EntryValue, Set) end, Index);
                           false -> full_search(EntryValue, Index)
                       end;
                   error -> Index
               end,
 
-    case orddict:find(NewEntryKey, Removed) of
-        {ok, Set2} -> orddict:update(NewEntryKey, fun(_OldSet) -> ordsets:add_element(EntryValue, Set2) end, Removed);
-        error -> orddict:store(NewEntryKey, ordsets:add_element(EntryValue, ordsets:new()), Removed)
+    case dict:find(NewEntryKey, Removed) of
+        {ok, Set2} -> dict:update(NewEntryKey, fun(_OldSet) -> ordsets:add_element(EntryValue, Set2) end, Removed);
+        error -> dict:store(NewEntryKey, ordsets:add_element(EntryValue, ordsets:new()), Removed)
     end.
 
 get_value(_Type, undefined) -> undefined;
@@ -278,7 +279,7 @@ filter({Fun, Params}, {Key, Value}, Acc) ->
 
 full_search(EntryValue, Index) ->
     FilterFun = fun([Set, V]) -> ordsets:is_element(V, Set) end,
-    FilterRes = orddict:fold(fun(Key, Value, Acc) ->
+    FilterRes = dict:fold(fun(Key, Value, Acc) ->
         filter({FilterFun, [value, EntryValue]}, {Key, Value}, Acc)
     end, [], Index),
 
@@ -286,7 +287,7 @@ full_search(EntryValue, Index) ->
         [] -> Index;
         Entries ->
             lists:foldl(fun({Key, Value}, AccIndex) ->
-                orddict:update(Key, fun(_OldSet) -> ordsets:del_element(EntryValue, Value) end, AccIndex)
+                dict:update(Key, fun(_OldSet) -> ordsets:del_element(EntryValue, Value) end, AccIndex)
             end, Index, Entries)
     end.
 
@@ -306,9 +307,9 @@ apply_pred({_Type, Func}, Param) ->
 -ifdef(TEST).
 
 new_test() ->
-    ?assertEqual({undefined, orddict:new(), dict:new()}, new()),
-    ?assertEqual({undefined, orddict:new(), dict:new()}, new(dummytype)),
-    ?assertEqual({antidote_crdt_register_lww, orddict:new(), dict:new()}, new(antidote_crdt_register_lww)).
+    ?assertEqual({undefined, dict:new(), dict:new()}, new()),
+    ?assertEqual({undefined, dict:new(), dict:new()}, new(dummytype)),
+    ?assertEqual({antidote_crdt_register_lww, dict:new(), dict:new()}, new(antidote_crdt_register_lww)).
 
 update_test() ->
     Index1 = new(antidote_crdt_register_lww),
