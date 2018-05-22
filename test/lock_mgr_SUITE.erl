@@ -35,7 +35,8 @@
          lock_aquisition_test/1,
          some_test/1,
          get_lock_owned_by_other_dc_1/1,
-         get_lock_owned_by_other_dc_2/1
+         get_lock_owned_by_other_dc_2/1,
+         multi_value_register_test/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -70,7 +71,8 @@ all() -> [
          locks_required_by_another_transaction_2,
          lock_aquisition_test,
          some_test,
-         get_lock_owned_by_other_dc_2
+         get_lock_owned_by_other_dc_2,
+         multi_value_register_test
         ].
 
 
@@ -255,15 +257,69 @@ helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
             ?assertEqual([],Keys--Used_Keys1),
             {ok, _Clock1} = rpc:call(Current_Node, antidote, commit_transaction, [TxId1]),
             Lock_Info1_2 = rpc:call(Current_Node, lock_mgr, local_locks_info, []),
-            ?assertEqual(false, lists:keyfind(TxId1,1,Lock_Info1_2));
+            ?assertEqual(false, lists:keyfind(TxId1,1,Lock_Info1_2)),
+            
+            helper_do_lock_requests(Remaining_Nodes, Keys);
         {error,{error,_Missing_Locks}} ->
             helper_do_lock_requests([Current_Node|Remaining_Nodes], Keys)
     end.
 
     
+multi_value_register_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node3 = hd(hd(tl(Nodes))),
+    Node4 = hd(hd(tl(tl(Nodes)))),
+    Key = multi_value_register,
+    Bound_object = {Key, antidote_crdt_register_mv, antidote_bucket},
+    Updates_List=[{[[]],Node1,<<"n1">>},{<<"n1">>,Node3,<<"x2">>},{<<"x2">>,Node3,<<"x3">>},{<<"x3">>,Node4,<<"y4">>},{<<"y4">>,Node1,<<"n5">>}
+                    ,{<<"n5">>,Node1,<<"n6">>},{<<"n6">>,Node4,<<"y7">>},{<<"y7">>,Node1,<<"n8">>},{<<"n8">>,Node3,<<"x9">>},{<<"x9">>,Node4,<<"y10">>}],
+    
+    helper_multi_value_register_test(Updates_List,[Key],Bound_object).
     
     
     
+    
+helper_multi_value_register_test([],_,_)-> ok;
+helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes],Keys,Object)->
+    case rpc:call(Current_Node, cure, start_transaction, [ignore, [{locks,Keys}]]) of 
+        {ok, TxId1} ->
+            case Value2 of
+                <<"n1">> -> ok;
+                _ ->
+                    {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
+                    ?assertEqual(Value1,Read_Val)
+            end,
+            
+            ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
+
+            
+            {ok, _Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
+        
+            helper_multi_value_register_test(Remaining_Nodes, Keys, Object);
+        {error,{error,_Missing_Locks}} ->
+            helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object)
+    end.    
+helper_multi_value_register_test([],_,_,_)-> ok;
+helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes],Keys,Object,Snapshot)->
+    case rpc:call(Current_Node, cure, start_transaction, [Snapshot, [{locks,Keys}]]) of 
+        {ok, TxId1} ->
+            case Value2 of
+                n1 -> ok;
+                _ ->
+                    {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
+                    ?assertEqual(Value1,Read_Val)
+            end,
+            
+            ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
+
+            
+            {ok, Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
+        
+            helper_multi_value_register_test(Remaining_Nodes, Keys, Object,Clock1);
+        {error,{error,_Missing_Locks}} ->
+            helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object,Snapshot)
+    end. 
 some_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),

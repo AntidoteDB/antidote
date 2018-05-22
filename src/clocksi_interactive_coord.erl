@@ -681,11 +681,19 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     }.
 %% @doc TODO
 %% #Locks
-start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic},Locks) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
+start_tx_internal_with_locks(From, _ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic},Locks) ->
+    
+    % Make sure that the clock is allways updated (if update clock is not defined it will automatically set it to true)
+    New_Properties = lists:keydelete(update_clock,1,Properties),
+    % Make sure that that all data entries up to date      TODO optimization potential
+    New_Client_Clock = create_client_clock(),
+    {Transaction, TransactionId} = create_transaction_record(New_Client_Clock, StayAlive, From, false, New_Properties),
     %lager:info("start_tx_internal(From: ~w, Properties: ~w, StayAlive: ~w, IsStatic: ~w)",[From,Properties,StayAlive,IsStatic]),
     case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
-        {ok,Snapshot} -> wait_for_clock(Snapshot),
+        {ok,_Snapshot} -> 
+            %ok = wait_for_partition_updates(),
+            
+            
             case IsStatic of
             true ->
                 %lager:info("start_tx_internal- ok",[]),
@@ -696,7 +704,7 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
             end,
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
-            State#coord_state{transaction = Transaction, num_to_read = 0, properties = Properties, transactionid = TransactionId};
+            State#coord_state{transaction = Transaction, num_to_read = 0, properties = New_Properties, transactionid = TransactionId};
         
         % TODO Necessary to send an error message to From, when the lock were not aquired ?
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
@@ -709,6 +717,49 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
             {stop, "Transaction using the locks: "}   %%TODO
     end.
     
+
+create_client_clock() ->
+     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
+    {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
+    _SnapshotTime = dict:map(fun(_Key,_Value)-> Now end, VecSnapshotTime).
+         
+
+%% Waits until the partition is up to date.
+%% (The snapshot time of each partition is greater than the time when this function was called)
+%-spec wait_for_partition_updates() -> ok.
+%wait_for_partition_updates()->
+%    Time_To_Wait_For = dc_utilities:now_microsec(),
+%    {ok, SS} = dc_utilities:get_stable_snapshot(),
+%    case dict:size(SS) of
+%        0 -> ok;
+%        _Size -> 
+%            [{_Key,Value}| _Tail] = dict:to_list(SS),
+%            if 
+%                Value < Time_To_Wait_For -> 
+%                    timer:sleep(10),
+%                    wait_for_partition_updates(Time_To_Wait_For);
+%                true ->
+%                    ok
+%            end
+%    end.
+%
+%-spec wait_for_partition_updates(non_neg_integer()) -> ok.
+%wait_for_partition_updates(Time_To_Wait_For)->
+%    {ok, SS} = dc_utilities:get_stable_snapshot(),
+%    case dict:size(SS) of
+%        0 -> ok;
+%        _Size -> 
+%            [{_Key,Value}| _Tail] = dict:to_list(SS),
+%            if 
+%                Value < Time_To_Wait_For -> 
+%                    timer:sleep(10),
+%                    wait_for_partition_updates(Time_To_Wait_For);
+%                true ->
+%                    ok
+%            end
+%    end.                
+          
+
 
 %% @doc This function tries to aquire the specified locks, if this fails it will retry after 100ms
 %% for a maximum number of times (Timeout div 100).
