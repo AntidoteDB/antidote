@@ -30,9 +30,9 @@
 
 %% tests
 -export([simple_transaction_tests_with_locks/1,
-		locks_required_by_another_transaction_1/1,
-		locks_required_by_another_transaction_2/1,
-         lock_aquisition_test/1,
+		locks_in_sequence_check/1,
+		locks_required_by_another_transaction/1,
+         lock_acquisition_test/1,
          some_test/1,
          get_lock_owned_by_other_dc_1/1,
          get_lock_owned_by_other_dc_2/1,
@@ -67,15 +67,16 @@ end_per_testcase(_, _) ->
 
 all() -> [
          simple_transaction_tests_with_locks,
-         locks_required_by_another_transaction_1,
-         locks_required_by_another_transaction_2,
-         lock_aquisition_test,
+         locks_in_sequence_check,
+         locks_required_by_another_transaction,
+         lock_acquisition_test,
          some_test,
          get_lock_owned_by_other_dc_2,
          multi_value_register_test
         ].
 
-
+%% Checks if a transaction on the leading(may create new locks) node can aquire never used
+%% locks, do some updates and then releases them when the transaction is committed
 simple_transaction_tests_with_locks(Config) ->
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Type = antidote_crdt_counter_pn,
@@ -92,19 +93,21 @@ simple_transaction_tests_with_locks(Config) ->
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     %% update objects one by one.
     txn_seq_update_check(Node, TxId, Updates),
-    %% read objects one by one
+    % read objects one by one
     txn_seq_read_check(Node, TxId, Objects, [1, 2, 3, 4]),
     {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
-    %% read objects all at once
+    % read objects all at once
     {ok, Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
     {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    % checks if all locks are released
     Lock_Info2 = rpc:call(Node, lock_mgr, local_locks_info, []),
     false = lists:keyfind(TxId,1,Lock_Info2),
+    % checks if the updates were successful
     ?assertEqual([1, 2, 3, 4], Res).
-   
-locks_required_by_another_transaction_1(Config) ->
+
+%% test if after a transaction released some lock another transaction on the same node can aquire them
+locks_in_sequence_check(Config) ->
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -115,7 +118,6 @@ locks_required_by_another_transaction_1(Config) ->
     {error,{error,[{_TxId,Missing_Keys}]}} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     ?assertEqual(length(Keys),length(Missing_Keys)),
     ?assertEqual([],Keys -- Missing_Keys),
-    
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     IncValues = [1, 2, 3, 4],
@@ -130,24 +132,18 @@ locks_required_by_another_transaction_1(Config) ->
     txn_seq_update_check(Node, TxId, Updates),
     %% read objects one by one
     txn_seq_read_check(Node, TxId, Objects, [1, 2, 3, 4]),
-    {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-    
-    
+    {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]), 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
     %% read objects all at once
     {ok, _Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
     {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    
-    
-    
-    
-    
-
     Lock_Info2 = rpc:call(Node, lock_mgr, local_locks_info, []),
     false = lists:keyfind(TxId,1,Lock_Info2),
     ok.
-    
-locks_required_by_another_transaction_2(Config) ->
+
+%% starts a transaction on the leading node aquiring some lock.
+%% Tests if transactions of other nodes can not acquire a subset of these keys
+locks_required_by_another_transaction(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -158,6 +154,7 @@ locks_required_by_another_transaction_2(Config) ->
     {_,{using,Used_Keys}} = lists:keyfind(TxId,1,Lock_Info1),
     ?assertEqual(length(Keys),length(Used_Keys)),
     ?assertEqual([],Keys--Used_Keys),
+    % Test if transaction requiring the used keys can not start a transaction
     {error,{error,[{_TxId,Missing_Keys0}]}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     {error,{error,Missing_Keys2}} = rpc:call(Node3, antidote, start_transaction, [ignore, [{locks,[hd(tl(Keys))]}]]),
     {error,{error,Missing_Keys3}} = rpc:call(Node4, antidote, start_transaction, [ignore, [{locks,tl(Keys)}]]),
@@ -171,8 +168,9 @@ locks_required_by_another_transaction_2(Config) ->
     Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
     false = lists:keyfind(TxId,1,Lock_Info2),
     ok.
-
-lock_aquisition_test(Config) ->
+%% Tests if lock acquisition in multiple dcs of the same locks can propperly acquire 
+%% them and the lock_mgr manages the lock data as intendet.
+lock_acquisition_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Keys = [lock21, lock22, lock23, lock24],
@@ -205,7 +203,7 @@ lock_aquisition_test(Config) ->
     false = lists:keyfind(TxId2,1,Lock_Info4),
     false = lists:keyfind(TxId3,1,Lock_Info4),
     ok.
-
+%% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
@@ -236,17 +234,16 @@ get_lock_owned_by_other_dc_1(Config) ->
     ?assertEqual([],[lock32,lock33,lock34]--Used_Keys3),
     {ok, _Clock3} = rpc:call(Node4, antidote, commit_transaction, [TxId3]),
     ok.
-
+%% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_2(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
     Node4 = hd(hd(tl(tl(Nodes)))),
     Keys = [lock41, lock42, lock43, lock44],
-    
     Lock_request_order = [Node3,Node1,Node1,Node3,Node4,Node3,Node4,Node1],
     helper_do_lock_requests(Lock_request_order, Keys).
-    
+%% Helper function for get_lock_owned_by_other_dc_2
 helper_do_lock_requests([],_)-> ok;
 helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
     case rpc:call(Current_Node, antidote, start_transaction, [ignore, [{locks,Keys}]]) of 
@@ -258,13 +255,11 @@ helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
             {ok, _Clock1} = rpc:call(Current_Node, antidote, commit_transaction, [TxId1]),
             Lock_Info1_2 = rpc:call(Current_Node, lock_mgr, local_locks_info, []),
             ?assertEqual(false, lists:keyfind(TxId1,1,Lock_Info1_2)),
-            
             helper_do_lock_requests(Remaining_Nodes, Keys);
         {error,{error,_Missing_Locks}} ->
             helper_do_lock_requests([Current_Node|Remaining_Nodes], Keys)
     end.
-
-    
+%% Tests if a multi value register allways has the correct value when it is updated on multiple dcs using locks
 multi_value_register_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
@@ -274,12 +269,8 @@ multi_value_register_test(Config) ->
     Bound_object = {Key, antidote_crdt_register_mv, antidote_bucket},
     Updates_List=[{[[]],Node1,<<"n1">>},{<<"n1">>,Node3,<<"x2">>},{<<"x2">>,Node3,<<"x3">>},{<<"x3">>,Node4,<<"y4">>},{<<"y4">>,Node1,<<"n5">>}
                     ,{<<"n5">>,Node1,<<"n6">>},{<<"n6">>,Node4,<<"y7">>},{<<"y7">>,Node1,<<"n8">>},{<<"n8">>,Node3,<<"x9">>},{<<"x9">>,Node4,<<"y10">>}],
-    
     helper_multi_value_register_test(Updates_List,[Key],Bound_object).
-    
-    
-    
-    
+%% helper functin for multi_value_register_test
 helper_multi_value_register_test([],_,_)-> ok;
 helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes],Keys,Object)->
     case rpc:call(Current_Node, cure, start_transaction, [ignore, [{locks,Keys}]]) of 
@@ -290,10 +281,7 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
                     {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
                     ?assertEqual(Value1,Read_Val)
             end,
-            
             ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
-
-            
             {ok, _Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
         
             helper_multi_value_register_test(Remaining_Nodes, Keys, Object);
@@ -310,16 +298,13 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
                     {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
                     ?assertEqual(Value1,Read_Val)
             end,
-            
             ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
-
-            
             {ok, Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
-        
             helper_multi_value_register_test(Remaining_Nodes, Keys, Object,Clock1);
         {error,{error,_Missing_Locks}} ->
             helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object,Snapshot)
-    end. 
+    end.
+%% Tests some internal functions of lock_mgr
 some_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
@@ -330,8 +315,6 @@ some_test(Config) ->
     C = rpc:call(Node4, lock_mgr, am_i_leader, []),
     [true,false,false] = [A,B,C],
     ok.
-    
-
 
 txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->
     lists:map(fun({Object, Expected}) ->
