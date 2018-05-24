@@ -331,19 +331,6 @@ some_test(Config) ->
     [true,false,false] = [A,B,C],
     ok.
     
-    %Nodesss=lists:flatten(Nodes),
-    %DC_IDS = lists:foldl(fun(Nodee,Acc)-> 
-    %                             MyDCId = rpc:call(Nodee,dc_meta_data_utilities,get_my_dc_id,[]),
-    %                             DCDescriptors = rpc:call(Nodee,dc_meta_data_utilities,get_dc_descriptors,[]),
-    %                             AllDCIDs = lists:foldl(fun(#descriptor{dcid=Idd}, IdsList) ->
-    %                                 [Idd | IdsList]
-    %                             end, [], DCDescriptors),
-    %                             Ordd = orddict:new(),
-    %                             OrddAllDCIDs = lists:foldl(fun(Id, DCIDss) -> orddict:store(Id,0,DCIDss) end, Ordd, AllDCIDs),
-    %                             _New_Acc=[{MyDCId,OrddAllDCIDs}|Acc]
-    %                             end,
-    %                     [],Nodesss),
-    
 
 
 txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->

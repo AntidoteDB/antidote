@@ -1,17 +1,12 @@
 -module(lock_mgr).
 -behaviour(gen_server).
 
+% interface functions
 -export([start_link/0,
         get_locks/2,
-        release_locks/1,
-        remote_lock_request/2,
-         
-         sent/3,            %TODO needed ?
-         request_response/2,
-         send_locks_remote/1,
-         request_locks_remote/1
-        ]).
+        release_locks/1]).
 
+% gen_server interface functions
 -export([init/1,
          handle_call/3,
          handle_cast/2,
@@ -20,15 +15,22 @@
          code_change/3
         ]).
 
+% functions used for inter-dc-communictaion
+-export([  
+        request_response/2,
+        send_locks_remote/1,
+        request_locks_remote/1
+        ]).
+
+% functions not used
+-export([
+         sent/3
+         ]).
+
 % for testing
-%-compile(export_all).
 -export([stateinfo/0,
         local_locks_info/0,
         dets_info/0,
-        setup/0,
-        test1/0,
-        test2/0,
-        test3/0,
         am_i_leader/0
 ]).
 
@@ -40,13 +42,11 @@
 
 
 %% Data Type: state
-%% req_queue: ?
 %% local_locks: list of currently requeired and used locks  [{txid,{required,[locks()],timestamp}}|{txid,{using,[locks()]}} ]
 %% lock_requests: list of locks requested by other DCs  [{dcid,[{lock,timestamp}]}]
-%% last_transfer: ?
-%% transfer_timer: ?
+%% transfer_timer: timer to shedule periodic lock transfers
 %% dets_ref: dets table storing received and send locks [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}}}]
--record(state, {req_queue,local_locks,lock_requests, last_transfers, transfer_timer,dets_ref}).
+-record(state, {local_locks,lock_requests, transfer_timer,dets_ref}).
 -define(LOG_UTIL, log_utilities).
 -define(DATA_TYPE, antidote_crdt_counter_b).
 -define(LOCK_REQUEST_TIMEOUT, 1000000).     % Locks requested by other DCs ( in microseconds -- 1 000 000 equals 1 second)
@@ -69,46 +69,62 @@ init([]) ->
     lager:info("Started Lock manager at node ~p", [node()]),
     Timer=erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
     {ok, Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
-    {ok, #state{req_queue=orddict:new(),local_locks = orddict:new(),lock_requests=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new(),dets_ref=Ref }}.
+    {ok, #state{local_locks = orddict:new(),lock_requests=orddict:new(), transfer_timer=Timer,dets_ref=Ref }}.
 
-%% Tries to get the locks for the specified transaction TODO
--spec get_locks([key()],txid()) -> {ok,snapshot_time()} | {missing_locks, [key()]}.
+%% Locks : list of locks that are to be requested
+%% TxId : transaction id for which the locks should be reserved
+%% Tries to reserve the locks for the specified transaction
+%% Returns {ok,[snapshot_time()]} if all locks were available. The snapshot times correspond to the latest time the locks were released
+%% Returns {missing_locks, [key()]} if any requested keys are not currently owned by this dc
+%% Returns {locks_in_use, [txid()]} if all keys are owned by this dc but are in use by other transacitons
+-spec get_locks([key()],txid()) -> {ok,[snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
 get_locks(Locks,TxId) ->
     gen_server:call(?MODULE, {get_locks, TxId,Locks}).
 
-%% Releases all locks requested for the specified transaction TODO
+%% TxId : transaction id for which all locks are to be released
+%% Releases all locks requested for the specified transaction and updates the corresponding last_changed timestamps
 -spec release_locks(txid()) -> ok.
 release_locks(TxId) ->
     gen_server:cast(?MODULE,{release_locks,TxId}).
 
-remote_lock_request(DcId,Locks)->
-    gen_server:cast(?MODULE,{lock_request,Locks,DcId}).
+% ===================================================================
+% Private API
+% ===================================================================
+
+%% callback function used for inter dc communication
+%% Handles incomming lock send to this dc by another dc
+send_locks_remote({remote_send_lock, TransferOp}) ->
+    gen_server:cast(?MODULE, {remote_send_lock, TransferOp}).
+%% callback function used for inter dc communication
+%% Handles incomming remote lock requests comming from other dcs
+request_locks_remote({remote_lock_request, TransferOp}) ->
+    gen_server:cast(?MODULE, {remote_lock_request, TransferOp}).
+
+% ===================================================================
+% For Testing
+% ===================================================================
 
 stateinfo() ->
     gen_server:call(?MODULE,{stateinfo}).
 local_locks_info() ->
     gen_server:call(?MODULE,{lockinfo}).
-
 dets_info() ->
     gen_server:call(?MODULE,{dets_info}).
 
-
-%% @doc Handles a remote transfer request.
-send_locks_remote({remote_send_lock, TransferOp}) ->
-    gen_server:cast(?MODULE, {remote_send_lock, TransferOp}).
-%% @doc Handles a remote transfer request.
-request_locks_remote({remote_lock_request, TransferOp}) ->
-    gen_server:cast(?MODULE, {remote_lock_request, TransferOp}).
 % ===================================================================
 % Private Functions
 % ===================================================================
 
 %  Data structure: local_locks - [{txid,{required,[locks()],timestamp}}|{txid,{using,[locks()]}}]
 
-%% Takes a list of locks, a transaction id, a timestamp, and the local_locks list as input
+%% Locks : locks reuqired for the txid
+%% TxId : transaction that requeires the specified locks
+%% Timestamp : timestamp of the request
+%% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
-%% Sends remote_lock_request(Locks,dcid) messages to all other DCs.
+%% Sends remote_lock_request(Locks,0,dcid) messages to all other DCs.
+-spec required(key(),txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 required(Locks,TxId,Timestamp,Local_Locks) ->
     DCID = dc_meta_data_utilities:get_my_dc_id(),
         remote_lock_request(DCID, 0, Locks),  % TODO Key value ? (currently 0)
@@ -117,7 +133,9 @@ required(Locks,TxId,Timestamp,Local_Locks) ->
 
 
 
-%% Takes a list of locks, a transaction id, the local_locks as input
+%% Locks : locks used by the txid
+%% TxId : transaction that uses the locks
+%% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated lokal_locks list if all specified locks are owned by this DC and not in use by another transaction.
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Returns {locks_in_use,[{txid(),[locks]}]} if all locks are owned by this DC but are used by another Transaction
@@ -143,36 +161,40 @@ using(Locks,TxId,Local_Locks) ->
                     {missing_locks,Missing_Locks_List}
         end.
 
-%% Takes a list of locks, the local_locks as input
+%% Locks : Locks that are to be checked if they are used by a transaction (of this dc)
+%% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns [{txid(),[locks]}] for all transactions that currently use the locks specified by Locks (only the intersection is returned)
+-spec locks_used_by_other_tx(key(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 locks_used_by_other_tx(Locks,Local_Locks) ->
     _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
-                                case Elem of
-                                    {_TxId,{required,_Locks_required,_Timestamp}} ->
-                                        AccIn;
-                                    {TxId_other,{using,Locks_in_use}} ->
-                                        Used_by_other_TxId = lists:foldl(fun(Elem2,AccIn2) ->
-                                                        case lists:member(Elem2,Locks_in_use) of
-                                                            true -> [Elem2|AccIn2];
-                                                            false -> AccIn2
-                                                        end
-                                                    end,
-                                                    [],Locks),
-                                        case Used_by_other_TxId of
-                                            [] -> AccIn;
-                                            _ -> [{TxId_other,Used_by_other_TxId}|AccIn]
-                                        end
-                                end
-                            end,
-                            [],Local_Locks).
+        case Elem of
+            {_TxId,{required,_Locks_required,_Timestamp}} ->
+                AccIn;
+            {TxId_other,{using,Locks_in_use}} ->
+                Used_by_other_TxId = lists:foldl(fun(Elem2,AccIn2) ->
+                        case lists:member(Elem2,Locks_in_use) of
+                            true -> [Elem2|AccIn2];
+                            false -> AccIn2
+                        end
+                    end,
+                    [],Locks),
+                case Used_by_other_TxId of
+                    [] -> AccIn;
+                    _ -> [{TxId_other,Used_by_other_TxId}|AccIn]
+                end
+            end
+        end,
+        [],Local_Locks).
 
 
 
 
-%% Takes a transaction id and the local_locks
+%% TxId : transaction whose locks are to be released
+%% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
+-spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 release_locks(TxId,Local_Locks) ->
     case orddict:find(TxId,Local_Locks) of
         {ok,{using,Locks}} ->
@@ -183,10 +205,11 @@ release_locks(TxId,Local_Locks) ->
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
     
-
-%% Takes the local_locks and a timeout as input
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Timeout : timeout value in ms
 %% Removes lock requests that are older than the specified timeout value form local_locks
 %% Returns the updated lokal_locks list
+-spec remove_old_required_locks([{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}],non_neg_integer()) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 remove_old_required_locks(Local_Locks,Timeout) ->
     Current_Time = erlang:timestamp(),
     _New_Local_Locks=orddict:filter(
@@ -203,8 +226,12 @@ remove_old_required_locks(Local_Locks,Timeout) ->
 %  Data structure: lock_requests - [{dcid,[{lock,timestamp}]}]
 
 
-%% Takes a list of locks, a DcId and a timestamp as input
+%% Locks : list of locks to be added to lock_requests
+%% DcId : dcid that requested the locks
+%% Timestamp : timestamp of the request
+%% Lock_Requests : orddict managing all remote lock requests
 %% Adds these locks with the DcId to the lock_request list
+-spec requested([key()],dcid(),erlang:timestamp(),[{dcid(),[{key(),erlang:timestamp()}]}]) -> [{dcid(),[{key(),erlang:timestamp()}]}].
 requested(Locks, DcId, Timestamp, Lock_Requests) ->
         case orddict:find(DcId,Lock_Requests) of
                 {ok,Corresponding_Lock_Requests} ->
@@ -216,10 +243,8 @@ requested(Locks, DcId, Timestamp, Lock_Requests) ->
                         New_Lock_Request_Orddict = lists:foldl(fun(Elem,AccIn)-> orddict:store(Elem,Timestamp,AccIn) end,New_Orddict,Locks),
                         orddict:store(DcId,New_Lock_Request_Orddict,Lock_Requests)
         end.
-    %Adds {lock,dcid,timestamp} to lock_requests for every lock in [locks()]
 
-
-%% Takes a lock and DcId as input
+%% TODO currently not used
 %% Removes {lock,dcid,_} from the list of locks to send
 sent(Lock,DcId,Lock_Requests) ->
     case orddict:find(DcId,Lock_Requests)of
@@ -233,8 +258,10 @@ sent(Lock,DcId,Lock_Requests) ->
 
 
 
-%% Takes the Lock_Requests list and a Timeout value as input
+%% Lock_Requests : orddict managing all remote lock requests
+%% Timeout : timout value in ms
 %% Removes all lock requests that are older than the specified timeout value from the list and returns that list
+-spec clear_old_lock_requests([{dcid(),[{key(),erlang:timestamp()}]}],non_neg_integer()) -> [{dcid(),[{key(),erlang:timestamp()}]}].
 clear_old_lock_requests(Lock_Requests,Timeout)->
     Current_Time = erlang:timestamp(),
     orddict:fold(
@@ -255,12 +282,14 @@ clear_old_lock_requests(Lock_Requests,Timeout)->
 % Data sturcture: dets_ref : [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}},last_modified}]
 
 
-%% Takes the lock to send, the DC to send it to and the dets_ref table reference
+%% Lock : lock to send to another dc
+%% To : dc where the locks should be send to
 %% Returns updated Dets_ref table and sends a message to the specified DC
 %% Returns Dets_ref if the lock was not owned by this dc
 %% Allways send a messge to the other DC, even if the lock may currently not be send or is not owned, to make up for lost messages
 %% Updates the {send,dcid,[{to,amount}]} entry of dets_ref of the specified lock
-send_lock(Lock,To,Dets_ref)->
+-spec send_lock(key(),dcid()) -> ok.
+send_lock(Lock,To)->
         case dets:lookup(?DETS_FILE_NAME,Lock) of
                 [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}},Snapshot}] ->
                     Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
@@ -292,7 +321,7 @@ send_lock(Lock,To,Dets_ref)->
                                             {To,Old_Amount} ->
                                                     % Send the current information about the lock (just to update the tables)
                                                     remote_send_lock(Lock, Old_Amount, Snapshot, DCID, To, 0), % TODO Key value ? (currently 0)
-                                                    Dets_ref
+                                                    ok
                                     end
                     end;
                 [] ->
@@ -317,11 +346,13 @@ send_lock(Lock,To,Dets_ref)->
 
 
 
-%% Takes the lock received, the DC send from, the accumulation of send locks and the dets_ref table reference
-%% Amount - Total number of times another DC(From) send the lock to this DC
-%% Returns updated dets_ref table.
+%% Lock : lock received by another dc
+%% From : dc which send the lock
+%% Amount : number of times this dc received a lock from the other dc(From)
+%% Last_Changed : snapshot when the lock was released the last time
 %% Updates the {received,dcid,[{from,amount}]} entry of dets_ref of the specified lock
-received_lock(Lock,From,Amount,Last_Changed,Dets_ref)->
+-spec received_lock(key(),dcid(),non_neg_integer(),snapshot_time()) -> ok.
+received_lock(Lock,From,Amount,Last_Changed)->
     case dets:lookup(?DETS_FILE_NAME,Lock) of
         [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}},Old_Snapshot}] ->
             Snapshot = vectorclock:max([Old_Snapshot,Last_Changed]),
@@ -334,7 +365,7 @@ received_lock(Lock,From,Amount,Last_Changed,Dets_ref)->
                         true ->
                             New_Received_List = lists:keyreplace(From,1,Received_List,{From,Amount}),
                             dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,Send_List},{received,DCID2,New_Received_List}},Snapshot});
-                        false -> Dets_ref
+                        false -> ok
                     end
             end;
         []->
@@ -346,9 +377,10 @@ received_lock(Lock,From,Amount,Last_Changed,Dets_ref)->
     end.
 
 
-%% Takes a Lock as input
+%% Lock : lock to be checked
 %% Returns true if the lock is currently owned by this DC
 %% Returns false if it is not owned by this DC
+-spec check_lock(key()) -> boolean().
 check_lock(Lock) ->
     {ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     case dets:lookup(?DETS_FILE_NAME,Lock) of
@@ -375,6 +407,7 @@ check_lock(Lock) ->
 %% Returns true if this DC is the leader, else false is returned
 %% The leader may create locks
 %% Uses the ordering of orddict to decide the leader (the first key)
+-spec am_i_leader() -> boolean().
 am_i_leader() ->  
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
@@ -386,6 +419,8 @@ am_i_leader() ->
     {Key,_Value} = hd(OrddAllDCIDs),
     Key== MyDCId.
 
+%% Locks : list of locks
+%% Returns a list of the snapshot times the specified locks were released the last time
 -spec get_last_modified([key()]) -> [snapshot_time()].
 get_last_modified(Locks)->
     %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
@@ -400,6 +435,8 @@ get_last_modified(Locks)->
         end,
         [],Locks).
 
+%% Locks : list of locks
+%% updates the last_changed value of the specified locks to the max of a current snapshot and the old last_changed value
 -spec update_last_changed([key()]) -> ok.
 update_last_changed(Locks) ->
     %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
@@ -416,6 +453,7 @@ update_last_changed(Locks) ->
         end,
         ok,Locks).
 
+%% Returns the current snapshot time of this dc
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
@@ -428,6 +466,7 @@ get_snapshot_time() ->
 % ===================================================================
 
 %% Returns an ordered list of all other DCs
+-spec other_dcs_list() -> [dcid()].
 other_dcs_list() ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
@@ -444,17 +483,19 @@ other_dcs_list() ->
 %% Key : ? TODO
 %% Locks : list of locks that are to be requested
 %% sends a message to all other DCs requesting the Locks.
+-spec remote_lock_request(dcid(),term(),[key()])-> ok.
 remote_lock_request(MyDCId, Key, Locks) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     Other_DCs_List = other_dcs_list(),
-    lists:foldl( %%TODO
-    fun(RemoteId,AccIn) ->
-        BinaryMsg = term_to_binary({request_locks,
-        {remote_lock_request, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
-        [inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
-            BinaryMsg, fun lock_mgr:request_response/2) | AccIn]
-    end
-    ,[],Other_DCs_List).
+    lists:foldl( 
+        fun(RemoteId,AccIn) ->
+            BinaryMsg = term_to_binary({request_locks,
+            {remote_lock_request, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
+            [inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
+                BinaryMsg, fun lock_mgr:request_response/2) | AccIn]
+        end
+        ,[],Other_DCs_List),
+    ok.
 
 
 %% Lock : Lock to send to another DC
@@ -464,12 +505,14 @@ remote_lock_request(MyDCId, Key, Locks) ->
 %% RemoteId : DCID of the DC the lock is send to
 %% Key : ? TODO
 %% sends a message to the speciefed other DC containing the lock information
+-spec remote_send_lock(key(),non_neg_integer(),snapshot_time(),dcid(),dcid(),key())-> ok.
 remote_send_lock(Lock,Amount, Last_Changed,MyDCId, RemoteId, Key) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks,
         {remote_send_lock, {Lock,Amount, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?LOCK_MGR_SEND, {RemoteId, LocalPartition},
-        BinaryMsg, fun lock_mgr:request_response/2).
+        BinaryMsg, fun lock_mgr:request_response/2),
+    ok.
 
 %% Request response - do nothing. TODO  what is this function meant to do ?
 request_response(_BinaryRep, _RequestCacheEntry) -> ok.
@@ -477,36 +520,21 @@ request_response(_BinaryRep, _RequestCacheEntry) -> ok.
 % Callbacks
 % ===================================================================
 
-%% Adds the specified locks to the lock_requests list under the specified DcId
-handle_cast({lock_request,Locks,DcId}, #state{lock_requests=Lock_Requests}=State) ->
-        lager:info("handle_cast({lock_request,~w,~w},state)~n",[Locks,DcId]),
-        New_Lock_Requests = requested(Locks, DcId, erlang:timestamp(), Lock_Requests),
-        {noreply, State#state{lock_requests=New_Lock_Requests}};
-
 %% Releases all locks currently owned by the specified transaction.
 handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
         lager:info("handle_cast({release_lock,~w},state)~n",[TxId]),
         New_Local_Locks = release_locks(TxId,Local_Locks),
         {noreply, State#state{local_locks=New_Local_Locks}};
 
-
-%%DEPRECATED
-%% Adds the send lock information to the dets_ref table
-handle_cast({sent_lock,Lock, From,Amount, Snapshot}, #state{dets_ref=Dets_Ref}=State) ->
-        lager:info("handle_cast({sent_lock,~w,~w,~w},state)----------DEPRECATED-----~n",[Lock,From,Amount]),
-        New_Dets_Ref = received_lock(Lock,From,Amount,Snapshot,Dets_Ref),
-        {noreply, State#state{dets_ref=New_Dets_Ref}};
-
-
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
-handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, #state{dets_ref=Dets_Ref}=State) ->
+handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, State) ->
         lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w,~w},state)~n",[Lock,Amount,Snapshot,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
-                        New_Dets_Ref = received_lock(Lock,From,Amount, Snapshot,Dets_Ref),
-                        {noreply, State#state{dets_ref=New_Dets_Ref}};
+                        received_lock(Lock,From,Amount, Snapshot),
+                        {noreply, State};
                 false -> {noreply, State}
         end;
 
@@ -520,14 +548,13 @@ handle_cast({remote_lock_request, {Locks, Sender}}, #state{lock_requests=Lock_Re
         {noreply, State#state{lock_requests=New_Lock_Requests}}.
 
 
-
-
-
 %% For testing
 handle_call({stateinfo}, _From, #state{}=State) ->
         {reply, State , State};
+%% For testing
 handle_call({lockinfo}, _From, #state{local_locks= Lock}=State) ->
         {reply, Lock, State};
+%% For testing
 handle_call({dets_info}, _From, State) ->
         {reply, dets:match(?DETS_FILE_NAME,'$1'),State};
 
@@ -552,30 +579,21 @@ handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State
             % get the list of snapshots the locks were released the last time
             Snapshot_Times = get_last_modified(Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished ok-- ~n",[TxId,Locks]),
-            {reply, {ok,Snapshot_Times}, State#state{local_locks=New_Lokal_Locks1}} % TODO is this the right way to get the snapshot time?
-
+            {reply, {ok,Snapshot_Times}, State#state{local_locks=New_Lokal_Locks1}}
     end.
 
 
-
-
-
-
-
-
-
 %% Periodically transfers locks requested by other DCs to them, if they are currently not used
-handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_locks= Local_Locks, transfer_timer=OldTimer, dets_ref = Dets_Ref}=State) ->
-    
+handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_locks= Local_Locks, transfer_timer=OldTimer}=State) ->
     erlang:cancel_timer(OldTimer),
     Clean_Lock_Requests = clear_old_lock_requests(Old_Lock_Requests, ?LOCK_REQUEST_TIMEOUT),
     Clear_Local_Locks = remove_old_required_locks(Local_Locks,?LOCK_REQUIRED_TIMEOUT),
     lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
     % goes through all lock reuests. If the request is NOT in local_locks then the lock is send to the requesting DC
-    New_Dets_Ref = orddict:fold(
-        fun(DCID,Lock_Timestamp_List,Dets_Ref_1)->
+    orddict:fold(
+        fun(DCID,Lock_Timestamp_List,ok)->
             orddict:fold(
-                fun(Lock, _Timestamp,Dets_Ref_2) ->
+                fun(Lock, _Timestamp,ok) ->
                 In_Use = orddict:fold(
                     fun(_TxId,Value2,AccIn) ->
                         case Value2 of
@@ -588,15 +606,15 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                     false ->
                         % lock is currently NOT used and therefore may be send to another DC
                         % TODO also remove the corresponding lock request from the lock request list.
-                        _New_Dets_Ref = send_lock(Lock,DCID,Dets_Ref_2);
+                        send_lock(Lock,DCID);
                     true ->
-                        % Lock is currently used and therefore may not be send to another DC
-                        Dets_Ref_2
+                        ok
+                        
                 end
-            end,Dets_Ref_1,Lock_Timestamp_List)
-        end, Dets_Ref,Clean_Lock_Requests),
+            end,ok,Lock_Timestamp_List)
+        end, ok,Clean_Lock_Requests),
     NewTimer=erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
-    {noreply, State#state{dets_ref=New_Dets_Ref, transfer_timer= NewTimer,local_locks=Clear_Local_Locks}}.
+    {noreply, State#state{transfer_timer= NewTimer,local_locks=Clear_Local_Locks}}.
 
 
 terminate(_Reason, _State) ->
@@ -604,38 +622,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-
-
-
-% ===================================================================
-% Unit Tests
-% ===================================================================
-setup() ->
-        start_link().
-
-
-
-test1() ->
-        start_link(),
-        get_locks([a,b,c],1).
-
-test2() ->
-        start_link(),
-        get_locks([a,b,c],1),
-        release_locks(1).
-
-test3() ->
-        start_link(),
-        get_locks([a,b,c],1).
-        
-
--ifdef(false).
-
-some_test() ->
-    test1(),
-    test2(),
-    test3().
-
-
--endif.
