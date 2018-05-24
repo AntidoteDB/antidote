@@ -53,8 +53,8 @@ init_per_suite(Config) ->
 
     %Ensure that write operations are certified
     test_utils:pmap(fun(Node) ->
-        rpc:call(Node, application, set_env,
-        [antidote, txn_cert, true]) end, Nodes),
+        rpc:call(Node, application, set_env, [antidote, txn_cert, true])
+                    end, Nodes),
 
     %Check that indeed transactions certification is turned on
     {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),

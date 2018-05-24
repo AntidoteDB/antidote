@@ -63,8 +63,7 @@ at_init_testsuite() ->
 %    {Node, {ok, Res}} = {Node, rpc:call(Node, plumtree_peer_service_manager, get_local_state, [])},
 %    ?SET:value(Res).
 
-pmap(F, [print, Desc, L]) ->
-    ct:print("[~s] Start nodes: ~p", [Desc, L]),
+pmap(F, L) ->
     Parent = self(),
     lists:foldl(
         fun(X, N) ->
@@ -75,9 +74,7 @@ pmap(F, [print, Desc, L]) ->
         end, 0, L),
     L2 = [receive {pmap, N, R} -> {N, R} end || _ <- L],
     {_, L3} = lists:unzip(lists:keysort(1, L2)),
-    L3;
-pmap(F, L) ->
-    pmap(F, [print, "", L]).
+    L3.
 
 
 -spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
@@ -366,13 +363,15 @@ set_up_clusters_common(Config) ->
    StartDCs = fun(Nodes) ->
                       pmap(fun(N) ->
                               start_node(N, Config)
-                           end, [print, "DC", Nodes])
+                           end, Nodes)
                   end,
 
 
-    {Time, Clusters} = timer:tc(fun() -> pmap(fun(N) ->
-                  StartDCs(N)
-              end, [print, "Cluster", [[dev1, dev2], [dev3], [dev4]]]) end),
+    {Time, Clusters} = timer:tc(
+        fun() -> pmap(
+            fun(N) -> StartDCs(N) end,
+            [[dev1, dev2], [dev3], [dev4]]
+        ) end),
 
     ct:print("Time for clusterinit: ~p s", [Time div 1000]),
 

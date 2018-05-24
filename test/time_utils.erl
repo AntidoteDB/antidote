@@ -19,10 +19,15 @@
     wait_until_result/4,
     wait_until_registered/2,
     wait_until_offline/1,
+    wait_until_connection/3,
     wait_until_disconnected/2,
     wait_until_connected/2,
     wait_until_nodes_agree_about_ownership/1,
-    wait_until_owners_according_to/2
+    wait_until_owners_according_to/2,
+
+    retry_delay/0,
+    rt_retry_delay/0,
+    retries/0
 ]).
 
 
