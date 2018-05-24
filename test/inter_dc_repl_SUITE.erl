@@ -163,7 +163,7 @@ atomicity_test(Config) ->
                        %% Read until all writes are read and make sure reads see atomic snapshots
                        Delay = 100,
                        Retry = 360000 div Delay, %wait for max 1 min
-                       ok = test_utils:wait_until_result(fun() ->
+                       ok = time_utils:wait_until_result(fun() ->
                                                       atomic_read_txn(Node2, Key1, Key2, Key3, Type)
                                                     end,
                                                     10,

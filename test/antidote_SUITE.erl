@@ -97,7 +97,7 @@ dummy_test(Config) ->
         end,
     Delay = 100,
     Retry = 360000 div Delay, %wait for max 1 min
-    ok = test_utils:wait_until_result(F, 3, Retry, Delay),
+    ok = time_utils:wait_until_result(F, 3, Retry, Delay),
 
     ok.
 
@@ -238,5 +238,5 @@ random_test(Config) ->
         end,
     Delay = 1000,
     Retry = 360000 div Delay, %wait for max 1 min
-    ok = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+    ok = time_utils:wait_until_result(G, NumWrites, Retry, Delay),
     pass.
