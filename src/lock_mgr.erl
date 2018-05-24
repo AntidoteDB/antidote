@@ -170,11 +170,19 @@ locks_used_by_other_tx(Locks,Local_Locks) ->
 
 
 %% Takes a transaction id and the local_locks
+%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
 release_locks(TxId,Local_Locks) ->
+    case orddict:find(TxId,Local_Locks) of
+        {ok,{using,Locks}} ->
+            update_last_changed(Locks);
+        error ->
+            lager:error("release_locks(~w,~w)~n",[TxId,Local_Locks]),
+            ok
+    end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
-
+    
 
 %% Takes the local_locks and a timeout as input
 %% Removes lock requests that are older than the specified timeout value form local_locks
@@ -244,7 +252,7 @@ clear_old_lock_requests(Lock_Requests,Timeout)->
 
 
 
-% Data sturcture: dets_ref : [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}}}]
+% Data sturcture: dets_ref : [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}},last_modified}]
 
 
 %% Takes the lock to send, the DC to send it to and the dets_ref table reference
@@ -254,7 +262,7 @@ clear_old_lock_requests(Lock_Requests,Timeout)->
 %% Updates the {send,dcid,[{to,amount}]} entry of dets_ref of the specified lock
 send_lock(Lock,To,Dets_ref)->
         case dets:lookup(?DETS_FILE_NAME,Lock) of
-                [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}}}] ->
+                [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}},Snapshot}] ->
                     Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
                     Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
                     Has_Lock = Total_Send < Total_Received,
@@ -264,46 +272,46 @@ send_lock(Lock,To,Dets_ref)->
                                     case lists:keyfind(To,1,Send_List) of
                                             false ->
                                                     New_Send_List = [{To,1}|Send_List],
-                                                    % TODO actually send the lock to the other DC
-                                                    remote_send_lock(Lock, 1, DCID, To, 0), % TODO Key value ? (currently 0)
-                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}}});
+                                                    remote_send_lock(Lock, 1,Snapshot, DCID, To, 0), % TODO Key value ? (currently 0)
+                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}},Snapshot});
 
                                             {To,Old_Amount} ->
                                                     New_Send_List = lists:keyreplace(To,1,Send_List,{To,Old_Amount+1}),
-                                                    % TODO actually send the lock to the other DC
-                                                    remote_send_lock(Lock, Old_Amount+1, DCID, To, 0), % TODO Key value ? (currently 0)
-                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}}})
+                                                    remote_send_lock(Lock, Old_Amount+1, Snapshot, DCID, To, 0), % TODO Key value ? (currently 0)
+                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}},Snapshot})
                                     end;
 
                             false ->
                                     case lists:keyfind(To,1,Send_List) of
                                             false ->
                                                     New_Send_List = [{To,0}|Send_List],
-                                                    % TODO actually send the lock to the other DC (in this case the total amount of allready send locks)
-                                                    remote_send_lock(Lock, 0, DCID, To, 0), % TODO Key value ? (currently 0)
-                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}}});
+                                                    % Send the current information about the lock (just to update the tables)
+                                                    remote_send_lock(Lock, 0, Snapshot, DCID, To, 0), % TODO Key value ? (currently 0)
+                                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,New_Send_List},{received,DCID2,Received_List}},Snapshot});
 
                                             {To,Old_Amount} ->
-                                                    % TODO actually send the lock to the other DC (in this case the total amount of allready send locks)
-                                                    remote_send_lock(Lock, Old_Amount, DCID, To, 0), % TODO Key value ? (currently 0)
+                                                    % Send the current information about the lock (just to update the tables)
+                                                    remote_send_lock(Lock, Old_Amount, Snapshot, DCID, To, 0), % TODO Key value ? (currently 0)
                                                     Dets_ref
                                     end
                     end;
                 [] ->
+                    {ok,Now} = get_snapshot_time(),
                     case am_i_leader() of
                         true ->
                             DCID = dc_meta_data_utilities:get_my_dc_id(),
-                            remote_send_lock(Lock, 1, DCID, To, 0), % TODO Key value ? (currently 0)
-                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,1}]},{received,DCID,[{DCID,1}]}}});
+                            remote_send_lock(Lock, 1, Now, DCID, To, 0), % TODO Key value ? (currently 0)
+                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,1}]},{received,DCID,[{DCID,1}]}},Now});
                             
                         false ->
                             DCID = dc_meta_data_utilities:get_my_dc_id(),
-                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}}})
+                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}},Now})
                     end;
 
                 {error,_Reason} ->
+                    {ok,Now} = get_snapshot_time(),
                     DCID = dc_meta_data_utilities:get_my_dc_id(),
-                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}}})
+                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}},Now})
                     % sending the the total amount of locks again is not required here, since a lock was never send.
         end.
 
@@ -313,49 +321,51 @@ send_lock(Lock,To,Dets_ref)->
 %% Amount - Total number of times another DC(From) send the lock to this DC
 %% Returns updated dets_ref table.
 %% Updates the {received,dcid,[{from,amount}]} entry of dets_ref of the specified lock
-received_lock(Lock,From,Amount,Dets_ref)->
+received_lock(Lock,From,Amount,Last_Changed,Dets_ref)->
     case dets:lookup(?DETS_FILE_NAME,Lock) of
-        [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}}}] ->
+        [{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}},Old_Snapshot}] ->
+            Snapshot = vectorclock:max([Old_Snapshot,Last_Changed]),
             case lists:keyfind(From,1,Received_List) of
-                false -> New_Received_List = [{From,Amount}|Received_List],
-                                                 dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,Send_List},{received,DCID2,New_Received_List}}});
+                false -> 
+                    New_Received_List = [{From,Amount}|Received_List],
+                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,Send_List},{received,DCID2,New_Received_List}},Snapshot});
                 {From,Old_Amount} ->
                     case Old_Amount < Amount of
                         true ->
                             New_Received_List = lists:keyreplace(From,1,Received_List,{From,Amount}),
-                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,Send_List},{received,DCID2,New_Received_List}}});
+                            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID1,Send_List},{received,DCID2,New_Received_List}},Snapshot});
                         false -> Dets_ref
                     end
             end;
         []->
             MYDCID = dc_meta_data_utilities:get_my_dc_id(),
-            dets:insert(?DETS_FILE_NAME,{Lock,{{send,MYDCID,[]},{received,MYDCID,[{From,Amount}]}}});
+            dets:insert(?DETS_FILE_NAME,{Lock,{{send,MYDCID,[]},{received,MYDCID,[{From,Amount}]}},Last_Changed});
         {error,_Reason} ->
             DCID = dc_meta_data_utilities:get_my_dc_id(),
-            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[]},{received,DCID,[{From,Amount}]}}})
+            dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[]},{received,DCID,[{From,Amount}]}},Last_Changed})
     end.
 
 
 %% Takes a Lock as input
 %% Returns true if the lock is currently owned by this DC
 %% Returns false if it is not owned by this DC
-%% (Dets_Ref is only changed if this DC is the leader and the lock did not jet exist)
 check_lock(Lock) ->
     {ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     case dets:lookup(?DETS_FILE_NAME,Lock) of
-                [{Lock,{{send,_DCID1,Send_List},{received,_DCID2,Received_List}}}] ->
+                [{Lock,{{send,_DCID1,Send_List},{received,_DCID2,Received_List}},_}] ->
                     Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
-                Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
-                _Has_Lock = Total_Send < Total_Received;
+                    Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
+                    _Has_Lock = Total_Send < Total_Received;
                 [] ->
+                        {ok,Now} = get_snapshot_time(),
                         case am_i_leader() of
                                 true ->
                                     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}}}),
+                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}},Now}),
                                     true;
                                 false -> 
                                     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                        dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[]}}}),
+                                        dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[]}},Now}),
                                     false
                         end;
                 {error,Reason} ->
@@ -376,6 +386,35 @@ am_i_leader() ->
     {Key,_Value} = hd(OrddAllDCIDs),
     Key== MyDCId.
 
+-spec get_last_modified([key()]) -> [snapshot_time()].
+get_last_modified(Locks)->
+    %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
+    lists:foldl(
+        fun(Lock,AccIn) ->
+            case dets:lookup(?DETS_FILE_NAME,Lock) of
+                [{_Lock,_,Snapshot}] ->
+                    _New_AccIn = [Snapshot | AccIn];
+                [] ->
+                    AccIn
+            end
+        end,
+        [],Locks).
+
+-spec update_last_changed([key()]) -> ok.
+update_last_changed(Locks) ->
+    %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
+    lists:foldl(
+        fun(Lock,AccIn) ->
+            case dets:lookup(?DETS_FILE_NAME,Lock) of
+                [{Current_Lock,Transfer_History,Old_Snapshot}] ->
+                    {ok,Now} = get_snapshot_time(),
+                    New_Snapshot = vectorclock:max([Now,Old_Snapshot]),
+                    dets:insert(?DETS_FILE_NAME,{Current_Lock,Transfer_History,New_Snapshot});
+                [] ->
+                    AccIn
+            end
+        end,
+        ok,Locks).
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
@@ -420,14 +459,15 @@ remote_lock_request(MyDCId, Key, Locks) ->
 
 %% Lock : Lock to send to another DC
 %% Amount : Total number of times the lock was send to that DC from this DC
+%% Last_Changed : Snapshot of the last time this lock was released
 %% MyDCId : DCID of this DC
 %% RemoteId : DCID of the DC the lock is send to
 %% Key : ? TODO
 %% sends a message to the speciefed other DC containing the lock information
-remote_send_lock(Lock,Amount,MyDCId, RemoteId, Key) ->
+remote_send_lock(Lock,Amount, Last_Changed,MyDCId, RemoteId, Key) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks,
-        {remote_send_lock, {Lock,Amount,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
+        {remote_send_lock, {Lock,Amount, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?LOCK_MGR_SEND, {RemoteId, LocalPartition},
         BinaryMsg, fun lock_mgr:request_response/2).
 
@@ -452,20 +492,20 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 
 %%DEPRECATED
 %% Adds the send lock information to the dets_ref table
-handle_cast({sent_lock,Lock,From,Amount}, #state{dets_ref=Dets_Ref}=State) ->
+handle_cast({sent_lock,Lock, From,Amount, Snapshot}, #state{dets_ref=Dets_Ref}=State) ->
         lager:info("handle_cast({sent_lock,~w,~w,~w},state)----------DEPRECATED-----~n",[Lock,From,Amount]),
-        New_Dets_Ref = received_lock(Lock,From,Amount,Dets_Ref),
+        New_Dets_Ref = received_lock(Lock,From,Amount,Snapshot,Dets_Ref),
         {noreply, State#state{dets_ref=New_Dets_Ref}};
 
 
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
-handle_cast({remote_send_lock, {Lock,Amount,From,MyDCID1}}, #state{dets_ref=Dets_Ref}=State) ->
-        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w},state)~n",[Lock,Amount,From,MyDCID1]),
+handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, #state{dets_ref=Dets_Ref}=State) ->
+        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w,~w},state)~n",[Lock,Amount,Snapshot,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
-                        New_Dets_Ref = received_lock(Lock,From,Amount,Dets_Ref),
+                        New_Dets_Ref = received_lock(Lock,From,Amount, Snapshot,Dets_Ref),
                         {noreply, State#state{dets_ref=New_Dets_Ref}};
                 false -> {noreply, State}
         end;
@@ -509,10 +549,10 @@ handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished locks_in_use-- ~n",[TxId,Locks]),
             {reply, {locks_in_use, Transactions_Using_The_Locks} , State#state{local_locks=New_Local_Locks3}};
         New_Lokal_Locks1 ->
-            %lager:info("handle_call({get_locks,~w,~w},from,state) --Started ok-- ~n",[TxId,Locks]),
-            {ok,Snapshot_Time} =get_snapshot_time(),
+            % get the list of snapshots the locks were released the last time
+            Snapshot_Times = get_last_modified(Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished ok-- ~n",[TxId,Locks]),
-            {reply, {ok,Snapshot_Time}, State#state{local_locks=New_Lokal_Locks1}} % TODO is this the right way to get the snapshot time?
+            {reply, {ok,Snapshot_Times}, State#state{local_locks=New_Lokal_Locks1}} % TODO is this the right way to get the snapshot time?
 
     end.
 

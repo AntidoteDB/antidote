@@ -705,14 +705,6 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
             From ! {error,Tx_Using_The_Locks},
             {stop, "Transaction using the locks: "}   %%TODO
     end.
-    
-
-create_client_clock() ->
-     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
-    {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-    _SnapshotTime = dict:map(fun(_Key,_Value)-> Now end, VecSnapshotTime).
-         
-
 
 
 %% @doc This function tries to aquire the specified locks, if this fails it will retry after 100ms
@@ -763,8 +755,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
-        {ok,_Snapshots} ->
-            Snapshots = [create_client_clock()],   %TODO use the Snapshots from get locks (needs to be properly implemented)
+        {ok,Snapshots} ->
             % Get the maximum snapshot of this dc and all locks in use
             New_Snapshot = vectorclock:max([SnapshotTime|Snapshots]),
             wait_for_clock(New_Snapshot),
