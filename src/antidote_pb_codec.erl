@@ -54,6 +54,7 @@
 | #'ApbStaticReadObjectsResp'{}
 | #'ApbReadObjects'{}
 | #'ApbReadObjectsResp'{}
+| #'ApbOperationResp'{}
 .
 
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
@@ -81,7 +82,8 @@
 | {start_transaction_response, Resp :: {ok, TxId :: binary()} | {error, Reason::error_code()}}
 | {commit_response, {ok, CommitTime :: any()} | {error, Reason :: error_code()}}
 | {static_read_objects_response, {ok, Results :: [{bound_object(), read_result()}], CommitTime :: binary()}}
-| {read_objects_response, Resp :: [{bound_object(), read_result()}]}.
+| {read_objects_response, Resp :: [{bound_object(), read_result()}]}
+| {operation_response, ok | {error, Reason :: error_code()}}.
 
 -type message() :: request() | response().
 
@@ -172,7 +174,9 @@ encode_message({commit_response, Resp}) ->
 encode_message({static_read_objects_response, {ok, Results, CommitTime}}) ->
   encode_static_read_objects_response(Results, CommitTime);
 encode_message({read_objects_response, Resp}) ->
-  encode_read_objects_response(Resp).
+  encode_read_objects_response(Resp);
+encode_message({operation_response, Resp}) ->
+  encode_operation_response(Resp).
 
 -spec decode_message(sendable()) -> message().
 decode_message(#'ApbStartTransaction'{properties = Properties, timestamp = Clock}) ->
@@ -218,6 +222,13 @@ decode_message(#'ApbReadObjectsResp'{success = Success, errorcode = ErrorCode, o
       {read_objects_response, Resp};
     false ->
       {error, decode_error_code(ErrorCode)}
+  end;
+decode_message(#'ApbOperationResp'{success = S, errorcode = E}) ->
+  case S of
+    true ->
+      ok;
+    false ->
+      {error, decode_error_code(E)}
   end.
 
 
