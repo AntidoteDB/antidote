@@ -93,6 +93,7 @@ all() -> [
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used
 %% locks, do some updates and then releases them when the transaction is committed
 simple_transaction_tests_with_locks(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
@@ -123,6 +124,7 @@ simple_transaction_tests_with_locks(Config) ->
 
 %% test if after a transaction released some lock another transaction on the same node can aquire them
 locks_in_sequence_check(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -159,6 +161,7 @@ locks_in_sequence_check(Config) ->
 %% starts a transaction on the leading node aquiring some lock.
 %% Tests if transactions of other nodes can not acquire a subset of these keys
 locks_required_by_another_transaction(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -186,6 +189,7 @@ locks_required_by_another_transaction(Config) ->
 %% Tests if lock acquisition in multiple dcs of the same locks can propperly acquire 
 %% them and the lock_mgr manages the lock data as intendet.
 lock_acquisition_test(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Keys = [lock21, lock22, lock23, lock24],
@@ -220,6 +224,7 @@ lock_acquisition_test(Config) ->
     ok.
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_1(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -251,6 +256,7 @@ get_lock_owned_by_other_dc_1(Config) ->
     ok.
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_2(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -276,6 +282,7 @@ helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
     end.
 %% Tests if a multi value register allways has the correct value when it is updated on multiple dcs using locks
 multi_value_register_test(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -323,6 +330,7 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
 %% Let 3 processes asynchronously increment the same counter each 100times while using a lock to restrict the access.
 %% 30 ms delay between increments
 asynchronous_test_1(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -345,7 +353,7 @@ asynchronous_test_1(Config) ->
         {done,Node3,3,Clocks3} ->
             Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    lager:info("asynchronous_test_1 Clock_Locks : ~w",[Clocks_Locks_3]),
+    %lager:info("asynchronous_test_1 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -363,6 +371,7 @@ asynchronous_test_1(Config) ->
 %% Let 3 processes asynchronously increment the same counter 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_2(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -385,7 +394,7 @@ asynchronous_test_2(Config) ->
         {done,Node3,3,Clocks3} ->
             Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    lager:info("asynchronous_test_2 Clock_Locks : ~w",[Clocks_Locks_3]),
+    %lager:info("asynchronous_test_2 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -417,6 +426,7 @@ asynchronous_test_helper(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 30 ms delay between increments
 asynchronous_test_3(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -439,7 +449,7 @@ asynchronous_test_3(Config) ->
         {done,Node3,3,Clocks3} ->
             Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    lager:info("asynchronous_test_3 Clock_Locks : ~w",[Clocks_Locks_3]),
+    %lager:info("asynchronous_test_3 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -457,6 +467,7 @@ asynchronous_test_3(Config) ->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_4(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -479,7 +490,7 @@ asynchronous_test_4(Config) ->
         {done,Node3,3,Clocks3} ->
             Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    lager:info("asynchronous_test_4 Clock_Locks : ~w",[Clocks_Locks_3]),
+    %lager:info("asynchronous_test_4 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
     {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -517,6 +528,7 @@ asynchronous_test_helper2(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 
 %% Runs asynchronous_test_1-4 in parallel
 asynchronous_test_5(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -580,8 +592,8 @@ helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},Info) ->
     receive
         {done,Node3,Id3,Clocks3} ->
             Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
-    end,
-    lager:info("~w Clock_Locks : ~w",[Info,Clocks_Locks_3]).
+    end.
+    %lager:info("~w Clock_Locks : ~w",[Info,Clocks_Locks_3]).
 
 
 
@@ -598,6 +610,7 @@ helper_check_result2(Node,Keys,Object,Value) ->
 
 %% Tests some internal functions of lock_mgr
 some_test(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
