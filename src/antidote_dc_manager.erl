@@ -18,6 +18,19 @@
 %%
 %% -----------------------------------------------------------------
 
+
+%% This module exports methods to build a data center of multiple nodes and
+%% connect data centers to start replcation among them.
+%%  Usage Example: To create 3 DCs of 2 nodes each:
+%%    create_dc(['antidote@node1', 'antidote@node2']),
+%%    create_dc(['antidote@node3', 'antidote@node4']),
+%%    create_dc(['antidote@node5', 'antidote@node6']),
+%%    {ok, Descriptor1} = get_connection_descriptor() % on antidote@node1
+%%    {ok, Descriptor2} = get_connection_descriptor() %% on antidote@node3
+%%    {ok, Descriptor3} = get_connection_descriptor() %% on antidote@node5
+%%    Descriptors = [Descriptor1, Descriptor2, Descriptor3],
+%%    Execute subscribe_updates_from(Descriptors) on all 3 DCs
+
 -module(antidote_dc_manager).
 
 -include("antidote.hrl").
