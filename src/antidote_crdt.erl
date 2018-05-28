@@ -42,41 +42,96 @@
 
 -module(antidote_crdt).
 
--include("antidote_crdt.hrl").
 
--define(CRDTS, [antidote_crdt_counter_pn,
-                antidote_crdt_counter_b,
-                antidote_crdt_counter_fat,
-                antidote_crdt_flag_ew,
-                antidote_crdt_flag_dw,
-                antidote_crdt_set_go,
-                antidote_crdt_set_aw,
-                antidote_crdt_set_rw,
-                antidote_crdt_register_lww,
-                antidote_crdt_register_mv,
-                antidote_crdt_map_go,
-                antidote_crdt_map_rr]).
 
--export([is_type/1
-        ]).
+-type typ() ::
+antidote_crdt_counter_pn
+| antidote_crdt_counter_b
+| antidote_crdt_counter_fat
+| antidote_crdt_flag_ew
+| antidote_crdt_flag_dw
+| antidote_crdt_set_go
+| antidote_crdt_set_aw
+| antidote_crdt_set_rw
+| antidote_crdt_register_lww
+| antidote_crdt_register_mv
+| antidote_crdt_map_go
+| antidote_crdt_map_rr.
 
--callback new() -> crdt().
--callback value(crdt()) -> value().
--callback downstream(update(), crdt()) -> {ok, effect()} | {error, reason()}.
--callback update(effect(), crdt()) ->  {ok, crdt()}.
+% these types are not correct, the tags just help to find errors
+-opaque crdt() :: {antidote_crdt, state, term()}.
+-opaque effect() :: {antidote_crdt, effect, term()}.
+-type update() :: {atom(), term()}.
+-type value() :: term().
+-type reason() :: term().
+
+-export_type([
+  crdt/0,
+  update/0,
+  effect/0,
+  value/0,
+  typ/0
+]).
+
+
+-type internal_crdt() :: term().
+-type internal_effect() :: term().
+
+-export([is_type/1, new/1, value/2, downstream/3, update/3, require_state_downstream/2, is_operation/2]).
+
+-callback new() -> internal_crdt().
+-callback value(internal_crdt()) -> value().
+-callback downstream(update(), internal_crdt()) -> {ok, internal_effect()} | {error, reason()}.
+-callback update(internal_effect(), internal_crdt()) -> {ok, internal_crdt()}.
 -callback require_state_downstream(update()) -> boolean().
--callback is_operation(update()) ->  boolean(). %% Type check
+-callback is_operation(update()) -> boolean(). %% Type check
 
--callback equal(crdt(), crdt()) -> boolean().
--callback to_binary(crdt()) -> binary().
--callback from_binary(binary()) -> {ok, crdt()} | {error, reason()}.
+-callback equal(internal_crdt(), internal_crdt()) -> boolean().
+-callback to_binary(internal_crdt()) -> binary().
+-callback from_binary(binary()) -> {ok, internal_crdt()} | {error, reason()}.
 
-%% Following callbacks taken from riak_dt
-%% Not sure if it is useful for antidote
-%-callback stats(crdt()) -> [{atom(), number()}].
-%-callback stat(atom(), crdt()) ->  number() | undefined.
+-spec is_type(typ()) -> boolean().
+is_type(antidote_crdt_counter_pn) -> true;
+is_type(antidote_crdt_counter_b) -> true;
+is_type(antidote_crdt_counter_fat) -> true;
+is_type(antidote_crdt_flag_ew) -> true;
+is_type(antidote_crdt_flag_dw) -> true;
+is_type(antidote_crdt_set_go) -> true;
+is_type(antidote_crdt_set_aw) -> true;
+is_type(antidote_crdt_set_rw) -> true;
+is_type(antidote_crdt_register_lww) -> true;
+is_type(antidote_crdt_register_mv) -> true;
+is_type(antidote_crdt_map_go) -> true;
+is_type(antidote_crdt_map_rr) -> true;
+is_type(_) -> false.
 
-is_type(Type) ->
-    is_atom(Type) andalso lists:member(Type, ?CRDTS).
+-spec new(typ()) -> crdt().
+new(Type) ->
+  true = is_type(Type),
+  Type:new().
 
-%% End of Module.
+-spec value(typ(),crdt()) -> any().
+value(Type, State) ->
+  true = is_type(Type),
+  Type:value(State).
+
+-spec downstream(typ(), update(), crdt()) -> {ok, effect()} | {error, reason()}.
+downstream(Type, Update, State) ->
+  true = is_type(Type),
+  true = Type:is_operation(Update),
+  Type:downstream(Update, State).
+
+-spec update(typ(), effect(), crdt()) -> {ok, crdt()}.
+update(Type, Effect, State) ->
+  true = is_type(Type),
+  Type:update(Effect, State).
+
+-spec require_state_downstream(typ(), update()) -> boolean().
+require_state_downstream(Type, Update) ->
+  true = is_type(Type),
+  Type:require_state_downstream(Update).
+
+-spec is_operation(typ(), update()) -> boolean().
+is_operation(Type, Update) ->
+  true = is_type(Type),
+  Type:is_operation(Update).
