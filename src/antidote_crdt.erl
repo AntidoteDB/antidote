@@ -22,7 +22,7 @@
 %% Naming pattern of antidote crdts: <type>_<semantics>
 %% if there is only one kind of semantics implemented for a certain type
 %% only the type is used in the name e.g. rga
-%% counter_pn: PN-Counter aka Posistive Negative Counter
+%% counter_pn: PN-Counter aka Positive Negative Counter
 %% counter_b: Bounded Counter
 %% counter_fat: Fat Counter
 %% integer: Integer (Experimental)
@@ -35,48 +35,128 @@
 %% register_mv: MultiValue Register aka MV-Reg
 %% map_go: Grow Only Map aka G-Map
 %% map_aw: Add Wins Map aka AW-Map (Experimental)
-%% map_rr: Recursive Resets Map akak RR-Map
+%% map_rr: Recursive Resets Map aka RR-Map
 %% rga: Replicated Growable Array (Experimental)
 
 
 
 -module(antidote_crdt).
 
--include("antidote_crdt.hrl").
 
--define(CRDTS, [antidote_crdt_counter_pn,
-                antidote_crdt_counter_b,
-                antidote_crdt_counter_fat,
-                antidote_crdt_flag_ew,
-                antidote_crdt_flag_dw,
-                antidote_crdt_set_go,
-                antidote_crdt_set_aw,
-                antidote_crdt_set_rw,
-                antidote_crdt_register_lww,
-                antidote_crdt_register_mv,
-                antidote_crdt_map_go,
-                antidote_crdt_map_rr]).
+% The CRDTs supported by Antidote:
+-type typ() ::
+antidote_crdt_counter_pn
+| antidote_crdt_counter_b
+| antidote_crdt_counter_fat
+| antidote_crdt_flag_ew
+| antidote_crdt_flag_dw
+| antidote_crdt_set_go
+| antidote_crdt_set_aw
+| antidote_crdt_set_rw
+| antidote_crdt_register_lww
+| antidote_crdt_register_mv
+| antidote_crdt_map_go
+| antidote_crdt_map_rr.
 
--export([is_type/1
-        ]).
+% Note: the crdt and effect types are not correct, the tags just help to find errors
+% The State of a CRDT:
+-opaque crdt() :: {antidote_crdt, state, term()}.
+% The downstream effect, which has to be applied at each replica
+-opaque effect() :: {antidote_crdt, effect, term()}.
+% The update operation, consisting of operation name and parameters
+% (e.g. {increment, 1} to increment a counter by one)
+-type update() :: {atom(), term()}.
+% Result of reading a CRDT (state without meta data)
+-type value() :: term().
 
--callback new() -> crdt().
--callback value(crdt()) -> value().
--callback downstream(update(), crdt()) -> {ok, effect()} | {error, reason()}.
--callback update(effect(), crdt()) ->  {ok, crdt()}.
+% reason for an error
+-type reason() :: term().
+
+-export_type([
+  crdt/0,
+  update/0,
+  effect/0,
+  value/0,
+  typ/0
+]).
+
+
+-type internal_crdt() :: term().
+-type internal_effect() :: term().
+
+-export([is_type/1, new/1, value/2, downstream/3, update/3, require_state_downstream/2, is_operation/2]).
+
+% Callbacks implemented by each concrete CRDT implementation
+-callback new() -> internal_crdt().
+-callback value(internal_crdt()) -> value().
+-callback downstream(update(), internal_crdt()) -> {ok, internal_effect()} | {error, reason()}.
+-callback update(internal_effect(), internal_crdt()) -> {ok, internal_crdt()}.
 -callback require_state_downstream(update()) -> boolean().
--callback is_operation(update()) ->  boolean(). %% Type check
+-callback is_operation(update()) -> boolean(). %% Type check
 
--callback equal(crdt(), crdt()) -> boolean().
--callback to_binary(crdt()) -> binary().
--callback from_binary(binary()) -> {ok, crdt()} | {error, reason()}.
+-callback equal(internal_crdt(), internal_crdt()) -> boolean().
+-callback to_binary(internal_crdt()) -> binary().
+-callback from_binary(binary()) -> {ok, internal_crdt()} | {error, reason()}.
 
-%% Following callbacks taken from riak_dt
-%% Not sure if it is useful for antidote
-%-callback stats(crdt()) -> [{atom(), number()}].
-%-callback stat(atom(), crdt()) ->  number() | undefined.
+% Check if the given type is supported by Antidote
+-spec is_type(typ()) -> boolean().
+is_type(antidote_crdt_counter_pn)   -> true;
+is_type(antidote_crdt_counter_b)    -> true;
+is_type(antidote_crdt_counter_fat)  -> true;
+is_type(antidote_crdt_flag_ew)      -> true;
+is_type(antidote_crdt_flag_dw)      -> true;
+is_type(antidote_crdt_set_go)       -> true;
+is_type(antidote_crdt_set_aw)       -> true;
+is_type(antidote_crdt_set_rw)       -> true;
+is_type(antidote_crdt_register_lww) -> true;
+is_type(antidote_crdt_register_mv)  -> true;
+is_type(antidote_crdt_map_go)       -> true;
+is_type(antidote_crdt_map_rr)       -> true;
+is_type(_)                          -> false.
 
-is_type(Type) ->
-    is_atom(Type) andalso lists:member(Type, ?CRDTS).
 
-%% End of Module.
+% Returns the initial CRDT state for the given Type
+-spec new(typ()) -> crdt().
+new(Type) ->
+  true = is_type(Type),
+  Type:new().
+
+% Reads the value from a CRDT state
+-spec value(typ(), crdt()) -> any().
+value(Type, State) ->
+  true = is_type(Type),
+  Type:value(State).
+
+% Computes the downstream effect for a given update operation and current state.
+% This has to be called once at the source replica.
+% The effect must then be applied on all replicas using the update function.
+% For some update operation it is not necessary to provide the current state
+% and the atom 'ignore' can be passed instead (see function require_state_downstream).
+-spec downstream(typ(), update(), crdt() | ignore) -> {ok, effect()} | {error, reason()}.
+downstream(Type, Update, State) ->
+  true = is_type(Type),
+  true = Type:is_operation(Update),
+  Type:downstream(Update, State).
+
+% Updates the state of a CRDT by applying a downstream effect calculated
+% using the downstream function.
+% For most types the update function must be called in causal order:
+% if Eff2 was calculated on a state where Eff1 was already replied,
+% then Eff1 has to be applied before Eff2 on all replicas.
+-spec update(typ(), effect(), crdt()) -> {ok, crdt()}.
+update(Type, Effect, State) ->
+  true = is_type(Type),
+  Type:update(Effect, State).
+
+% Checks whether the current state is required by the downstream function
+% for a specific type and update operation
+-spec require_state_downstream(typ(), update()) -> boolean().
+require_state_downstream(Type, Update) ->
+  true = is_type(Type),
+  Type:require_state_downstream(Update).
+
+% Checks whether the given update operation is valid for the given type
+-spec is_operation(typ(), update()) -> boolean().
+is_operation(Type, Update) ->
+  true = is_type(Type),
+  Type:is_operation(Update).
