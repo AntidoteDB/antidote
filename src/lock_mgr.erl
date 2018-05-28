@@ -487,6 +487,7 @@ other_dcs_list() ->
 remote_lock_request(MyDCId, Key, Locks) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     Other_DCs_List = other_dcs_list(),
+    spawn(fun()->   %TODO
     lists:foldl( 
         fun(RemoteId,AccIn) ->
             BinaryMsg = term_to_binary({request_locks,
@@ -494,7 +495,8 @@ remote_lock_request(MyDCId, Key, Locks) ->
             [inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
                 BinaryMsg, fun lock_mgr:request_response/2) | AccIn]
         end
-        ,[],Other_DCs_List),
+        ,[],Other_DCs_List)
+    end), %TODO
     ok.
 
 
@@ -510,8 +512,10 @@ remote_send_lock(Lock,Amount, Last_Changed,MyDCId, RemoteId, Key) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks,
         {remote_send_lock, {Lock,Amount, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
+    spawn(fun()->   %TODO
     inter_dc_query:perform_request(?LOCK_MGR_SEND, {RemoteId, LocalPartition},
-        BinaryMsg, fun lock_mgr:request_response/2),
+        BinaryMsg, fun lock_mgr:request_response/2)
+    end), %TODO
     ok.
 
 %% Request response - do nothing. TODO  what is this function meant to do ?

@@ -689,6 +689,7 @@ cluster_failure_test_1(Config) ->
             %% Kill a node
             ct:print("Killing node ~w", [Node3]),
             [Node3] = test_utils:brutal_kill_nodes([Node3]),
+            %timer:sleep(10000), % since the brutal kill command is someties delayed ...
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node3]),
             [Node3] = test_utils:restart_nodes([Node3], Config),
@@ -714,11 +715,12 @@ cluster_failure_test_2(Config) ->
             %% Kill a node
             ct:print("Killing node ~w", [Node3]),
             [Node3] = test_utils:brutal_kill_nodes([Node3]),
+            timer:sleep(10000), % since the brutal kill command is someties delayed ...
             %% Test if the lock can be aquired by another dc
             % TODO This rpc:call will crash the lock_mgr and wont let it recover
             % (Assumption: The inter_dc communication does not handle this case and lock_mgr does
             % not have a build in error handling process for this case.)
-            %{badrpc,_} = rpc:call(Node2, antidote, start_transaction, [ignore, [{locks,Keys}]]),
+            {error,_} = rpc:call(Node2, antidote, start_transaction, [ignore, [{locks,Keys}]]),
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node3]),
             [Node3] = test_utils:restart_nodes([Node3], Config),
