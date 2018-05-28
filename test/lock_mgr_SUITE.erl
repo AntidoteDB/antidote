@@ -41,7 +41,11 @@
          asynchronous_test_2/1,
          asynchronous_test_3/1,
          asynchronous_test_4/1,
-         asynchronous_test_5/1
+         asynchronous_test_5/1,
+         a_lot_of_locks_per_transaction_1/1,
+         a_lot_of_locks_per_transaction_2/1,
+         cluster_failure_test_1/1,
+         cluster_failure_test_2/1
         ]).
 %% test helper funktions
 -export([
@@ -87,7 +91,11 @@ all() -> [
          asynchronous_test_2,
          asynchronous_test_3,
          asynchronous_test_4,
-         asynchronous_test_5
+         asynchronous_test_5,
+         a_lot_of_locks_per_transaction_1,
+         a_lot_of_locks_per_transaction_2,
+         cluster_failure_test_1,
+         cluster_failure_test_2
         ].
 
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used
@@ -351,7 +359,7 @@ asynchronous_test_1(Config) ->
     end,
     receive
         {done,Node3,3,Clocks3} ->
-            Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
     %lager:info("asynchronous_test_1 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -392,7 +400,7 @@ asynchronous_test_2(Config) ->
     end,
     receive
         {done,Node3,3,Clocks3} ->
-            Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
     %lager:info("asynchronous_test_2 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -447,7 +455,7 @@ asynchronous_test_3(Config) ->
     end,
     receive
         {done,Node3,3,Clocks3} ->
-            Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
     %lager:info("asynchronous_test_3 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -488,7 +496,7 @@ asynchronous_test_4(Config) ->
     end,
     receive
         {done,Node3,3,Clocks3} ->
-            Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
     %lager:info("asynchronous_test_4 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{locks,Keys}]]),
@@ -579,7 +587,7 @@ asynchronous_test_5(Config) ->
     helper_check_result1(Node3, Keys4, Object4, 300).
 
 
-helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},Info) ->
+helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},_Info) ->
     Clocks_Locks = [],
     receive
         {done,Node1,Id1,Clocks1} ->
@@ -591,22 +599,153 @@ helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},Info) ->
     end,
     receive
         {done,Node3,Id3,Clocks3} ->
-            Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end.
     %lager:info("~w Clock_Locks : ~w",[Info,Clocks_Locks_3]).
 
 
 
 helper_check_result1(Node,Keys,Object,Value) ->
-    {ok,TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
-    {ok, [Res]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
-    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-    ?assertEqual(Value,Res).
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]) of
+        {ok,TxId} -> 
+            {ok, [Res]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
+            {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+            ?assertEqual(Value,Res);
+        {error,_} ->
+            helper_check_result1(Node, Keys, Object, Value)
+    end.
+        
 helper_check_result2(Node,Keys,Object,Value) ->
-    {ok,TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]),
-    {ok, [[Res]|[]]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
-    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-    ?assertEqual(Value,Res).
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Keys}]]) of
+        {ok,TxId} ->
+            {ok, [[Res]|[]]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
+            {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+            ?assertEqual(Value,Res);
+        {error,_} ->
+            helper_check_result2(Node, Keys, Object, Value)
+    end.
+
+%% Asynchronously starts transactions on all DCs that require the same 100 locks each.
+a_lot_of_locks_per_transaction_1(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node2 = hd(hd(tl(Nodes))),
+    Node3 = hd(hd(tl(tl(Nodes)))),
+    % asynchronous_test_4
+    Keys1 = generate_lock_helper(100,"erwwqd"),
+    Object1 = {a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,10,[],self(),0,1]),
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,10,[],self(),0,2]),
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node3,Keys1,Object1,10,[],self(),0,3]),
+    helper_receive_result({Node1,1},{Node2,2},{Node3,3},"a_lot_of_locks_per_transaction_1"),
+    helper_check_result2(Node1, Keys1, Object1, 30),
+    helper_check_result2(Node2, Keys1, Object1, 30),
+    helper_check_result2(Node3, Keys1, Object1, 30).
+
+%% Asynchronously starts transactions on all DCs that require the same 1000 locks each.
+a_lot_of_locks_per_transaction_2(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node2 = hd(hd(tl(Nodes))),
+    Node3 = hd(hd(tl(tl(Nodes)))),
+    % asynchronous_test_4
+    Keys1 = generate_lock_helper(1000,"asdf"),
+    Object1 = {a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,20,[],self(),0,1]),
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,20,[],self(),0,2]),
+    spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node3,Keys1,Object1,20,[],self(),0,3]),
+    helper_receive_result({Node1,1},{Node2,2},{Node3,3},"a_lot_of_locks_per_transaction_2"),
+    helper_check_result2(Node1, Keys1, Object1, 60),
+    helper_check_result2(Node2, Keys1, Object1, 60),
+    helper_check_result2(Node3, Keys1, Object1, 60).
+
+generate_lock_helper(Amount,String) ->
+    generate_lock_helper(Amount,String,[]).
+generate_lock_helper(Amount,String,List) ->
+    New_List = [integer_to_list(Amount)++String++"_Lock"|List],
+    case Amount of
+        A when A > 0 ->
+            generate_lock_helper(Amount-1,String, New_List);
+        _ -> New_List
+    end.
+
+
+%% Starts a transactin that aquires a lock on one node. Then this node is killed and restarted.
+%% Then another transaction is started on another Node using the same lock.
+cluster_failure_test_1(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node2 = hd(hd(tl(Nodes))),
+    Node3 = hd(hd(tl(tl(Nodes)))),
+    case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
+        {ok, false} ->
+            pass;
+        _ ->
+            Keys = [cluster_failure_test_1_key],
+            {ok,_TxId1} = helper_start_transaction(Keys, Node3, 10),
+            %% Kill a node
+            ct:print("Killing node ~w", [Node3]),
+            [Node3] = test_utils:brutal_kill_nodes([Node3]),
+            %% Start the node back up and be sure everything works
+            ct:print("Restarting node ~w", [Node3]),
+            [Node3] = test_utils:restart_nodes([Node3], Config),
+            {ok,TxId2} = helper_start_transaction(Keys, Node2, 10),
+            {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
+    end.
+%% TODO Does not work
+%% Starts a transactin that aquires a lock on one node3. Then node3 is killed.
+%% Then another transaction is started on Node2 trying to aquire the same lock.
+%% Then node3 is restarted and a transaction aquiring the lock on node2 is started again.
+cluster_failure_test_2(Config) ->
+    lager:info("Start ~w",[?FUNCTION_NAME]),
+    Nodes = proplists:get_value(nodes, Config),
+    Node1 = hd(hd(Nodes)),
+    Node2 = hd(hd(tl(Nodes))),
+    Node3 = hd(hd(tl(tl(Nodes)))),
+    case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
+        {ok, false} ->
+            pass;
+        _ ->
+            Keys = [cluster_failure_test_2_key],
+            {ok,_TxId1} = helper_start_transaction(Keys, Node3, 10),
+            %% Kill a node
+            ct:print("Killing node ~w", [Node3]),
+            [Node3] = test_utils:brutal_kill_nodes([Node3]),
+            %% Test if the lock can be aquired by another dc
+            % TODO This rpc:call will crash the lock_mgr and wont let it recover
+            % (Assumption: The inter_dc communication does not handle this case and lock_mgr does
+            % not have a build in error handling process for this case.)
+            %{badrpc,_} = rpc:call(Node2, antidote, start_transaction, [ignore, [{locks,Keys}]]),
+            %% Start the node back up and be sure everything works
+            ct:print("Restarting node ~w", [Node3]),
+            [Node3] = test_utils:restart_nodes([Node3], Config),
+            {ok,TxId2} = helper_start_transaction(Keys, Node2, 10),
+            {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
+    end.
+helper_start_transaction(Locks,_Node,0) ->
+    {error,"Could not aquire : "++to_string_helper(Locks)};
+helper_start_transaction(Locks,Node,Tries) ->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{locks,Locks}]]) of
+        {ok,TxId}->
+            {ok,TxId};
+        {error,_}->
+            helper_start_transaction(Locks,Node,Tries-1);
+        {badrpc,_}->
+            helper_start_transaction(Locks,Node,Tries-1)
+    end.
+to_string_helper([])->
+    "[]";
+to_string_helper([HD|TL])->
+    to_string_helper(TL,"["++atom_to_list(HD)).
+to_string_helper([],String)->
+    String++"]";
+to_string_helper([HD|TL],String)->
+    New_String = String++", "++atom_to_list(HD),
+    to_string_helper(TL, New_String).
+
 
 %% Tests some internal functions of lock_mgr
 some_test(Config) ->

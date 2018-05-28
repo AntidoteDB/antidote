@@ -588,7 +588,7 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
     erlang:cancel_timer(OldTimer),
     Clean_Lock_Requests = clear_old_lock_requests(Old_Lock_Requests, ?LOCK_REQUEST_TIMEOUT),
     Clear_Local_Locks = remove_old_required_locks(Local_Locks,?LOCK_REQUIRED_TIMEOUT),
-    lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
+    %lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
     % goes through all lock reuests. If the request is NOT in local_locks then the lock is send to the requesting DC
     orddict:fold(
         fun(DCID,Lock_Timestamp_List,ok)->
