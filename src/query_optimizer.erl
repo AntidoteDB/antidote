@@ -337,10 +337,12 @@ apply_projection(Projection, Object) ->
 
 apply_projection(Projection, [Object | Objs], Acc) ->
     %io:format(">> apply_projection:~n", []),
-    FilteredObj = lists:filter(fun(Attr) ->
-        ?ATTRIBUTE(ColName, _CRDT, _Val) = Attr,
-        lists:member(ColName, Projection)
-    end, Object),
+    FilteredObj = lists:foldl(fun(Col, ObjAcc) ->
+        case table_utils:get_column(Col, Object) of
+            ?ATTRIBUTE(Col, _Type, _Value) = Attr -> lists:append(ObjAcc, [Attr]);
+            undefined -> throw(io_lib:format("Invalid projection column: ~p", [Col]))
+        end
+    end, [], Projection),
     %io:format("FilteredObj: ~p~n", [FilteredObj]),
     apply_projection(Projection, Objs, lists:append(Acc, [FilteredObj]));
 apply_projection(_Projection, [], Acc) ->
@@ -415,14 +417,18 @@ interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -
                       Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
                       [Res];
                   notequality ->
-                      {_, InequalityPred} = range_queries:to_predicate(GetRange),
+                      %{_, InequalityPred} = range_queries:to_predicate(GetRange),
+                      {_, Excluded} = GetRange,
+                      InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
                       Aux = indexing:read_index(secondary, {TName, Name}, TxId),
                       lists:filter(fun({IdxVal, _Set}) -> InequalityPred(IdxVal) end, Aux);
                   range ->
-                      {RangePred, InequalityPred} = range_queries:to_predicate(GetRange),
+                      %{RangePred, InequalityPred} = range_queries:to_predicate(GetRange),
+                      {{LeftBound, RightBound}, Excluded} = GetRange,
                       Index = indexing:read_index_function(secondary,
-                          {TName, Name}, {range, RangePred}, TxId),
+                          {TName, Name}, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
 
+                      InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
                       lists:filter(fun({IdxCol, _PKs}) -> InequalityPred(IdxCol) end, Index)
               end,
 
@@ -432,6 +438,9 @@ interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -
         %% there's an assumption that the accumulator will never have repeated keys
         ordsets:union(Set, PKs)
     end, ordsets:new(), IdxData).
+
+send_range({_, infinity}) -> infinity;
+send_range({Bound, Val}) -> {Bound, Val}.
 
 %%====================================================================
 %% Eunit tests

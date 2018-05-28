@@ -37,7 +37,7 @@
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).
 -define(UPPER_BOUND_PRED, [lesser, lessereq]).
--define(WRONG_PRED, "Some of the predicates don't respect a range query").
+-define(WRONG_PRED(Preds), io_lib:format("Some of the predicates don't respect a range query: ~p", [Preds])).
 
 %% API
 -export([new/0,
@@ -62,8 +62,8 @@
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
 -type pred_type() :: greater | greatereq | lesser | lessereq.
--type pred_func() :: fun().
--type predicate() :: {pred_type(), pred_func()} | infinity.
+-type pred_arg() :: number().
+-type predicate() :: {pred_type(), pred_arg()} | infinity.
 
 -type gindex_query() :: {range, {predicate(), predicate()}} |
                         {get, term()} |
@@ -107,8 +107,10 @@ value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
                            _ -> gb_trees:iterator_from(lookup_lower_bound(LowerPred, Index), Index)
                        end,
             iterate_and_filter({UpperPred, [key]}, gb_trees:next(Iterator), []);
+            %Iterator = gb_trees:iterator(Index),
+            %iterate_and_filter2({LowerPred, [key]}, {UpperPred, [key]}, gb_trees:next(Iterator), []);
         false ->
-            throw(?WRONG_PRED)
+            throw(lists:flatten(?WRONG_PRED({LowerPred, UpperPred})))
     end;
 value({get, Key}, {_Type, Index, _Indirection}) ->
     case gb_trees:lookup(Key, Index) of
@@ -282,15 +284,29 @@ iterate_and_filter(_Predicate, none, Acc) ->
     Acc;
 iterate_and_filter({infinity, _} = Predicate, {Key, Value, Iter}, Acc) ->
     iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
-iterate_and_filter({Fun, Params} = Predicate, {Key, Value, Iter}, Acc) ->
+iterate_and_filter({Bound, Params} = Predicate, {Key, Value, Iter}, Acc) ->
     Result = case Params of
-                 [key] -> apply_pred(Fun, Key);
-                 [value, V] -> apply_pred(Fun, [Value, V])
+                 [key] -> apply_pred(Bound, Key);
+                 [value, V] -> apply_pred(Bound, [Value, V])
              end,
     case Result of
         true -> iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
         false -> iterate_and_filter(Predicate, gb_trees:next(Iter), Acc)
     end.
+
+%%iterate_and_filter2(_Predicate1, _Predicate2, none, Acc) ->
+%%    Acc;
+%%iterate_and_filter2({infinity, _} = Predicate1, Predicate2, {Key, Value, Iter}, Acc) ->
+%%    iterate_and_filter2(Predicate1, Predicate2, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
+%%iterate_and_filter2({Bound1, Params1} = Predicate1, {Bound2, Params2} = Predicate2, {Key, Value, Iter}, Acc) ->
+%%    Result = case {Params1, Params2} of
+%%                 {[key], [key]} -> apply_pred(Bound1, Key) andalso apply_pred(Bound2, Key);
+%%                 {[value, V1], [value, V2]} -> apply_pred(Bound1, [Value, V1]) andalso apply_pred(Bound2, [Value, V2])
+%%             end,
+%%    case Result of
+%%        true -> iterate_and_filter2(Predicate1, Predicate2, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
+%%        false -> iterate_and_filter2(Predicate1, Predicate2, gb_trees:next(Iter), Acc)
+%%    end.
 
 full_search(EntryValue, Index) ->
     Iterator = gb_trees:iterator(Index),
@@ -304,21 +320,32 @@ full_search(EntryValue, Index) ->
     end.
 
 validate_pred(_BoundType, infinity) -> true;
-validate_pred(lower, {Type, _Func}) ->
+validate_pred(lower, {Type, _Val}) ->
     lists:member(Type, ?LOWER_BOUND_PRED);
-validate_pred(upper, {Type, _Func}) ->
+validate_pred(upper, {Type, _Val}) ->
     lists:member(Type, ?UPPER_BOUND_PRED).
 
-apply_pred({_Type, Func}, Param) ->
+apply_pred(infinity, _Param) -> true;
+apply_pred({Type, Val}, Param) ->
+    Func = to_predicate(Type, Val),
+    Func(Param);
+apply_pred(Func, Param) when is_function(Func) ->
     Func(Param).
+
+to_predicate(greater, Val) -> fun(V) -> V > Val end;
+to_predicate(greatereq, Val) -> fun(V) -> V >= Val end;
+to_predicate(lesser, Val) -> fun(V) -> V < Val end;
+to_predicate(lessereq, Val) -> fun(V) -> V =< Val end;
+to_predicate(equality, Val) -> fun(V) -> V == Val end;
+to_predicate(notequality, Val) -> fun(V) -> V /= Val end.
 
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
 
-tree_insertions(Number, TreeAcc) ->
-    gb_trees:enter(Number, Number, TreeAcc).
+%tree_insertions(Number, TreeAcc) ->
+%    gb_trees:enter(Number, Number, TreeAcc).
 
 new_test() ->
     ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new()),
@@ -366,22 +393,21 @@ equal_test() ->
     ?assertEqual(false, equal(Index2, Index3)),
     ?assertEqual(false, equal(Index2, Index4)).
 
-bound_search_test() ->
-    Func = fun(Key) -> Key >= 3 end,
-    Pred = {greatereq, Func},
-    Tree1 = gb_trees:empty(),
-    Tree2 = gb_trees:enter(1, 1, Tree1),
-    Tree3 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(1, 10)),
-    Tree4 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(2, 20, 2)),
-    Tree5 = lists:foldl(fun tree_insertions/2, Tree1, lists:reverse(lists:seq(1, 5))),
-    Tree6 = lists:foldl(fun tree_insertions/2, Tree1, [1, 2]),
-
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree1)),
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree2)),
-    ?assertEqual(3, lookup_lower_bound(Pred, Tree3)),
-    ?assertEqual(4, lookup_lower_bound(Pred, Tree4)),
-    ?assertEqual(3, lookup_lower_bound(Pred, Tree5)),
-    ?assertEqual(nil, lookup_lower_bound(Pred, Tree6)).
+%%bound_search_test() ->
+%%    Pred = {greatereq, 3},
+%%    Tree1 = gb_trees:empty(),
+%%    Tree2 = gb_trees:enter(1, 1, Tree1),
+%%    Tree3 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(1, 10)),
+%%    Tree4 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(2, 20, 2)),
+%%    Tree5 = lists:foldl(fun tree_insertions/2, Tree1, lists:reverse(lists:seq(1, 5))),
+%%    Tree6 = lists:foldl(fun tree_insertions/2, Tree1, [1, 2]),
+%%
+%%    ?assertEqual(nil, lookup_lower_bound(Pred, Tree1)),
+%%    ?assertEqual(nil, lookup_lower_bound(Pred, Tree2)),
+%%    ?assertEqual(3, lookup_lower_bound(Pred, Tree3)),
+%%    ?assertEqual(4, lookup_lower_bound(Pred, Tree4)),
+%%    ?assertEqual(3, lookup_lower_bound(Pred, Tree5)),
+%%    ?assertEqual(nil, lookup_lower_bound(Pred, Tree6)).
 
 range_test() ->
     Index1 = new(),
@@ -392,10 +418,8 @@ range_test() ->
     ],
     {ok, DownstreamOp1} = downstream({update, Updates}, Index1),
     {ok, Index2} = update(DownstreamOp1, Index1),
-    Func1 = fun(Term) -> Term >= 3 end,
-    Func2 = fun(Term) -> Term < 6 end,
-    LowerPred1 = {greatereq, Func1},
-    UpperPred1 = {lesser, Func2},
+    LowerPred1 = {greatereq, 3},
+    UpperPred1 = {lesser, 6},
     ?assertEqual([], value({range, {LowerPred1, UpperPred1}}, Index1)),
     ?assertEqual([{3, ["col3"]}, {4, ["col4"]}, {5, ["col5"]}], value({range, {LowerPred1, UpperPred1}}, Index2)).
 

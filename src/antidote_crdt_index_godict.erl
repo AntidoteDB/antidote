@@ -37,7 +37,7 @@
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).
 -define(UPPER_BOUND_PRED, [lesser, lessereq]).
--define(WRONG_PRED, "Some of the predicates don't respect a range query").
+-define(WRONG_PRED(Preds), io_lib:format("Some of the predicates don't respect a range query: ~p", [Preds])).
 
 %% API
 -export([new/0,
@@ -61,8 +61,8 @@
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
 -type pred_type() :: greater | greatereq | lesser | lessereq.
--type pred_func() :: fun().
--type predicate() :: {pred_type(), pred_func()} | infinity.
+-type pred_arg() :: number().
+-type predicate() :: {pred_type(), pred_arg()} | infinity.
 
 -type gindex_query() :: {range, {predicate(), predicate()}} |
                         {get, term()} |
@@ -105,7 +105,7 @@ value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
             end, Index),
             lists:sort(dict:to_list(Filtered));
         false ->
-            throw(?WRONG_PRED)
+            throw(lists:flatten(?WRONG_PRED({LowerPred, UpperPred})))
     end;
 value({get, Key}, {_Type, Index, _Indirection}) ->
     case dict:find(Key, Index) of
@@ -292,14 +292,24 @@ full_search(EntryValue, Index) ->
     end.
 
 validate_pred(_BoundType, infinity) -> true;
-validate_pred(lower, {Type, _Func}) ->
+validate_pred(lower, {Type, _Val}) ->
     lists:member(Type, ?LOWER_BOUND_PRED);
-validate_pred(upper, {Type, _Func}) ->
+validate_pred(upper, {Type, _Val}) ->
     lists:member(Type, ?UPPER_BOUND_PRED).
 
 apply_pred(infinity, _Param) -> true;
-apply_pred({_Type, Func}, Param) ->
+apply_pred({Type, Val}, Param) ->
+    Func = to_predicate(Type, Val),
+    Func(Param);
+apply_pred(Func, Param) when is_function(Func) ->
     Func(Param).
+
+to_predicate(greater, Val) -> fun(V) -> V > Val end;
+to_predicate(greatereq, Val) -> fun(V) -> V >= Val end;
+to_predicate(lesser, Val) -> fun(V) -> V < Val end;
+to_predicate(lessereq, Val) -> fun(V) -> V =< Val end;
+to_predicate(equality, Val) -> fun(V) -> V == Val end;
+to_predicate(notequality, Val) -> fun(V) -> V /= Val end.
 
 %% ===================================================================
 %% EUnit tests
@@ -361,10 +371,8 @@ range_test() ->
     ],
     {ok, DownstreamOp1} = downstream({update, Updates}, Index1),
     {ok, Index2} = update(DownstreamOp1, Index1),
-    Func1 = fun(Term) -> Term >= 3 end,
-    Func2 = fun(Term) -> Term < 6 end,
-    LowerPred1 = {greatereq, Func1},
-    UpperPred1 = {lesser, Func2},
+    LowerPred1 = {greatereq, 3},
+    UpperPred1 = {lesser, 6},
     ?assertEqual([], value({range, {LowerPred1, UpperPred1}}, Index1)),
     ?assertEqual([{3, ["col3"]}, {4, ["col4"]}, {5, ["col5"]}], value({range, {LowerPred1, UpperPred1}}, Index2)).
 
