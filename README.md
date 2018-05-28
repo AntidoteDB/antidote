@@ -22,7 +22,7 @@ Use the following `make` targets to build and test the CRDT library:
 
 To run the property based tests in the test directory install the [rebar3 PropEr plugin](https://www.rebar3.org/docs/using-available-plugins#proper) by adding the following line to `~/.config/rebar3/rebar.config`:
 
-	{plugins, [rebar3_proper]}.
+	{plugins, [{rebar3_proper, "0.9.0"}]}.
 
 Then execute the tests with:
 
