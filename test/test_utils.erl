@@ -22,15 +22,15 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(FORCE_KILL_TIMER, 1500).
+-define(RIAK_SLEEP, 5000).
+
 -compile({parse_transform, lager_transform}).
 
 -export([at_init_testsuite/0,
+    pmap/2,
          %get_cluster_members/1,
-         pmap/2,
-         start_node/2,
          connect_cluster/1,
-         kill_and_restart_nodes/2,
-         kill_nodes/1,
          get_node_name/1,
          descriptors/1,
          web_ports/1,
@@ -41,16 +41,28 @@
          is_ready/1,
          wait_until_nodes_agree_about_ownership/1,
          staged_join/2,
-         brutal_kill_nodes/1,
          restart_nodes/2,
          partition_cluster/2,
          heal_cluster/2,
          join_cluster/1,
          set_up_clusters_common/1]).
 
+%% ===========================================
+%% Node utilities
+%% ===========================================
+
+-export([
+    start_node/2,
+    kill_nodes/1,
+    kill_and_restart_nodes/2,
+    brutal_kill_nodes/1
+]).
+
+%% ===========================================
+%% Common test
+%% ===========================================
+
 at_init_testsuite() ->
-%% this might help, might not...
-    os:cmd(os:find_executable("epmd") ++ " -daemon"),
     {ok, Hostname} = inet:gethostname(),
     case net_kernel:start([list_to_atom("runner@"++Hostname), shortnames]) of
         {ok, _} -> ok;
@@ -59,87 +71,33 @@ at_init_testsuite() ->
     end.
 
 
-%get_cluster_members(Node) ->
-%    {Node, {ok, Res}} = {Node, rpc:call(Node, plumtree_peer_service_manager, get_local_state, [])},
-%    ?SET:value(Res).
-
-pmap(F, L) ->
-    Parent = self(),
-    lists:foldl(
-        fun(X, N) ->
-                spawn_link(fun() ->
-                            Parent ! {pmap, N, F(X)}
-                    end),
-                N+1
-        end, 0, L),
-    L2 = [receive {pmap, N, R} -> {N, R} end || _ <- L],
-    {_, L3} = lists:unzip(lists:keysort(1, L2)),
-    L3.
-
-
--spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
-kill_and_restart_nodes(NodeList, Config) ->
-    NewNodeList = brutal_kill_nodes(NodeList),
-    restart_nodes(NewNodeList, Config).
-
-%% when you just can't wait
--spec brutal_kill_nodes([node()]) -> [node()].
-brutal_kill_nodes(NodeList) ->
-    lists:map(fun(Node) ->
-                  lager:info("Killing node ~p", [Node]),
-                  OSPidToKill = rpc:call(Node, os, getpid, []),
-                  %% try a normal kill first, but set a timer to
-                  %% kill -9 after 5 seconds just in case
-                  rpc:cast(Node, timer, apply_after,
-                       [5000, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-                  rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
-                  Node
-              end, NodeList).
-
--spec kill_nodes([node()]) -> [node()].
-kill_nodes(NodeList) ->
-    lists:map(fun(Node) ->
-                  %% Crash if stopping fails
-                  {ok, Name1} = ct_slave:stop(get_node_name(Node)),
-                  Name1
-              end, NodeList).
-
--spec restart_nodes([node()], [tuple()]) -> [node()].
-restart_nodes(NodeList, Config) ->
-    pmap(fun(Node) ->
-             start_node(get_node_name(Node), Config),
-             ct:print("Waiting until vnodes are restarted at node ~w", [Node]),
-             riak_utils:wait_until_ring_converged([Node]),
-             time_utils:wait_until(Node, fun wait_init:check_ready/1),
-             Node
-         end, NodeList).
-
--spec get_node_name(node()) -> atom().
-get_node_name(NodeAtom) ->
-    Node = atom_to_list(NodeAtom),
-    {match, [{Pos, _Len}]} = re:run(Node, "@"),
-    list_to_atom(string:substr(Node, 1, Pos)).
+%% ===========================================
+%% Node utilities
+%% ===========================================
 
 start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
-            {monitor_master, true},
-            {erl_flags, "-smp"}, %% smp for the eleveldb god
-            {startup_functions, [
-                    {code, set_path, [CodePath]}
-                    ]}],
+        {monitor_master, true},
+        {erl_flags, "-smp"}, %% smp for the eleveldb god
+        {startup_functions, [
+            {code, set_path, [CodePath]}
+        ]}],
     case ct_slave:start(Name, NodeConfig) of
         {ok, Node} ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node]),
 
-            ct:print("Node dir: ~p", [NodeDir]),
+            lager:info("Node dir: ~p", [NodeDir]),
 
+            lager:info("Starting lager"),
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
             ok = rpc:call(Node, application, load, [lager]),
 
+            lager:info("Starting riak_core"),
             ok = rpc:call(Node, application, load, [riak_core]),
+
 
             PlatformDir = NodeDir ++ "/data/",
             RingDir = PlatformDir ++ "/ring/",
@@ -147,6 +105,7 @@ start_node(Name, Config) ->
             filelib:ensure_dir(PlatformDir),
             filelib:ensure_dir(RingDir),
 
+            lager:info("Setting environment for riak"),
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
 
@@ -158,14 +117,18 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [riak_api, pb_port, web_ports(Name) + 2]),
             ok = rpc:call(Node, application, set_env, [riak_api, pb_ip, "127.0.0.1"]),
 
+            lager:info("Starting antidote"),
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
             ok = rpc:call(Node, application, set_env, [antidote, metrics_port, web_ports(Name) + 4]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            ct:print("Node ~p started", [Node]),
+            ct:print("Node ~p started with ports ~p-~p", [Node, web_ports(Name), web_ports(Name)+4]),
 
+            Node;
+        {error, already_started, Node} ->
+            lager:info("Node ~p already started, reusing node", [Node]),
             Node;
         {error, Reason, Node} ->
             ct:print("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
@@ -173,6 +136,77 @@ start_node(Name, Config) ->
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
+
+%% @doc Forces shutdown of nodes and restarts them again with given configuration
+-spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
+kill_and_restart_nodes(NodeList, Config) ->
+    NewNodeList = brutal_kill_nodes(NodeList),
+    restart_nodes(NewNodeList, Config).
+
+
+%% @doc Kills all given nodes, crashes if one node cannot be stopped
+-spec kill_nodes([node()]) -> [node()].
+kill_nodes(NodeList) ->
+    lists:map(fun(Node) -> {ok, Name} = ct_slave:stop(get_node_name(Node)), Name end, NodeList).
+
+
+%% @doc Send force kill signals to all given nodes
+-spec brutal_kill_nodes([node()]) -> [node()].
+brutal_kill_nodes(NodeList) ->
+    lists:map(fun(Node) ->
+                  ct:print("Killing node ~p", [Node]),
+                  OSPidToKill = rpc:call(Node, os, getpid, []),
+                  %% try a normal kill first, but set a timer to
+                  %% kill -9 after X seconds just in case
+%%                  rpc:cast(Node, timer, apply_after,
+%%                      [?FORCE_KILL_TIMER, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
+                  ct_slave:stop(get_node_name(Node)),
+                  rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
+                  Node
+              end, NodeList).
+
+
+%% @doc Restart nodes with given configuration
+-spec restart_nodes([node()], [tuple()]) -> [node()].
+restart_nodes(NodeList, Config) ->
+    pmap(fun(Node) ->
+        ct:print("Restarting node ~p", [Node]),
+
+        lager:info("Starting and waiting until vnodes are restarted at node ~w", [Node]),
+        start_node(get_node_name(Node), Config),
+
+        lager:info("Waiting until ring converged @ ~p", [Node]),
+        riak_utils:wait_until_ring_converged([Node]),
+
+        lager:info("Waiting until ready @ ~p", [Node]),
+        time_utils:wait_until(Node, fun wait_init:check_ready/1),
+        Node
+         end, NodeList).
+
+
+%% @doc Convert node to node atom
+-spec get_node_name(node()) -> atom().
+get_node_name(NodeAtom) ->
+    Node = atom_to_list(NodeAtom),
+    {match, [{Pos, _Len}]} = re:run(Node, "@"),
+    list_to_atom(string:substr(Node, 1, Pos)).
+
+
+%% @doc TODO
+-spec pmap(fun(), list()) -> list().
+pmap(F, L) ->
+    Parent = self(),
+    lists:foldl(
+        fun(X, N) ->
+            spawn_link(fun() ->
+                           Parent ! {pmap, N, F(X)}
+                       end),
+            N+1
+        end, 0, L),
+    L2 = [receive {pmap, N, R} -> {N, R} end || _ <- L],
+    {_, L3} = lists:unzip(lists:keysort(1, L2)),
+    L3.
+
 
 partition_cluster(ANodes, BNodes) ->
     pmap(fun({Node1, Node2}) ->
@@ -194,11 +228,11 @@ heal_cluster(ANodes, BNodes) ->
 
 connect_cluster(Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
-  ct:pal("Connecting DC clusters..."),
+  lager:info("Connecting DC clusters..."),
 
   pmap(fun(Cluster) ->
               Node1 = hd(Cluster),
-              ct:print("Waiting until vnodes start on node ~p", [Node1]),
+              lager:info("Waiting until vnodes start on node ~p", [Node1]),
               time_utils:wait_until_registered(Node1, inter_dc_pub),
               time_utils:wait_until_registered(Node1, inter_dc_query_receive_socket),
               time_utils:wait_until_registered(Node1, inter_dc_query_response_sup),
@@ -210,11 +244,11 @@ connect_cluster(Nodes) ->
               ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
           end, Clusters),
     Descriptors = descriptors(Clusters),
-    ct:print("the clusters ~w", [Clusters]),
+    lager:info("the clusters ~w", [Clusters]),
     Res = [ok || _ <- Clusters],
     pmap(fun(Cluster) ->
               Node = hd(Cluster),
-              ct:print("Making node ~p observe other DCs...", [Node]),
+              lager:info("Making node ~p observe other DCs...", [Node]),
               %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
               Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
           end, Clusters),
@@ -222,7 +256,7 @@ connect_cluster(Nodes) ->
               Node = hd(Cluster),
               ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
           end, Clusters),
-    ct:pal("DC clusters connected!").
+    lager:info("DC clusters connected!").
 
 descriptors(Clusters) ->
   lists:map(fun(Cluster) ->
@@ -242,10 +276,9 @@ web_ports(dev4) ->
 
 %% Build clusters
 join_cluster(Nodes) ->
-    ct:print("Joining: ~p", [Nodes]),
+    lager:info("Joining: ~p", [Nodes]),
     %% Ensure each node owns 100% of it's own ring
     [?assertEqual([Node], riak_utils:owners_according_to(Node)) || Node <- Nodes],
-    ct:print("Owning ensured"),
     %% Join nodes
     [Node1|OtherNodes] = Nodes,
     case OtherNodes of
@@ -259,22 +292,22 @@ join_cluster(Nodes) ->
             plan_and_commit(Node1),
             try_nodes_ready(Nodes, 3, 500)
     end,
-    ct:print("Join success"),
 
+    lager:info("Wait until nodes read"),
     ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
 
-    ct:print("Wait until nodes ready finished"),
-
     %% Ensure each node owns a portion of the ring
+    lager:info("Wait until agree about ownership"),
     wait_until_nodes_agree_about_ownership(Nodes),
-    ct:print("Wait until nodes agreed woner finished"),
 
+    lager:info("Wait until no pending changes"),
     ?assertEqual(ok, riak_utils:wait_until_no_pending_changes(Nodes)),
-    ct:print("Wait until no pending finished"),
+
+    lager:info("Wait until ring converged"),
     riak_utils:wait_until_ring_converged(Nodes),
-    ct:print("Wait until converged finished"),
+
+    lager:info("Check if nodes are fully ready"),
     time_utils:wait_until(hd(Nodes), fun wait_init:check_ready/1),
-    ct:print("another Wait until finished"),
     ok.
 
 
@@ -356,8 +389,6 @@ wait_until_nodes_agree_about_ownership(Nodes) ->
     Results = [ time_utils:wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
 
-
-
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
    StartDCs = fun(Nodes) ->
@@ -367,15 +398,10 @@ set_up_clusters_common(Config) ->
                   end,
 
 
-    {Time, Clusters} = timer:tc(
-        fun() -> pmap(
+    Clusters = pmap(
             fun(N) -> StartDCs(N) end,
             [[dev1, dev2], [dev3], [dev4]]
-        ) end),
-
-    ct:print("Time for clusterinit: ~p s", [Time div 1000]),
-
-    ct:print("-------------------GO-------------------------------"),
+        ),
 
    [Cluster1, Cluster2, Cluster3] = Clusters,
    %% Do not join cluster if it is already done
@@ -383,13 +409,9 @@ set_up_clusters_common(Config) ->
      Cluster1 ->
          ok; % No need to build Cluster
      _ ->
-         ct:print("Joining ~p", [Clusters]),
         [join_cluster(Cluster) || Cluster <- Clusters],
-         ct:print("-----------------joined clusers--------------------------------"),
         Clusterheads = [hd(Cluster) || Cluster <- Clusters],
-        connect_cluster(Clusterheads),
-         ct:print("-----------------connected clusers--------------------------------")
+        connect_cluster(Clusterheads)
    end,
 
-    ct:print("-----------------FIN--------------------------------"),
    [Cluster1, Cluster2, Cluster3].

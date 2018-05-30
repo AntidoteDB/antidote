@@ -41,11 +41,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(ADDRESS, "localhost").
-
--define(PORT, 10017).
 
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
@@ -57,7 +55,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [register_hook_test,

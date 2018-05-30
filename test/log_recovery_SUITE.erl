@@ -38,7 +38,6 @@
 -include_lib("kernel/include/inet.hrl").
 
 init_per_suite(Config) ->
-    lager_common_test_backend:bounce(debug),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
@@ -83,10 +82,10 @@ read_pncounter_log_recovery_test(Config) ->
 
             ?assertEqual(15, ReadResult2),
 
-            lager:info("Killing and restarting the nodes"),
+            ct:print("Killing and restarting the nodes"),
             %% Shut down the nodes
             Nodes = test_utils:kill_and_restart_nodes(Nodes, Config),
-            lager:info("Vnodes are started up"),
+            ct:print("Vnodes are started up"),
             lager:info("Nodes: ~p", [Nodes]),
 
             %% Read the value again

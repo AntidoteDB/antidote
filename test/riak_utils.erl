@@ -25,11 +25,11 @@
 -compile({parse_transform, lager_transform}).
 
 -export([
-    is_ring_ready/1, %
-    wait_until_ring_converged/1, %
-    wait_until_no_pending_changes/1, %
-    maybe_wait_for_changes/1, %
-    owners_according_to/1 %
+    is_ring_ready/1,
+    wait_until_ring_converged/1,
+    wait_until_no_pending_changes/1,
+    maybe_wait_for_changes/1,
+    owners_according_to/1
 ]).
 
 
@@ -51,7 +51,7 @@ wait_until_ring_converged(Nodes) ->
     ok.
 
 
-%% @doc Given a list of nodes-spec is_ring_ready([node()]) -> ok., wait until all nodes believe there are no
+%% @doc Given a list of nodes, wait until all nodes believe there are no
 %% on-going or pending ownership transfers.
 -spec wait_until_no_pending_changes([node()]) -> ok | fail.
 wait_until_no_pending_changes(Nodes) ->
@@ -78,13 +78,9 @@ maybe_wait_for_changes(Node) ->
 owners_according_to(Node) ->
     case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
         {ok, Ring} ->
-            lager:debug("Ring ~p", [Ring]),
             Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
-            lager:debug("Owners ~p", [lists:usort(Owners)]),
             lists:usort(Owners);
         {badrpc, _} = BadRpc ->
-            lager:info("Badrpc"),
+            ct:print("Bad rpc call to riak core: ~p", [BadRpc]),
             BadRpc
     end.
-
-

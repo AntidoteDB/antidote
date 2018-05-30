@@ -7,7 +7,8 @@
 %%% Created : 23. May 2018 16:17
 %%%-------------------------------------------------------------------
 -module(time_utils).
--author("schimpf").
+
+-compile({parse_transform, lager_transform}).
 
 -include_lib("eunit/include/eunit.hrl").
 
