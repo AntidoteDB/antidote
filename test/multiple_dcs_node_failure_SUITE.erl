@@ -146,7 +146,7 @@ multiple_cluster_failure_test(Config) ->
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
             check_read_key(Node1, Key, Type, 3, CommitTime, static),
 
-            %% Kill and restart a node and be sure everyhing works
+            %% Kill and restart a node and be sure everything works
             ct:print("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
@@ -191,18 +191,18 @@ update_during_cluster_failure_test(Config) ->
             lager:info("Done append in Node1"),
 
             %% Kill a node
-            ct:print("Killing node ~w", [Node1]),
+            lager:info("Killing node ~w", [Node1]),
             [Node1] = test_utils:brutal_kill_nodes([Node1]),
 
             %% Be sure the other DC works while the node is down
             {ok, CommitTime3a} = update_counters(Node2, [Key], [1], ignore, static),
 
             %% Start the node back up and be sure everything works
-            ct:print("Restarting node ~w", [Node1]),
+            lager:info("Restarting node ~w", [Node1]),
             [Node1] = test_utils:restart_nodes([Node1], Config),
 
             %% Take the max of the commit times to be sure
-            %% to read all updateds
+            %% to read all updates
             Time = dict:merge(fun(_K, T1, T2) ->
                 max(T1, T2)
             end, CommitTime, CommitTime3a),
