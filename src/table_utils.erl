@@ -71,18 +71,30 @@ all_column_names(Table) ->
     SCols = lists:map(fun(?FK(FKName, _FKType, _RefTable, _RefCol)) -> FKName end, foreign_keys(Table)),
     lists:append([['#st'], TCols, SCols]).
 
+%% Tables metadata is always read from the database;
+%% Only individual table metadata is stored on cache.
 tables_metadata(TxId) ->
     ObjKey = querying_utils:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
-    [Meta] = querying_utils:read_keys(ObjKey, TxId),
+    [Meta] = querying_utils:read_keys(value, ObjKey, TxId),
     Meta.
 
 table_metadata(TableName, TxId) ->
-    Metadata = tables_metadata(TxId),
-    TableNameAtom = querying_utils:to_atom(TableName),
-    MetadataKey = {TableNameAtom, ?TABLE_NAME_DT},
-    case proplists:get_value(MetadataKey, Metadata) of
-        undefined -> [];
-        TableMeta -> TableMeta
+    %io:format(">> table_metadata:~n", []),
+    case object_caching:get_key(TableName) of
+        {error, _} ->
+            %io:format("Not in cache; reading from database...~n", []),
+            Metadata = tables_metadata(TxId),
+            TableNameAtom = querying_utils:to_atom(TableName),
+            MetadataKey = {TableNameAtom, ?TABLE_NAME_DT},
+            case proplists:get_value(MetadataKey, Metadata) of
+                undefined -> [];
+                TableMeta ->
+                    ok = object_caching:insert_key(TableName, TableMeta),
+                    TableMeta
+            end;
+        TableMetaObj ->
+            %io:format("In cache; retrieving object~n", []),
+            TableMetaObj %% table metadata is a 'value' type object
     end.
 
 is_primary_key(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
@@ -113,7 +125,7 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     %%io:format("RefColValue: ~p~n", [RefColValue]),
     StateObjKey = querying_utils:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
     %io:format("StateObjKey: ~p~n", [StateObjKey]),
-    [ShColData] = querying_utils:read_keys(StateObjKey, TxId),
+    [ShColData] = querying_utils:read_keys(value, StateObjKey, TxId),
     %io:format("ShColData: ~p~n", [ShColData]),
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
     State = lookup_value(RefColName, ShColData),
@@ -123,7 +135,7 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
 record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
     PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
     ObjKeys = querying_utils:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
-    case querying_utils:read_keys(ObjKeys, TxId) of
+    case querying_utils:read_keys(value, ObjKeys, TxId) of
         [[]] -> [];
         ObjValues -> ObjValues
     end;

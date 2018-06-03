@@ -72,9 +72,10 @@ create_index_hooks(Updates) when is_list(Updates) ->
 %% Check if the object updates trigger index updates.
 %% If so, generate updates for the respective indexes.
 check_object_update({{Key, Bucket}, Type, Param}) ->
-
     %% TODO use {ok, _CT} = antidote:read_objects(ignore, [], [{Key, Type, Bucket}, ...])
     %% TODO use {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, Type, Bucket}, update, ...}])
+
+    {ok, TxId} = cure:start_transaction(ignore, [], false),
 
     %lager:info(">> check_object_updates:", []),
     %lager:info("ObjUpdate: ~p", [ObjUpdate]),
@@ -86,20 +87,39 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
     SendUpdates = case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
             %lager:info("Is a table update...~n", []),
-            SIdxUpdates = fill_index(ObjUpdate),
+            %io:format("Is a table update...~n", []),
+            %SIdxUpdates = fill_index(ObjUpdate, ignore),
+            SIdxUpdates = fill_index(ObjUpdate, TxId),
             %io:format("SIdxUpdates: ~p~n", [SIdxUpdates]),
-            Upds = build_index_updates(SIdxUpdates, ignore),
+            %Upds = build_index_updates(SIdxUpdates, ignore),
+            Upds = build_index_updates(SIdxUpdates, TxId),
             %io:format("Upds: ~p~n", [Upds]),
+
+            [{{TableName, _}, _}] = Updates,
+
+            %% Remove table metadata entry from cache -- mark as 'dirty'
+            %io:format("Removing from cache: ~p~n", [TableName]),
+            ok = object_caching:remove_key(TableName),
+
             Upds;
         ?RECORD_UPD_TYPE ->
             %lager:info("Is a record update...~n", []),
-            Table = table_utils:table_metadata(Bucket, ignore),
+            %io:format("Is a record update...~n", []),
+            %Table = table_utils:table_metadata(Bucket, ignore),
+            Table = table_utils:table_metadata(Bucket, TxId),
             TableName = table_utils:table(Table),
             case Table of
                 undefined -> [];
                 _Else ->
                     %lager:info("A table exists! Metadata: ~p~n", [Table]),
-                    [PIdxKey] = querying_utils:build_keys(generate_pindex_key(TableName), ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+                    %io:format("A table exists! Metadata: ~p~n", [Table]),
+                    PIdxName = generate_pindex_key(TableName),
+
+                    %% Remove index entry from cache -- mark as 'dirty'
+                    %io:format("Removing from cache: ~p~n", [PIdxName]),
+                    ok = object_caching:remove_key(PIdxName),
+
+                    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
                     PIdxUpdate = {PIdxKey, add, Key},
                     Indexes = table_utils:indexes(Table),
@@ -115,7 +135,8 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
                         end
                     end, [], Updates),
                     %lager:info("SIdxUpdates: ~p~n", [SIdxUpdates]),
-                    ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, ignore)),
+                    %ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, ignore)),
+                    ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, TxId)),
                     %lager:info("ToDBUpdate: ~p~n", [ToDBUpdate]),
                     ToDBUpdate
             end;
@@ -128,37 +149,78 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
         [] -> ok;
         _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
     end,
+    cure:commit_transaction(TxId),
     {ok, ObjUpdate}.
 
 read_index(primary, TableName, TxId) ->
-    %% TODO add the capability to read the primary index from memory/cache?
+    %% TODO add the capability to read the primary index from memory/cache
+
     %io:format(">> read_index(primary):~n", []),
     IndexName = generate_pindex_key(TableName),
-    ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_keys(ObjKeys, TxId),
+    IdxObj = case object_caching:get_key(IndexName) of
+                 {error, _} ->
+                     ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+                     [IndexState] = querying_utils:read_keys(state, ObjKeys, TxId),
+                     ok = object_caching:insert_key(IndexName, IndexState),
+                     IndexValue = ?PINDEX_DT:value(IndexState),
+                     IndexValue;
+                 IndexState ->
+                     ?PINDEX_DT:value(IndexState)
+             end,
+
     %io:format("ObjKeys: ~p~n", [ObjKeys]),
     %io:format("IdxObj: ~p~n", [IdxObj]),
     IdxObj;
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    %% TODO add the capability to read the primary index from memory/cache?
+    %% TODO add the capability to read the primary index from memory/cache
     %% the secondary index is identified by the notation "#2i_IndexName", where
     %% IndexName = "table_name.index_name"
+
     %io:format(">> read_index(secondary):~n", []),
     FullIndexName = generate_sindex_key(TableName, IndexName),
-    ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_keys(ObjKeys, TxId),
+    IdxObj = case object_caching:get_key(FullIndexName) of
+                 {error, _} ->
+                     ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+                     [IndexState] = querying_utils:read_keys(state, ObjKeys, TxId),
+                     ok = object_caching:insert_key(IndexName, IndexState),
+                     IndexValue = ?SINDEX_DT:value(IndexState),
+                     IndexValue;
+                 IndexState ->
+                     ?SINDEX_DT:value(IndexState)
+             end,
+
     %io:format("IdxObj: ~p~n", [IdxObj]),
     IdxObj.
 
 read_index_function(primary, TableName, {Function, Args}, TxId) ->
     IndexName = generate_pindex_key(TableName),
-    ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+    IdxObj = case object_caching:get_key(IndexName) of
+                 {error, _} ->
+                     ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+                     %[IndexValue] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+                     [IndexState] = querying_utils:read_keys(state, ObjKeys, TxId),
+                     ok = object_caching:insert_key(IndexName, IndexState),
+                     IndexValue = ?PINDEX_DT:value({Function, Args}, IndexState),
+                     IndexValue;
+                 IndexState ->
+                     ?PINDEX_DT:value({Function, Args}, IndexState)
+             end,
+
     IdxObj;
 read_index_function(secondary, {TableName, IndexName}, {Function, Args}, TxId) ->
     FullIndexName = generate_sindex_key(TableName, IndexName),
-    ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+    IdxObj = case object_caching:get_key(FullIndexName) of
+                 {error, _} ->
+                     ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+                     %[IndexValue] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+                     [IndexState] = querying_utils:read_keys(state, ObjKeys, TxId),
+                     ok = object_caching:insert_key(IndexName, IndexState),
+                     IndexValue = ?SINDEX_DT:value({Function, Args}, IndexState),
+                     IndexValue;
+                 IndexState ->
+                     ?SINDEX_DT:value({Function, Args}, IndexState)
+             end,
+
     IdxObj.
 
 %% TODO
@@ -177,6 +239,10 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
         ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
         DBIndexName = generate_sindex_key(TableName, IndexName),
         %EntryValue = sets:to_list(Value),
+
+        %% Remove index entry from cache -- mark as 'dirty'
+        %io:format("Removing from cache: ~p~n", [DBIndexName]),
+        ok = object_caching:remove_key(DBIndexName),
 
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
         %[IndexObj] = querying_utils:read_keys(IndexKey, TxId),
@@ -307,7 +373,7 @@ is_element(IndexedVal, Pk, IndexObj) ->
         error -> false
     end.
 
-fill_index(ObjUpdate) ->
+fill_index(ObjUpdate, TxId) ->
     case retrieve_index(ObjUpdate) of
         {_, []} ->
             %io:format("No index was created...~n", []),
@@ -318,10 +384,10 @@ fill_index(ObjUpdate) ->
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 [PrimaryKey] = table_utils:primary_key_name(Table),
                 %io:format("PrimaryKey: ~p~n", [PrimaryKey]),
-                PIndexObject = read_index(primary, TableName, ignore),
-                SIndexObject = read_index(secondary, {TableName, IndexName}, ignore),
+                PIndexObject = read_index(primary, TableName, TxId),
+                SIndexObject = read_index(secondary, {TableName, IndexName}, TxId),
                 %io:format("PIndexObject: ~p~n", [PIndexObject]),
-                Records = table_utils:record_data(PIndexObject, TableName, ignore),
+                Records = table_utils:record_data(PIndexObject, TableName, TxId),
                 %Filtered = query_optimizer:get_partial_object(Records, lists:append(PrimaryKey, Cols)),
                 %io:format("Records: ~p~n", [Records]),
                 IdxUpds = lists:map(fun(Record) ->

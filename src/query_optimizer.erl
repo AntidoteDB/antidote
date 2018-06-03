@@ -77,10 +77,10 @@ query_filter(Filter, TxId) when is_list(Filter) ->
 
 get_partial_object(Key, Type, Bucket, Filter, TxId) ->
     ObjectKey = querying_utils:build_keys(Key, Type, Bucket),
-    [Object] = querying_utils:read_keys(ObjectKey, TxId),
+    [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
     {ok, apply_projection(Filter, Object)}.
 get_partial_object(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
-    [Object] = querying_utils:read_keys(ObjectKey, TxId),
+    [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
     {ok, apply_projection(Filter, Object)}.
 get_partial_object(Object, Filter) when is_list(Object) ->
     {ok, apply_projection(Filter, Object)}.

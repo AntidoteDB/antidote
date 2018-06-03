@@ -35,8 +35,8 @@
 
 %% API
 -export([build_keys/3,
+         read_keys/3,
          read_keys/2,
-         read_keys/1,
          read_function/3,
          read_function/2,
          write_keys/3,
@@ -66,45 +66,66 @@ build_keys([Key | Tail1], [Type | Tail2], Bucket, Acc) ->
 build_keys([], [], _Bucket, Acc) ->
     Acc.
 
-read_keys([], _TxId) -> [[]];
-read_keys(ObjKeys, ignore) ->
-    read_keys(ObjKeys);
-read_keys(ObjKeys, TxId) when is_list(ObjKeys) ->
-    %% TODO read objects from Cure or Materializer?
-    {ok, Objs} = cure:read_objects(ObjKeys, TxId),
-    Objs;
-read_keys(ObjKey, TxId) ->
-    read_keys([ObjKey], TxId).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%     Read Values or States    %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+read_keys(_StateOrValue, [], _TxId) -> [[]];
+read_keys(StateOrValue, ObjKeys, ignore) ->
+    read_keys(StateOrValue, ObjKeys);
+read_keys(StateOrValue, ObjKeys, TxId) when is_list(ObjKeys) ->
+    read_crdts(StateOrValue, ObjKeys, TxId);
+read_keys(StateOrValue, ObjKey, TxId) ->
+    read_keys(StateOrValue, [ObjKey], TxId).
 
-read_keys([]) -> [[]];
-read_keys(ObjKeys) when is_list(ObjKeys) ->
-    {ok, Objs, _} = cure:read_objects(ignore, [], ObjKeys),
-    Objs;
-read_keys(ObjKey) ->
-    read_keys([ObjKey]).
+read_keys(_StateOrValue, []) -> [[]];
+read_keys(StateOrValue, ObjKeys) when is_list(ObjKeys) ->
+    read_crdts(StateOrValue, ObjKeys);
+read_keys(StateOrValue, ObjKey) ->
+    read_keys(StateOrValue, [ObjKey]).
 
+%% Applying a function on a set of keys implies returning the values
+%% of the CRDTs mapped by those keys.
 read_function([], _Func, _TxId) -> [[]];
 read_function(ObjKeys, Function, ignore) ->
-    read_keys(ObjKeys, Function);
+    read_function(ObjKeys, Function);
 read_function(ObjKeys, {Function, Args}, TxId) when is_list(ObjKeys) ->
     %% TODO read objects from Cure or Materializer?
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
-    {ok, Objs} = cure:read_objects(Reads, TxId),
-    Objs;
+    read_crdts(value, Reads, TxId);
 read_function(ObjKey, Range, TxId) ->
     read_function([ObjKey], Range, TxId).
 
 read_function([], _Func) -> [[]];
 read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
-    {ok, Objs, _} = cure:read_objects(ignore, [], Reads),
-    Objs.
+    read_crdts(value, Reads).
+
 
 write_keys(_ObjKeys, Updates, TxId) ->
     cure:update_objects(Updates, TxId).
 
 write_keys(Updates) ->
     cure:update_objects(ignore, [], Updates).
+
+%% TODO read objects from Cure or Materializer?
+read_crdts(value, ObjKeys, TxId) when is_list(ObjKeys) ->
+    {ok, Objs} = cure:read_objects(ObjKeys, TxId),
+    Objs;
+read_crdts(state, ObjKeys, TxId) when is_list(ObjKeys) ->
+    {ok, Objs} = cure:get_objects(ObjKeys, TxId),
+    Objs;
+read_crdts(StateOrValue, ObjKey, TxId) ->
+    read_crdts(StateOrValue, [ObjKey], TxId).
+
+read_crdts(value, ObjKeys) when is_list(ObjKeys) ->
+    {ok, Objs, _} = cure:read_objects(ignore, [], ObjKeys),
+    Objs;
+read_crdts(state, ObjKeys) when is_list(ObjKeys) ->
+    {ok, Objs, _} = cure:get_objects(ignore, [], ObjKeys),
+    Objs;
+read_crdts(StateOrValue, ObjKey) ->
+    read_crdts(StateOrValue, [ObjKey]).
+
 
 to_atom(Term) when is_list(Term) ->
     list_to_atom(Term);

@@ -185,6 +185,7 @@ update_objects(Updates, TxId) ->
 update_objects(Clock, Properties, Updates) ->
     case type_check(Updates, fun type_check_update/1) of
         ok ->
+            ok = indexing:create_index_hooks(Updates),
             cure:update_objects(Clock, Properties, Updates);
         {error, Reason} ->
             {error, Reason}
