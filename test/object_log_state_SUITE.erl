@@ -41,7 +41,7 @@
 
 
 init_per_suite(Config) ->
-    lager_common_test_backend:bounce(debug),
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
@@ -53,7 +53,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [object_log_state_test].
@@ -86,9 +87,8 @@ object_log_state_test(Config) ->
     {ok, [LogOps]} = rpc:call(FirstNode,
                   antidote, get_log_operations, [[{BoundObject, CommitTime}]]),
 
-    ?assertEqual(ok, check_orset_ops(lists:seq(16, 30), LogOps, {Key, Bucket})),
+    ?assertEqual(ok, check_orset_ops(lists:seq(16, 30), LogOps, {Key, Bucket})).
 
-    lager:info("object_log_state_test_test finished").
 
 check_orset_ops([], [], _KeyBucket) ->
     ok;
