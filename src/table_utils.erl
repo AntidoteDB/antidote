@@ -80,7 +80,7 @@ tables_metadata(TxId) ->
 
 table_metadata(TableName, TxId) ->
     %io:format(">> table_metadata:~n", []),
-    case metadata_caching:get_key(TableName, TxId) of
+    case metadata_caching:get_key(TableName) of
         {error, _} ->
             %io:format("Not in cache; reading from database...~n", []),
             Metadata = tables_metadata(TxId),
@@ -89,7 +89,7 @@ table_metadata(TableName, TxId) ->
             case proplists:get_value(MetadataKey, Metadata) of
                 undefined -> [];
                 TableMeta ->
-                    ok = metadata_caching:insert_key(TableName, TableMeta, TxId),
+                    ok = metadata_caching:insert_key(TableName, TableMeta),
                     TableMeta
             end;
         TableMetaObj ->
