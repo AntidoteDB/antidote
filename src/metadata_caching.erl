@@ -27,39 +27,72 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(object_caching).
+-module(metadata_caching).
 
 -define(CACHE, antidote_cache).
-%-define(CACHE_CONF, [{type, set}, {policy, lru}, {ttl, 300}]).
+%-define(CACHE_CONF, [{type, set}, {policy, lru}, {ttl, 120}]).
 -define(KEY_NOT_FOUND, {error, key_not_found}).
 
 %% API
 -export([key_exists/1,
+         key_exists/2,
          insert_key/2,
+         insert_key/3,
          lookup_key/1,
+         lookup_key/2,
          get_key/1,
-         remove_key/1]).
+         get_key/2,
+         remove_key/1,
+         remove_key/2]).
 
 key_exists(Key) ->
     cache:has(?CACHE, Key).
+key_exists(Key, TxId) ->
+    {_, TS, _} = TxId,
+    key_exists({Key, TS}).
 
 insert_key(Key, Value) ->
+    %lager:info("Storing new object on cache: {~p, ~p}~n", [Key, Value]),
     cache:put(?CACHE, Key, Value).
+
+%% Save the transaction timestamp alongside the key
+insert_key(Key, Value, TxId) ->
+    {_, TS, _} = TxId,
+    insert_key({Key, TS}, Value).
 
 lookup_key(Key) ->
     case cache:lookup(?CACHE, Key) of
-        undefined -> ?KEY_NOT_FOUND;
-        Value -> Value
+        undefined ->
+            %lager:info("Could not find key ~p on cache~n", [Key]),
+            ?KEY_NOT_FOUND;
+        Value ->
+            %lager:info("Found key ~p on cache: ~p~n", [Key, Value]),
+            Value
     end.
+lookup_key(Key, TxId) ->
+    {_, TS, _} = TxId,
+    lookup_key({Key, TS}).
 
 get_key(Key) ->
     case cache:get(?CACHE, Key) of
-        undefined -> ?KEY_NOT_FOUND;
-        Value -> Value
+        undefined ->
+            %lager:info("Could not get key ~p on cache~n", [Key]),
+            ?KEY_NOT_FOUND;
+        Value ->
+            %lager:info("Got key ~p on cache: ~p~n", [Key, Value]),
+            Value
     end.
+get_key(Key, TxId) ->
+    {_, TS, _} = TxId,
+    get_key({Key, TS}).
 
 remove_key(Key) ->
+    %lager:info("Removing key ~p from cache~n", [Key]),
     cache:remove(?CACHE, Key).
+remove_key(Key, TxId) ->
+    {_, TS, _} = TxId,
+    remove_key({Key, TS}).
+
 
 %% ====================================================================
 %% Internal functions
