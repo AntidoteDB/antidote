@@ -1,3 +1,29 @@
+
+
+
+% This module is supporting the strongly consistent transaction offered by antidote.
+% One instance of this module is running on every DC, which are created on startup of Antidote.
+% lock_mgr persistently stores which lock is owned by its DC, which lock are requested/currently 
+% in use by transactions started on this DC and which locks are requested by other lock_mgrs(and
+% their respective DC).
+% The functionality exported by this module are get_locks/2 and release_locks/1 which are used
+% for acquiring and releasing the acquired locks.
+% -----------
+% Interactions with other modules:
+% clocksi_interactive_coord - This module manages transactions (also those using locks) and
+%   therefore uses get_locks/2 and release_locks/1 to implement strongly consistent transactions
+% inter_dc_query - This module is used for the inter DC communication of the lock_mgr modules
+%   Namely to manage the transfer of locks between the multiple lock_mgrs.
+% dets - The dets module is used for the persistent storage of lock ownership
+% dc_meta_data_utilities -This module is mainly used to get the dc_id of this and the other DCs
+% -------
+% Additional information:
+% Used leader election strategy - The leader is chosen based on the order of dc_ids
+% Deadlock prevention strategy - Deadlocks are prevented by prioritizing DCs according to the
+%   order of dc_ids.
+
+
+
 -module(lock_mgr).
 -behaviour(gen_server).
 
@@ -116,6 +142,7 @@ dets_info() ->
 % ===================================================================
 
 %  Data structure: local_locks - [{txid,{required,[locks()],timestamp}}|{txid,{using,[locks()]}}]
+%  Used to store which transactions on this DC require or currently use locks
 
 %% Locks : locks reuqired for the txid
 %% TxId : transaction that requeires the specified locks
@@ -224,6 +251,7 @@ remove_old_required_locks(Local_Locks,Timeout) ->
 
 
 %  Data structure: lock_requests - [{dcid,[{lock,timestamp}]}]
+%  Used to memorize which DC requested which lock
 
 
 %% Locks : list of locks to be added to lock_requests
@@ -280,7 +308,7 @@ clear_old_lock_requests(Lock_Requests,Timeout)->
 
 
 % Data sturcture: dets_ref : [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}},last_modified}]
-
+% Used to persistently store which DC currently owns which locks
 
 %% Lock : lock to send to another dc
 %% To : dc where the locks should be send to
