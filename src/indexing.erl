@@ -37,8 +37,11 @@
 -export([index_name/1,
          table_name/1,
          attributes/1,
-         create_index_hooks/1,
-         check_object_update/1,
+         create_index_hooks/2,
+         index_update_hook/1,
+         empty_hook/1,
+         transaction_hook/1,
+         rwtransaction_hook/1,
          read_index/3,
          read_index_function/4,
          create_index/2,
@@ -54,37 +57,88 @@ table_name(?INDEX(_IndexName, TableName, _Attributes)) -> TableName.
 
 attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 
-create_index_hooks(Updates) when is_list(Updates) ->
-    lists:foreach(fun(ObjUpdate) ->
-        ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
+create_index_hooks(Updates, TxId) when is_list(Updates) ->
+    lists:foldl(fun(ObjUpdate, UpdAcc) ->
+        ?OBJECT_UPDATE(Key, Type, Bucket, Op, Param) = ObjUpdate,
         case update_type({Key, Type, Bucket}) of
             ?TABLE_UPD_TYPE ->
                 %[{{TableName, _CRDT}, {_CRDTOp, _Meta}}] = Param,
                 %io:format("Is a table update, where table = ~p~n", [TableName]),
-                antidote_hooks:register_post_hook(Bucket, ?MODULE, check_object_update);
-            ?RECORD_UPD_TYPE ->
-                antidote_hooks:register_post_hook(Bucket, ?MODULE, check_object_update);
-            _ -> ok
-        end
-    end, Updates),
-    ok.
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
 
-%% Check if the object updates trigger index updates.
-%% If so, generate updates for the respective indexes.
-check_object_update({{Key, Bucket}, Type, Param}) ->
-    %% TODO use {ok, _CT} = antidote:read_objects(ignore, [], [{Key, Type, Bucket}, ...])
-    %% TODO use {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, Type, Bucket}, update, ...}])
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
+                %lists:append(UpdAcc, []);
+                lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
+            ?RECORD_UPD_TYPE ->
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
+
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
+                %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
+
+                %lists:append(UpdAcc, []);
+                lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
+                %lists:append(UpdAcc, fill_pindex(Key, Bucket));
+            _ -> lists:append(UpdAcc, [])
+        end
+    end, [], Updates).
+
+% Uncomment to use with following 3 hooks
+%fill_pindex(Key, Bucket) ->
+%    TableName = querying_utils:to_atom(Bucket),
+%    PIdxName = generate_pindex_key(TableName),
+%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+%    PIdxUpdate = {PIdxKey, add, Key},
+%    [PIdxUpdate].
+
+empty_hook({{Key, Bucket}, Type, Param}) ->
+    %lager:info("Entered empty hook"),
+    {UpdateOp, Updates} = Param,
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+    %lager:info("ObjUpdate: ~p", [ObjUpdate]),
+    {ok, ObjUpdate}.
+
+transaction_hook({{Key, Bucket}, Type, Param}) ->
+    {UpdateOp, Updates} = Param,
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+
+    {ok, TxId} = cure:start_transaction(ignore, [], false),
+    {ok, _} = cure:commit_transaction(TxId),
+
+    {ok, ObjUpdate}.
+
+rwtransaction_hook({{Key, Bucket}, Type, Param}) ->
+    {UpdateOp, Updates} = Param,
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
 
     {ok, TxId} = cure:start_transaction(ignore, [], false),
 
-    %lager:info(">> check_object_updates:", []),
-    %lager:info("ObjUpdate: ~p", [ObjUpdate]),
-    %lager:info("{Key, Bucket} = ~p", [{Key, Bucket}]),
-    %lager:info("Type = ~p", [Type]),
-    %lager:info("Param = ~p", [Param]),
+    %% write a key
+    [ObjKey] = querying_utils:build_keys(key1, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+    Upd = querying_utils:create_crdt_update(ObjKey, ?MAP_OPERATION, {antidote_crdt_register_lww, pk1, {assign, val1}}),
+    {ok, _} = querying_utils:write_keys(Upd, TxId),
+
+    %% read a key
+    [ObjKey] = querying_utils:build_keys(key2, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+    [_Obj] = querying_utils:read_keys(value, ObjKey, TxId),
+
+    {ok, _} = cure:commit_transaction(TxId),
+
+    {ok, ObjUpdate}.
+
+
+index_update_hook(Update) when is_tuple(Update) ->
+    {ok, TxId} = querying_utils:start_transaction(),
+    index_update(Update, TxId),
+    {ok, _} = querying_utils:commit_transaction(TxId).
+
+generate_index_updates(Key, Type, Bucket, Param, TxId) ->
     {UpdateOp, Updates} = Param,
-    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
-    SendUpdates = case update_type({Key, Type, Bucket}) of
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+
+    case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
             %lager:info("Is a table update...~n", []),
             %io:format("Is a table update...~n", []),
@@ -101,6 +155,7 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
             %io:format("Removing from cache: ~p~n", [TableName]),
             ok = metadata_caching:remove_key(TableName),
 
+            %lager:info("Upds: ~p~n", [Upds]),
             Upds;
         ?RECORD_UPD_TYPE ->
             %lager:info("Is a record update...~n", []),
@@ -125,10 +180,10 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
                             Idxs ->
                                 AuxUpdates = lists:map(fun(Idx) ->
                                     ?INDEX_UPDATE(TableName, index_name(Idx), {Val, CRDT}, {Key, Op})
-                                end, Idxs),
+                                                       end, Idxs),
                                 lists:append(IdxUpdates2, AuxUpdates)
                         end
-                    end, [], Updates),
+                                              end, [], Updates),
                     %lager:info("SIdxUpdates: ~p~n", [SIdxUpdates]),
                     %ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, ignore)),
                     ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, TxId)),
@@ -136,7 +191,22 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
                     ToDBUpdate
             end;
         _ -> []
-    end,
+    end.
+
+%% Check if the object updates trigger index updates.
+%% If so, generate updates for the respective indexes.
+index_update({{Key, Bucket}, Type, Param}, TxId) ->
+    %% TODO use {ok, _CT} = antidote:read_objects(ignore, [], [{Key, Type, Bucket}, ...])
+    %% TODO use {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, Type, Bucket}, update, ...}])
+
+    %lager:info(">> check_object_updates:", []),
+    %lager:info("ObjUpdate: ~p", [ObjUpdate]),
+    %lager:info("{Key, Bucket} = ~p", [{Key, Bucket}]),
+    %lager:info("Type = ~p", [Type]),
+    %lager:info("Param = ~p", [Param]),
+    {UpdateOp, Updates} = Param,
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
+    SendUpdates = generate_index_updates(Key, Type, Bucket, Param, TxId),
     %io:format(">>>>>>>>>>>>>>>>>>>>>~n"),
     %lager:info("SendUpdates:~n~p~n", [SendUpdates]),
     %io:format(">>>>>>>>>>>>>>>>>>>>>~n"),
@@ -144,7 +214,6 @@ check_object_update({{Key, Bucket}, Type, Param}) ->
         [] -> ok;
         _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
     end,
-    cure:commit_transaction(TxId),
     {ok, ObjUpdate}.
 
 read_index(primary, TableName, TxId) ->
@@ -238,9 +307,9 @@ apply_updates(Update, TxId) when ?is_index_upd(Update) ->
     apply_updates([Update], TxId);
 apply_updates([Update | Tail], TxId) when ?is_index_upd(Update) ->
     DatabaseUpdates = build_index_updates([Update], TxId),
-    ?INDEX_UPDATE(TableName, IndexName, _, _) = Update,
-    IndexKey = generate_sindex_key(TableName, IndexName),
-    ok = querying_utils:write_keys(IndexKey, DatabaseUpdates, TxId),
+    %?INDEX_UPDATE(TableName, IndexName, _, _) = Update,
+    %IndexKey = generate_sindex_key(TableName, IndexName),
+    ok = querying_utils:write_keys(DatabaseUpdates, TxId),
     apply_updates(Tail, TxId);
 apply_updates([], _TxId) ->
     ok.

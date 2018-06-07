@@ -80,6 +80,7 @@ tables_metadata(TxId) ->
 
 table_metadata(TableName, TxId) ->
     %io:format(">> table_metadata:~n", []),
+    %lager:info(">> table_metadata:~n", []),
     case metadata_caching:get_key(TableName) of
         {error, _} ->
             %io:format("Not in cache; reading from database...~n", []),
@@ -89,11 +90,13 @@ table_metadata(TableName, TxId) ->
             case proplists:get_value(MetadataKey, Metadata) of
                 undefined -> [];
                 TableMeta ->
+                    %lager:info("Not in cache; reading from database: ~p~n", [TableMeta]),
                     ok = metadata_caching:insert_key(TableName, TableMeta),
                     TableMeta
             end;
         TableMetaObj ->
             %io:format("In cache; retrieving object~n", []),
+            %lager:info("In cache; retrieving object: ~p~n", [TableMetaObj]),
             TableMetaObj %% table metadata is a 'value' type object
     end.
 

@@ -39,8 +39,10 @@
          read_keys/2,
          read_function/3,
          read_function/2,
-         write_keys/3,
+         write_keys/2,
          write_keys/1,
+         start_transaction/0,
+         commit_transaction/1,
          to_atom/1,
          to_list/1,
          remove_duplicates/1,
@@ -101,7 +103,7 @@ read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     read_crdts(value, Reads).
 
 
-write_keys(_ObjKeys, Updates, TxId) ->
+write_keys(Updates, TxId) ->
     cure:update_objects(Updates, TxId).
 
 write_keys(Updates) ->
@@ -125,6 +127,12 @@ read_crdts(state, ObjKeys) when is_list(ObjKeys) ->
     Objs;
 read_crdts(StateOrValue, ObjKey) ->
     read_crdts(StateOrValue, [ObjKey]).
+
+start_transaction() ->
+    cure:start_transaction(ignore, []).
+
+commit_transaction(TxId) ->
+    cure:commit_transaction(TxId).
 
 
 to_atom(Term) when is_list(Term) ->
