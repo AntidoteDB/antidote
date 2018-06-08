@@ -29,7 +29,6 @@
 
 -include("querying.hrl").
 
-%-define(INDEX_ENTRY(IndexedValue, DTType, PKs), {{IndexedValue, DTType}, PKs}).
 -define(INDEX_UPDATE(TableName, IndexName, EntryKey, EntryValue), {TableName, IndexName, EntryKey, EntryValue}).
 -define(MAP_OPERATION, update).
 
@@ -57,48 +56,49 @@ table_name(?INDEX(_IndexName, TableName, _Attributes)) -> TableName.
 
 attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 
-create_index_hooks(Updates, TxId) when is_list(Updates) ->
+% TODO clean the code
+create_index_hooks(Updates, _TxId) when is_list(Updates) ->
     lists:foldl(fun(ObjUpdate, UpdAcc) ->
-        ?OBJECT_UPDATE(Key, Type, Bucket, Op, Param) = ObjUpdate,
+        ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
         case update_type({Key, Type, Bucket}) of
             ?TABLE_UPD_TYPE ->
                 %[{{TableName, _CRDT}, {_CRDTOp, _Meta}}] = Param,
                 %io:format("Is a table update, where table = ~p~n", [TableName]),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
+                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook),
 
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
+                antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
-                %lists:append(UpdAcc, []);
-                lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
+                lists:append(UpdAcc, []);
+                %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
             ?RECORD_UPD_TYPE ->
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
+                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook),
 
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
+                antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
 
                 %lists:append(UpdAcc, []);
-                lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
-                %lists:append(UpdAcc, fill_pindex(Key, Bucket));
+                %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
+                lists:append(UpdAcc, fill_pindex(Key, Bucket));
             _ -> lists:append(UpdAcc, [])
         end
     end, [], Updates).
 
 % Uncomment to use with following 3 hooks
-%fill_pindex(Key, Bucket) ->
-%    TableName = querying_utils:to_atom(Bucket),
-%    PIdxName = generate_pindex_key(TableName),
-%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-%    PIdxUpdate = {PIdxKey, add, Key},
-%    [PIdxUpdate].
+fill_pindex(Key, Bucket) ->
+    TableName = querying_utils:to_atom(Bucket),
+    PIdxName = generate_pindex_key(TableName),
+    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+    PIdxUpdate = {PIdxKey, add, Key},
+    [PIdxUpdate].
 
 empty_hook({{Key, Bucket}, Type, Param}) ->
-    %lager:info("Entered empty hook"),
-    {UpdateOp, Updates} = Param,
-    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
-    %lager:info("ObjUpdate: ~p", [ObjUpdate]),
-    {ok, ObjUpdate}.
+    {ok, {{Key, Bucket}, Type, Param}}.
 
 transaction_hook({{Key, Bucket}, Type, Param}) ->
     {UpdateOp, Updates} = Param,
@@ -140,34 +140,24 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
 
     case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
-            %lager:info("Is a table update...~n", []),
-            %io:format("Is a table update...~n", []),
-            %SIdxUpdates = fill_index(ObjUpdate, ignore),
+            % Is a table update
             SIdxUpdates = fill_index(ObjUpdate, TxId),
-            %io:format("SIdxUpdates: ~p~n", [SIdxUpdates]),
-            %Upds = build_index_updates(SIdxUpdates, ignore),
             Upds = build_index_updates(SIdxUpdates, TxId),
-            %io:format("Upds: ~p~n", [Upds]),
 
             [{{TableName, _}, _}] = Updates,
 
             %% Remove table metadata entry from cache -- mark as 'dirty'
-            %io:format("Removing from cache: ~p~n", [TableName]),
             ok = metadata_caching:remove_key(TableName),
 
-            %lager:info("Upds: ~p~n", [Upds]),
             Upds;
         ?RECORD_UPD_TYPE ->
-            %lager:info("Is a record update...~n", []),
-            %io:format("Is a record update...~n", []),
-            %Table = table_utils:table_metadata(Bucket, ignore),
+            % Is a record update
             Table = table_utils:table_metadata(Bucket, TxId),
             TableName = table_utils:table(Table),
             case Table of
                 undefined -> [];
                 _Else ->
-                    %lager:info("A table exists! Metadata: ~p~n", [Table]),
-                    %io:format("A table exists! Metadata: ~p~n", [Table]),
+                    % A table exists
                     PIdxName = generate_pindex_key(TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
@@ -184,11 +174,8 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
                                 lists:append(IdxUpdates2, AuxUpdates)
                         end
                                               end, [], Updates),
-                    %lager:info("SIdxUpdates: ~p~n", [SIdxUpdates]),
-                    %ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, ignore)),
-                    ToDBUpdate = lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, TxId)),
-                    %lager:info("ToDBUpdate: ~p~n", [ToDBUpdate]),
-                    ToDBUpdate
+
+                    lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, TxId))
             end;
         _ -> []
     end.
@@ -196,20 +183,10 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
 %% Check if the object updates trigger index updates.
 %% If so, generate updates for the respective indexes.
 index_update({{Key, Bucket}, Type, Param}, TxId) ->
-    %% TODO use {ok, _CT} = antidote:read_objects(ignore, [], [{Key, Type, Bucket}, ...])
-    %% TODO use {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, Type, Bucket}, update, ...}])
-
-    %lager:info(">> check_object_updates:", []),
-    %lager:info("ObjUpdate: ~p", [ObjUpdate]),
-    %lager:info("{Key, Bucket} = ~p", [{Key, Bucket}]),
-    %lager:info("Type = ~p", [Type]),
-    %lager:info("Param = ~p", [Param]),
     {UpdateOp, Updates} = Param,
     ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
     SendUpdates = generate_index_updates(Key, Type, Bucket, Param, TxId),
-    %io:format(">>>>>>>>>>>>>>>>>>>>>~n"),
-    %lager:info("SendUpdates:~n~p~n", [SendUpdates]),
-    %io:format(">>>>>>>>>>>>>>>>>>>>>~n"),
+
     case SendUpdates of
         [] -> ok;
         _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
@@ -217,30 +194,17 @@ index_update({{Key, Bucket}, Type, Param}, TxId) ->
     {ok, ObjUpdate}.
 
 read_index(primary, TableName, TxId) ->
-    %% TODO add the capability to read the primary index from memory/cache
-
-    %io:format(">> read_index(primary):~n", []),
     IndexName = generate_pindex_key(TableName),
-
-    %lager:info("Getting primary index from memory: ~p~n", [IndexName]),
     ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
-
-    %io:format("ObjKeys: ~p~n", [ObjKeys]),
-    %io:format("IdxObj: ~p~n", [IdxObj]),
     IdxObj;
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    %% TODO add the capability to read the primary index from memory/cache
-    %% the secondary index is identified by the notation "#2i_IndexName", where
+    %% The secondary index is identified by the notation "#2i_IndexName", where
     %% IndexName = "table_name.index_name"
 
-    %io:format(">> read_index(secondary):~n", []),
     FullIndexName = generate_sindex_key(TableName, IndexName),
-
     ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
-
-    %io:format("IdxObj: ~p~n", [IdxObj]),
     IdxObj.
 
 read_index_function(primary, TableName, {Function, Args}, TxId) ->
@@ -262,28 +226,12 @@ create_index(_IndexName, _TxId) -> {error, not_implemented}.
 %% insert the new ones.
 build_index_updates([], _TxId) -> [];
 build_index_updates(Updates, _TxId) when is_list(Updates) ->
-    %io:format(">> build_index_updates:~n", []),
-    %Map = to_map(Updates),
-    %io:format("Updates: ~p~n", [Updates]),
-
     lists:foldl(fun(Update, AccList) ->
         ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
         DBIndexName = generate_sindex_key(TableName, IndexName),
-        %EntryValue = sets:to_list(Value),
 
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-        %[IndexObj] = querying_utils:read_keys(IndexKey, TxId),
 
-        %io:format("IndexKey: ~p~n", [IndexKey]),
-        %io:format("IndexObj: ~p~n", [IndexObj]),
-        %io:format("EntryValue: ~p~n", [EntryValue]),
-        %io:format("{PkValue, Op}: ~p~n", [{PkValue, Op}]),
-        %io:format("Inserting new entry...~n", []),
-
-        %IdxUpdate = lists:map(fun({CRDT, Pk, Op}) ->
-        %    querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {CRDT, Pk, Op})
-        %end, EntryValue),
-        %lager:info("IndexKey: ~p~n", [IndexKey]),
         IdxUpdate = case is_list(Op) of
                         true ->
                             lists:map(fun(Op2) ->
@@ -292,12 +240,6 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
                         false -> [querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op})]
                     end,
 
-        %lager:info("IdxUpdate: ~p~n", [IdxUpdate]),
-        %UpdEntry = {EntryKey, EntryValue},
-        %io:format("UpdEntry: ~p~n", [UpdEntry]),
-        %PrepareUpd = prepare_update(IndexKey, add_all, UpdEntry),
-        %IdxUpdate = [querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, UpdEntry)],
-        %io:format("FinalUpdate: ~p~n", [IdxUpdate]),
         lists:append([AccList, IdxUpdate])
     end, [], Updates);
 build_index_updates(Update, TxId) when ?is_index_upd(Update) ->
@@ -307,8 +249,6 @@ apply_updates(Update, TxId) when ?is_index_upd(Update) ->
     apply_updates([Update], TxId);
 apply_updates([Update | Tail], TxId) when ?is_index_upd(Update) ->
     DatabaseUpdates = build_index_updates([Update], TxId),
-    %?INDEX_UPDATE(TableName, IndexName, _, _) = Update,
-    %IndexKey = generate_sindex_key(TableName, IndexName),
     ok = querying_utils:write_keys(DatabaseUpdates, TxId),
     apply_updates(Tail, TxId);
 apply_updates([], _TxId) ->
@@ -386,11 +326,8 @@ update_type({_Key, ?TABLE_DT, _Bucket}) -> ?RECORD_UPD_TYPE;
 update_type(_) -> ?OTHER_UPD_TYPE.
 
 retrieve_index(ObjUpdate) ->
-    %io:format(">> retrieve_new_index", []),
-    %io:format("ObjUpdate: ~p~n", [ObjUpdate]),
     ?OBJECT_UPDATE(_Key, _Type, _Bucket, _UpdOp, [Assign]) = ObjUpdate,
     {{_TableName, _CRDT}, {_CRDTOp, NewTableMeta}} = Assign,
-    %NTableName = table_utils:table(NewTableMeta),
     NIdx = table_utils:indexes(NewTableMeta),
     {NewTableMeta, NIdx}.
 
@@ -403,20 +340,19 @@ is_element(IndexedVal, Pk, IndexObj) ->
 fill_index(ObjUpdate, TxId) ->
     case retrieve_index(ObjUpdate) of
         {_, []} ->
-            %io:format("No index was created...~n", []),
+            % No index was created
             [];
         {Table, Indexes} when is_list(Indexes) ->
             lists:foldl(fun(Index, Acc) ->
-                %io:format("A new index was created...~n", []),
+                % A new index was created
+
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 [PrimaryKey] = table_utils:primary_key_name(Table),
-                %io:format("PrimaryKey: ~p~n", [PrimaryKey]),
                 PIndexObject = read_index(primary, TableName, TxId),
                 SIndexObject = read_index(secondary, {TableName, IndexName}, TxId),
-                %io:format("PIndexObject: ~p~n", [PIndexObject]),
+
                 Records = table_utils:record_data(PIndexObject, TableName, TxId),
-                %Filtered = query_optimizer:get_partial_object(Records, lists:append(PrimaryKey, Cols)),
-                %io:format("Records: ~p~n", [Records]),
+
                 IdxUpds = lists:map(fun(Record) ->
                     PkValue = querying_utils:to_atom(table_utils:lookup_value(PrimaryKey, Record)),
                     ?ATTRIBUTE(_ColName, Type, Value) = table_utils:get_column(IndexedColumn, Record),
@@ -424,7 +360,6 @@ fill_index(ObjUpdate, TxId) ->
                         true -> [];
                         false ->
                             Op = table_utils:crdt_to_op(Type, Value), %% generate an op according to Type
-                            %io:format("Op: ~p~n", [Op]),
                             ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op})
                     end
                 end, Records),
