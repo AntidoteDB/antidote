@@ -17,6 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
 %% @doc antidote_SUITE:
 %%    Test the basic api of antidote
 %%    static and interactive transactions with single and multiple Objects
@@ -47,21 +48,23 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
+-define(BUCKET, antidote_bucket).
 
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
-                                                %application:stop(lager),
     Config.
 
-init_per_testcase(_Case, Config) ->
+init_per_testcase(_Name, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() ->
@@ -78,7 +81,6 @@ all() ->
 
 dummy_test(Config) ->
     [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
-    ct:print("Test on ~p!", [Node1]),
     Key = antidote_key,
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
@@ -95,7 +97,7 @@ dummy_test(Config) ->
         end,
     Delay = 100,
     Retry = 360000 div Delay, %wait for max 1 min
-    ok = test_utils:wait_until_result(F, 3, Retry, Delay),
+    ok = time_utils:wait_until_result(F, 3, Retry, Delay),
 
     ok.
 
@@ -232,14 +234,14 @@ random_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     N = length(Nodes),
 
-                                                % Distribute the updates randomly over all DCs
+    % Distribute the updates randomly over all DCs
     NumWrites = 100,
-    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid nondeterminism in tests
+    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid non-determinism in tests
 
     Obj = {log_test_key1, antidote_crdt_counter_pn, antidote_bucket},
     F = fun(Elem) ->
                 Node = lists:nth(Elem, Nodes),
-                ct:print("Inc at node: ~p", [Node]),
+                lager:info("Increment at node: ~p", [Node]),
                 {ok, _} = rpc:call(Node, antidote, update_objects,
                                   [ignore, [], [{Obj, increment, 1}]])
         end,
@@ -253,5 +255,5 @@ random_test(Config) ->
         end,
     Delay = 1000,
     Retry = 360000 div Delay, %wait for max 1 min
-    ok = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+    ok = time_utils:wait_until_result(G, NumWrites, Retry, Delay),
     pass.
