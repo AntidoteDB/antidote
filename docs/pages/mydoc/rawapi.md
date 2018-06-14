@@ -137,13 +137,16 @@ If 6 antidote nodes have already started, we can create two DCs with 3 nodes eac
      rpc:call('antidote@node1', create_dc, [['antidote@node1', 'antidote@node2', 'antidote@node3']]),
      rpc:call('antidote@node4', create_dc, [['antidote@node4', 'antidote@node5', 'antidote@node6']]).
 ```
+If there is only one node in a DC, you can skip above step. Do not add a node to 2 different DCs.
 
 To connect two DCs:
 
 ```erlang
-     {ok, Descriptor1} = rpc:call('antidote@node1', get_connection_descriptor, []),
-     {ok, Descriptor2} = rpc:call('antidote@node4', get_connection_descriptor, []),
+     {ok, Descriptor1} = rpc:call(AnyNodeFromDC1, get_connection_descriptor, []),
+     {ok, Descriptor2} = rpc:call(AnyNodeFromDC2, get_connection_descriptor, []),
      Descriptors = [Descriptor1, Descriptor2],
      rpc:call('antidote@node1', subscribe_updates_from, [Descriptors]),
      rpc:call('antidote@node4', subscribe_updates_from, [Descriptors]).
 ```
+
+Every DC must subscribe from every other DCs. If there are 3 DCs, execute `subscribe_updates_from` on each DC with the same `Descriptors` list.
