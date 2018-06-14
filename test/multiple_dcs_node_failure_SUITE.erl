@@ -20,9 +20,11 @@
 
 -module(multiple_dcs_node_failure_SUITE).
 
+-compile({parse_transform, lager_transform}).
+
 %% If logging is disabled these tests will fail and some reads will
 %% block as DCs will be waiting for missing messages, so add a
-%% timeout to these calls so the test sutie can finish
+%% timeout to these calls so the test suite can finish
 -define(RPC_TIMEOUT, 10000).
 
 %% common_test callbacks
@@ -42,9 +44,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, "multiple_dcs_node_failure").
+-define(BUCKET, multiple_dcs_node_failure_bucket).
 
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
@@ -65,7 +68,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() ->
@@ -94,27 +98,27 @@ cluster_failure_test(Config) ->
 
             check_read_key(Node1, Key, Type, 3, ignore, static),
 
-            %% Kill and restart a node and be sure everyhing works
+            %% Kill and restart a node and be sure everything works
             ct:print("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
-            ct:print("Done append in Node1"),
+            lager:info("Done append in Node1"),
             check_read_key(Node3, Key, Type, 3, CommitTime, static),
-            ct:print("Done Read in Node3"),
+            lager:info("Done read in Node3"),
             check_read_key(Node2, Key, Type, 3, CommitTime, static),
 
-            ct:print("Done first round of read, I am gonna append"),
+            lager:info("Done first round of read, I am gonna append"),
             {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static),
-            ct:print("Done append in Node2"),
+            lager:info("Done append in Node2"),
             {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
-            ct:print("Done append in Node3"),
-            ct:print("Done waiting, I am gonna read"),
+            lager:info("Done append in Node3"),
+            lager:info("Done waiting, I am gonna read"),
 
             SnapshotTime = CommitTime3,
             check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
-            ct:print("Done read in Node1"),
+            lager:info("Done read in Node1"),
             check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
-            ct:print("Done read in Node2"),
+            lager:info("Done read in Node2"),
             check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
             pass
     end.
@@ -142,18 +146,18 @@ multiple_cluster_failure_test(Config) ->
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
             check_read_key(Node1, Key, Type, 3, CommitTime, static),
 
-            %% Kill and restart a node and be sure everyhing works
+            %% Kill and restart a node and be sure everything works
             ct:print("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
-            ct:print("Done append in Node1"),
+            lager:info("Done append in Node1"),
             check_read_key(Node2, Key, Type, 3, CommitTime, static),
             check_read_key(Node3, Key, Type, 3, CommitTime, static),
 
-            ct:print("Done first round of read, I am gonna append"),
+            lager:info("Done first round of read, I am gonna append"),
             {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static),
             {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
-            ct:print("Done waiting, I am gonna read"),
+            lager:info("Done waiting, I am gonna read"),
 
             SnapshotTime = CommitTime3,
             check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
@@ -165,7 +169,7 @@ multiple_cluster_failure_test(Config) ->
 %% In this test there are 3 DCs each with 1 node
 %% The test starts by performing some updates, ensuring they are propagated
 %% The it kills the node of the first DC
-%% It then perofms an update and read in the other DCs
+%% It then performs an update and read in the other DCs
 %% It then starts the killed node back up
 %% Once restarted it checks that updates are still performed safely
 %% and propagated to other DCs
@@ -184,32 +188,32 @@ update_during_cluster_failure_test(Config) ->
             update_counters(Node1, [Key], [1], ignore, static),
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
             check_read_key(Node1, Key, Type, 3, CommitTime, static),
-            ct:print("Done append in Node1"),
+            lager:info("Done append in Node1"),
 
             %% Kill a node
-            ct:print("Killing node ~w", [Node1]),
+            lager:info("Killing node ~w", [Node1]),
             [Node1] = test_utils:brutal_kill_nodes([Node1]),
 
             %% Be sure the other DC works while the node is down
             {ok, CommitTime3a} = update_counters(Node2, [Key], [1], ignore, static),
 
             %% Start the node back up and be sure everything works
-            ct:print("Restarting node ~w", [Node1]),
+            lager:info("Restarting node ~w", [Node1]),
             [Node1] = test_utils:restart_nodes([Node1], Config),
 
             %% Take the max of the commit times to be sure
-            %% to read all updateds
+            %% to read all updates
             Time = dict:merge(fun(_K, T1, T2) ->
                 max(T1, T2)
             end, CommitTime, CommitTime3a),
 
             check_read_key(Node1, Key, Type, 4, Time, static),
-            ct:print("Done Read in Node1"),
+            lager:info("Done Read in Node1"),
 
             check_read_key(Node3, Key, Type, 4, Time, static),
-            ct:print("Done Read in Node3"),
+            lager:info("Done Read in Node3"),
             check_read_key(Node2, Key, Type, 4, Time, static),
-            ct:print("Done first round of read, I am gonna append"),
+            lager:info("Done first round of read, I am gonna append"),
 
             {ok, CommitTime2} = update_counters(Node2, [Key], [1], Time, static),
             {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),

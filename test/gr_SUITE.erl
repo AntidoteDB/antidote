@@ -41,7 +41,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
+-define(BUCKET, gr_bucket).
+
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
@@ -67,7 +70,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [read_write_test,
@@ -75,7 +79,6 @@ all() -> [read_write_test,
           replication_test].
 
 read_write_test(Config) ->
-    lager:info("Single read write test"),
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Bound_object = {gr_rw_key, antidote_crdt_counter_pn, bucket},
@@ -85,7 +88,6 @@ read_write_test(Config) ->
     ?assertMatch([1], Res).
 
 read_multiple_test(Config) ->
-    lager:info("Snapshot read"),
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     O1 = {gr_read_mult_key1, antidote_crdt_counter_pn, bucket},
@@ -96,7 +98,6 @@ read_multiple_test(Config) ->
     ?assertMatch([1, 1], Res).
 
 replication_test(Config) ->
-    lager:info("Replication Test"),
     [Node1, Node2 | _] = proplists:get_value(nodes, Config),
 
     O1 = {gr_repl_key1, antidote_crdt_counter_pn, bucket},
