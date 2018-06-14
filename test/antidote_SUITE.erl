@@ -17,14 +17,10 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc log_test: Test that perform NumWrites increments to the key:key1.
-%%      Each increment is sent to a random node of the cluster.
-%%      Test normal behavior of the logging layer
-%%      Performs a read to the first node of the cluster to check whether all the
-%%      increment operations where successfully applied.
-%%  Variables:  N:  Number of nodes
-%%              Nodes: List of the nodes that belong to the built cluster
-%%
+%% @doc antidote_SUITE:
+%%    Test the basic api of antidote
+%%    static and interactive transactions with single and multiple Objects
+%%    interactive transaction with abort
 
 -module(antidote_SUITE).
 
@@ -45,6 +41,7 @@
          static_txn_multi_objects/1,
          static_txn_multi_objects_clock/1,
          interactive_txn/1,
+         interactive_txn_abort/1,
          random_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -75,6 +72,7 @@ all() ->
      static_txn_multi_objects,
      static_txn_multi_objects_clock,
      interactive_txn,
+     interactive_txn_abort,
      random_test
     ].
 
@@ -205,6 +203,23 @@ txn_seq_update_check(Node, TxId, Updates) ->
                       Res = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
                       ?assertMatch(ok, Res)
               end, Updates).
+
+interactive_txn_abort(Config) ->
+    [Node | _Nodes] = proplists:get_value(nodes, Config),
+    Type = antidote_crdt_counter_pn,
+    Bucket = antidote_bucket,
+    Key = antidote_int_abort_m1,
+    Object = {Key, Type, Bucket},
+    Update = {Object, increment, 1},
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
+    ok = rpc:call(Node, antidote, abort_transaction, [TxId]), % must abort successfully
+
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    %% read object
+    {ok, Res} = rpc:call(Node, antidote, read_objects, [[Object], TxId2]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ?assertEqual([0], Res). % prev txn is aborted so read returns 0
 
 %% Test that perform NumWrites increments to the key:key1.
 %%      Each increment is sent to a random node of the cluster.
