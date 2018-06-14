@@ -708,6 +708,10 @@ execute_command(prepare, Protocol, Sender, State0) ->
             prepare(State)
     end;
 
+%% @doc Abort the current transaction
+execute_command(abort, _Protocol, Sender, State) ->
+    abort(State#coord_state{from=Sender});
+
 %% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #coord_state{
     transaction=Transaction,
