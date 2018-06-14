@@ -93,6 +93,9 @@ process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
     TxId = binary_to_term(Td),
     Response = antidote:abort_transaction(TxId),
     case Response of
+        ok ->
+            {reply, antidote_pb_codec:encode(operation_response, ok),
+                State};
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(operation_response,
                                              {error, Reason}),
