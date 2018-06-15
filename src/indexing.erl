@@ -38,6 +38,7 @@
          attributes/1,
          create_index_hooks/2,
          index_update_hook/1,
+         index_update_hook/2,
          empty_hook/1,
          transaction_hook/1,
          rwtransaction_hook/1,
@@ -65,37 +66,43 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
                 %[{{TableName, _CRDT}, {_CRDTOp, _Meta}}] = Param,
                 %io:format("Is a table update, where table = ~p~n", [TableName]),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
-                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook),
+                case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
+                    true -> ok;
+                    false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
+                end,
 
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
-                antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
+                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
                 lists:append(UpdAcc, []);
                 %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
             ?RECORD_UPD_TYPE ->
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
-                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook),
+                case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
+                    true -> ok;
+                    false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
+                end,
 
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
-                antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
+                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
                 %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
 
-                %lists:append(UpdAcc, []);
+                lists:append(UpdAcc, []);
                 %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
-                lists:append(UpdAcc, fill_pindex(Key, Bucket));
+                %lists:append(UpdAcc, fill_pindex(Key, Bucket));
             _ -> lists:append(UpdAcc, [])
         end
     end, [], Updates).
 
 % Uncomment to use with following 3 hooks
-fill_pindex(Key, Bucket) ->
-    TableName = querying_utils:to_atom(Bucket),
-    PIdxName = generate_pindex_key(TableName),
-    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-    PIdxUpdate = {PIdxKey, add, Key},
-    [PIdxUpdate].
+%fill_pindex(Key, Bucket) ->
+%    TableName = querying_utils:to_atom(Bucket),
+%    PIdxName = generate_pindex_key(TableName),
+%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+%    PIdxUpdate = {PIdxKey, add, Key},
+%    [PIdxUpdate].
 
 empty_hook({{Key, Bucket}, Type, Param}) ->
     {ok, {{Key, Bucket}, Type, Param}}.
@@ -128,21 +135,32 @@ rwtransaction_hook({{Key, Bucket}, Type, Param}) ->
 
     {ok, ObjUpdate}.
 
+index_update_hook(Update, Transaction) when is_tuple(Update) ->
+    {{Key, Bucket}, Type, Param} = Update,
+    case generate_index_updates(Key, Type, Bucket, Param, Transaction) of
+        [] ->
+            {ok, Update};
+        Updates ->
+            SendUpds = lists:append([Update], Updates),
+            {ok, SendUpds}
+    end.
 
 index_update_hook(Update) when is_tuple(Update) ->
     {ok, TxId} = querying_utils:start_transaction(),
-    index_update(Update, TxId),
-    {ok, _} = querying_utils:commit_transaction(TxId).
+    {ok, Updates} = index_update_hook(Update, TxId),
+    {ok, _} = querying_utils:commit_transaction(TxId),
 
-generate_index_updates(Key, Type, Bucket, Param, TxId) ->
+    {ok, Updates}.
+
+generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
     {UpdateOp, Updates} = Param,
     ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
 
     case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
             % Is a table update
-            SIdxUpdates = fill_index(ObjUpdate, TxId),
-            Upds = build_index_updates(SIdxUpdates, TxId),
+            SIdxUpdates = fill_index(ObjUpdate, Transaction),
+            Upds = build_index_updates(SIdxUpdates, Transaction),
 
             [{{TableName, _}, _}] = Updates,
 
@@ -152,7 +170,8 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
             Upds;
         ?RECORD_UPD_TYPE ->
             % Is a record update
-            Table = table_utils:table_metadata(Bucket, TxId),
+            Table = table_utils:table_metadata(Bucket, Transaction),
+            %lager:info("Got table metadata: ~p", [Table]),
             TableName = table_utils:table(Table),
             case Table of
                 undefined -> [];
@@ -161,7 +180,9 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
                     PIdxName = generate_pindex_key(TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
-                    PIdxUpdate = {PIdxKey, add, Key},
+                    {K, T, B} = PIdxKey,
+
+                    PIdxUpdate = {{K, B}, T, {add, Key}},
                     Indexes = table_utils:indexes(Table),
                     SIdxUpdates = lists:foldl(fun(Operation, IdxUpdates2) ->
                         {{Col, CRDT}, {_CRDTOper, Val} = Op} = Operation,
@@ -175,23 +196,23 @@ generate_index_updates(Key, Type, Bucket, Param, TxId) ->
                         end
                                               end, [], Updates),
 
-                    lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, TxId))
+                    lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, Transaction))
             end;
         _ -> []
     end.
 
 %% Check if the object updates trigger index updates.
 %% If so, generate updates for the respective indexes.
-index_update({{Key, Bucket}, Type, Param}, TxId) ->
-    {UpdateOp, Updates} = Param,
-    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
-    SendUpdates = generate_index_updates(Key, Type, Bucket, Param, TxId),
-
-    case SendUpdates of
-        [] -> ok;
-        _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
-    end,
-    {ok, ObjUpdate}.
+%index_update({{Key, Bucket}, Type, Param}, TxId) ->
+%    {UpdateOp, Updates} = Param,
+%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
+%    SendUpdates = generate_index_updates(Key, Type, Bucket, Param, TxId),
+%
+%    case SendUpdates of
+%        [] -> ok;
+%        _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
+%    end,
+%    {ok, ObjUpdate}.
 
 read_index(primary, TableName, TxId) ->
     IndexName = generate_pindex_key(TableName),
@@ -228,6 +249,7 @@ build_index_updates([], _TxId) -> [];
 build_index_updates(Updates, _TxId) when is_list(Updates) ->
     lists:foldl(fun(Update, AccList) ->
         ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
+
         DBIndexName = generate_sindex_key(TableName, IndexName),
 
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
@@ -235,9 +257,12 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
         IdxUpdate = case is_list(Op) of
                         true ->
                             lists:map(fun(Op2) ->
-                                querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op2})
+                                {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op2}),
+                                {{K, B}, T, {UpdateOp, Upd}}
                             end, Op);
-                        false -> [querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op})]
+                        false ->
+                            {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op}),
+                            [{{K, B}, T, {UpdateOp, Upd}}]
                     end,
 
         lists:append([AccList, IdxUpdate])
@@ -337,7 +362,7 @@ is_element(IndexedVal, Pk, IndexObj) ->
         error -> false
     end.
 
-fill_index(ObjUpdate, TxId) ->
+fill_index(ObjUpdate, Transaction) ->
     case retrieve_index(ObjUpdate) of
         {_, []} ->
             % No index was created
@@ -348,10 +373,10 @@ fill_index(ObjUpdate, TxId) ->
 
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 [PrimaryKey] = table_utils:primary_key_name(Table),
-                PIndexObject = read_index(primary, TableName, TxId),
-                SIndexObject = read_index(secondary, {TableName, IndexName}, TxId),
+                PIndexObject = read_index(primary, TableName, Transaction),
+                SIndexObject = read_index(secondary, {TableName, IndexName}, Transaction),
 
-                Records = table_utils:record_data(PIndexObject, TableName, TxId),
+                Records = table_utils:record_data(PIndexObject, TableName, Transaction),
 
                 IdxUpds = lists:map(fun(Record) ->
                     PkValue = querying_utils:to_atom(table_utils:lookup_value(PrimaryKey, Record)),

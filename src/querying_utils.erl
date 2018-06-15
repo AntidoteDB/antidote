@@ -28,6 +28,13 @@
 %%%-------------------------------------------------------------------
 -module(querying_utils).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-define(LOG_UTIL, mock_partition).
+-else.
+-define(LOG_UTIL, log_utilities).
+-endif.
+
 -define(CRDT_INDEX, antidote_crdt_index_go).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
@@ -102,38 +109,17 @@ read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
     read_crdts(value, Reads).
 
-
 write_keys(Updates, TxId) ->
     cure:update_objects(Updates, TxId).
 
 write_keys(Updates) ->
     cure:update_objects(ignore, [], Updates).
 
-%% TODO read objects from Cure or Materializer?
-read_crdts(value, ObjKeys, TxId) when is_list(ObjKeys) ->
-    {ok, Objs} = cure:read_objects(ObjKeys, TxId),
-    Objs;
-read_crdts(state, ObjKeys, TxId) when is_list(ObjKeys) ->
-    {ok, Objs} = cure:get_objects(ObjKeys, TxId),
-    Objs;
-read_crdts(StateOrValue, ObjKey, TxId) ->
-    read_crdts(StateOrValue, [ObjKey], TxId).
-
-read_crdts(value, ObjKeys) when is_list(ObjKeys) ->
-    {ok, Objs, _} = cure:read_objects(ignore, [], ObjKeys),
-    Objs;
-read_crdts(state, ObjKeys) when is_list(ObjKeys) ->
-    {ok, Objs, _} = cure:get_objects(ignore, [], ObjKeys),
-    Objs;
-read_crdts(StateOrValue, ObjKey) ->
-    read_crdts(StateOrValue, [ObjKey]).
-
 start_transaction() ->
     cure:start_transaction(ignore, []).
 
 commit_transaction(TxId) ->
     cure:commit_transaction(TxId).
-
 
 to_atom(Term) when is_list(Term) ->
     list_to_atom(Term);
@@ -168,6 +154,68 @@ create_crdt_update({_Key, ?CRDT_INDEX, _Bucket} = ObjKey, UpdateOp, Value) ->
 create_crdt_update(ObjKey, UpdateOp, Value) ->
     set_update(ObjKey, UpdateOp, Value).
 
+is_list_of_lists(List) when is_list(List) ->
+    NotDropped = lists:dropwhile(fun(Elem) -> is_list(Elem) end, List),
+    NotDropped =:= [];
+is_list_of_lists(_) -> false.
+
+is_subquery({sub, Conditions}) when is_list(Conditions) -> true;
+is_subquery(_) -> false.
+
+replace(N, Element, List) when N >= 0 andalso N < length(List)->
+    {First, [_H | Second]} = lists:split(N, List),
+    lists:append(First, [Element | Second]).
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+%% TODO read objects from Cure or Materializer?
+read_crdts(StateOrValue, ObjKeys, Transaction)
+    when is_list(ObjKeys) andalso tuple_size(Transaction) > 3 ->
+    {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
+    Objs;
+read_crdts(StateOrValue, ObjKey, Transaction)
+    when tuple_size(Transaction) > 3 ->
+    read_crdts(StateOrValue, [ObjKey], Transaction);
+
+read_crdts(value, ObjKeys, TxId) when is_list(ObjKeys) ->
+    {ok, Objs} = cure:read_objects(ObjKeys, TxId),
+    Objs;
+read_crdts(state, ObjKeys, TxId) when is_list(ObjKeys) ->
+    {ok, Objs} = cure:get_objects(ObjKeys, TxId),
+    Objs;
+read_crdts(StateOrValue, ObjKey, TxId) ->
+    read_crdts(StateOrValue, [ObjKey], TxId).
+
+read_crdts(value, ObjKeys) when is_list(ObjKeys) ->
+    {ok, Objs, _} = cure:read_objects(ignore, [], ObjKeys),
+    Objs;
+read_crdts(state, ObjKeys) when is_list(ObjKeys) ->
+    {ok, Objs, _} = cure:get_objects(ignore, [], ObjKeys),
+    Objs;
+read_crdts(StateOrValue, ObjKey) ->
+    read_crdts(StateOrValue, [ObjKey]).
+
+read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
+    ReadObjects = lists:map(fun({_Key, Type, _Bucket} = ObjKey) ->
+        {ok, Snapshot} = read_data_item(ObjKey, Transaction),
+        case StateOrValue of
+            value -> Type:value(Snapshot);
+            state -> Snapshot
+        end
+    end, ObjKeys),
+    {ok, ReadObjects}.
+
+read_data_item({Key, Type, Bucket}, Transaction) ->
+    SendKey = {Key, Bucket},
+    %lager:info("{Key, Type}: ~p", [{SendKey, Type}]),
+    Partition = ?LOG_UTIL:get_key_partition(SendKey),
+    %lager:info("Partition: ~p", [Partition]),
+    {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, []),
+    %lager:info("Got snapshot: ~p", [Snapshot]),
+    {ok, Snapshot}.
+
 map_update({{Key, CRDT}, {Op, Value} = Operation}) ->
     case CRDT:is_operation(Operation) of
         true -> [{{Key, CRDT}, {Op, Value}}];
@@ -181,26 +229,14 @@ index_update({CRDT, Key, {Op, Value} = Operation}) ->
 index_update({CRDT, Key, Operations}) when is_list(Operations) ->
     lists:foldl(fun(Op, Acc) ->
         lists:append(Acc, index_update({CRDT, Key, Op}))
-    end, [], Operations);
+                end, [], Operations);
 index_update(Values) when is_list(Values) ->
     lists:foldl(fun(Update, Acc) ->
         lists:append(Acc, index_update(Update))
-    end, [], Values).
+                end, [], Values).
 
 set_update({_Key, ?CRDT_SET, _Bucket} = ObjKey, UpdateOp, Value) ->
     case ?CRDT_SET:is_operation(UpdateOp) of
         true -> {ObjKey, UpdateOp, Value};
         false -> throw(lists:concat(?INVALID_OP_MSG(UpdateOp, ?CRDT_SET)))
     end.
-
-is_list_of_lists(List) when is_list(List) ->
-    NotDropped = lists:dropwhile(fun(Elem) -> is_list(Elem) end, List),
-    NotDropped =:= [];
-is_list_of_lists(_) -> false.
-
-is_subquery({sub, Conditions}) when is_list(Conditions) -> true;
-is_subquery(_) -> false.
-
-replace(N, Element, List) when N >= 0 andalso N < length(List)->
-    {First, [_H | Second]} = lists:split(N, List),
-    lists:append(First, [Element | Second]).

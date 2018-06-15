@@ -56,8 +56,12 @@
 -export([register_pre_hook/3,
          register_post_hook/3,
          get_hooks/2,
+         has_hook/4,
          unregister_hook/2,
+         execute_pre_commit_hook/1,
          execute_pre_commit_hook/3,
+         execute_pre_commit_hook/4,
+         execute_post_commit_hook/1,
          execute_post_commit_hook/3
         ]).
 
@@ -103,8 +107,18 @@ get_hooks(pre_commit, Bucket) ->
 get_hooks(post_commit, Bucket) ->
     riak_core_metadata:get(?PREFIX_POST, Bucket).
 
+has_hook(PreOrPost, Bucket, Module, Fun)
+    when is_atom(PreOrPost) andalso is_atom(Bucket)
+    andalso is_atom(Module) andalso is_atom(Fun) ->
+
+    case get_hooks(PreOrPost, Bucket) of
+        {Module, Fun} -> true;
+        undefined -> false;
+        {_, _} -> false
+    end.
+
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
-        {term(), type(), op_param()} | {error, reason()}.
+        {term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}.
 execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
     Hook = get_hooks(pre_commit, Bucket),
     case Hook of
@@ -120,6 +134,30 @@ execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
 %% The following is kept to be backward compatible with the old
 %% interface where buckets are not used
 execute_pre_commit_hook(Key, Type, Param) ->
+    {Key, Type, Param}.
+-spec execute_pre_commit_hook([{term(), type(), op_param()}]) ->
+    [{term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}].
+execute_pre_commit_hook(Updates) when is_list(Updates) ->
+    lists:map(fun(Upd) ->
+        {{Key, Bucket}, Type, Param} = Upd,
+        execute_pre_commit_hook({Key, Bucket}, Type, Param)
+    end, Updates).
+
+-spec execute_pre_commit_hook(term(), type(), op_param(), txid()) ->
+    {term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}.
+execute_pre_commit_hook({Key, Bucket}, Type, Param, Transaction) ->
+    Hook = get_hooks(pre_commit, Bucket),
+    case Hook of
+        undefined ->
+            {{Key, Bucket}, Type, Param};
+        {Module, Function} ->
+            try Module:Function({{Key, Bucket}, Type, Param}, Transaction) of
+                {ok, Res} -> Res
+            catch
+                _:Reason -> {error, {pre_commit_hook, Reason}}
+            end
+    end;
+execute_pre_commit_hook(Key, Type, Param, _TxId) ->
     {Key, Type, Param}.
 
 -spec execute_post_commit_hook(term(), type(), op_param()) ->
@@ -138,6 +176,14 @@ execute_post_commit_hook({Key, Bucket}, Type, Param) ->
     end;
 execute_post_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
+
+-spec execute_post_commit_hook([{term(), type(), op_param()}]) ->
+    [{term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}].
+execute_post_commit_hook(Updates) when is_list(Updates) ->
+    lists:map(fun(Upd) ->
+        {{Key, Bucket}, Type, Param} = Upd,
+        execute_post_commit_hook({Key, Bucket}, Type, Param)
+    end, Updates).
 
 -ifdef(TEST).
 %% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).

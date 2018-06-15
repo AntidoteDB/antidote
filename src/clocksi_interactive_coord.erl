@@ -163,10 +163,76 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
 -spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
-    Partition = ?LOG_UTIL:get_key_partition(Key),
+
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
+        PostHookUpdates when is_list(PostHookUpdates) ->
+            UpdatedPartitions = lists:foldl(fun({Key1, Type1, Params1}, AccUpdatedPartitions) ->
+                case AccUpdatedPartitions of
+                    {error, _} -> AccUpdatedPartitions;
+                    _Else ->
+                        Partition = ?LOG_UTIL:get_key_partition(Key1),
+                        case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key1, Type1, Params1, [], []) of
+                            {ok, DownstreamRecord} ->
+                                TxId = Transaction#transaction.txn_id,
+                                LogRecord = #log_operation{
+                                    tx_id=TxId,
+                                    op_type=update,
+                                    log_payload=#update_log_payload{key=Key1, type=Type1, op=DownstreamRecord}
+                                },
+
+                                LogId = ?LOG_UTIL:get_logid_from_key(Key1),
+                                case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
+                                    {ok, _} ->
+                                        lists:append(AccUpdatedPartitions, [{Partition, [{Key1, Type1, DownstreamRecord}]}]);
+                                    Error ->
+                                        {error, Error}
+                                end;
+                            {error, Reason} ->
+                                {error, Reason}
+                        end
+                end
+            end, [], PostHookUpdates),
+
+            case UpdatedPartitions of
+                {error, Reason} ->
+                    {error, Reason};
+                UpdatedPartitions ->
+                    case ?CLOCKSI_VNODE:single_commit_sync(UpdatedPartitions, Transaction) of
+                        {committed, CommitTime} ->
+
+                            %% Execute post commit hooks
+                            lists:foreach(fun({Key1, Type1, Params1}) ->
+                                case antidote_hooks:execute_post_commit_hook(Key1, Type1, Params1) of
+                                    {error, Reason} ->
+                                        lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                    _ ->
+                                        ok
+                                end
+                            end, PostHookUpdates),
+
+                            TxId = Transaction#transaction.txn_id,
+                            DcId = ?DC_META_UTIL:get_my_dc_id(),
+
+                            CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                DcId,
+                                CommitTime,
+                                Transaction#transaction.vec_snapshot_time
+                            ),
+
+                            {ok, {TxId, [], CausalClock}};
+
+                        abort ->
+                            % TODO increment aborted transaction metrics?
+                            {error, aborted};
+
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end;
+
         {Key, Type, Params1} ->
+            Partition = ?LOG_UTIL:get_key_partition(Key),
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [], []) of
                 {ok, DownstreamRecord} ->
                     UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
@@ -751,11 +817,14 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
             {error, _} = Err ->
                 AccState#coord_state{return_accumulator = Err};
 
-            {UpdatedPartitions, ClientOps} ->
+            {UpdatedPartitions, ClientOps, NumOfUpds} ->
+                %lager:info("UpdatedPartitions: ~p", [UpdatedPartitions]),
+                %lager:info("ClientOps: ~p", [ClientOps]),
                 NumToRead = AccState#coord_state.num_to_read,
+                %lager:info("NumOfUpds: ~p", [NumOfUpds]),
                 AccState#coord_state{
                     client_ops=ClientOps,
-                    num_to_read=NumToRead + 1,
+                    num_to_read=NumToRead + NumOfUpds,
                     updated_partitions=UpdatedPartitions
                 }
         end
@@ -768,6 +837,8 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
     ),
 
     LoggingState = NewCoordState#coord_state{from=Sender},
+    %lager:info("Update objects: ~p", [UpdateOps]),
+
     case LoggingState#coord_state.num_to_read > 0 of
         true ->
             {receive_logging_responses, LoggingState};
@@ -958,55 +1029,71 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
-    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
+
+    %% Execute pre_commit_hook if any
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, Transaction) of
+        {error, Reason} ->
+            lager:debug("Execute pre-commit hook failed ~p", [Reason]),
+            {error, Reason};
+
+        PostHookUpdates when is_list(PostHookUpdates) ->
+            lists:foldl(fun({Key1, Type1, Update1}, {CurrUpdatedPartitions, CurrUpdatedOps, TotalUpds}) ->
+                ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
+
+                {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key1, Type1, Update1,
+                    CurrUpdatedPartitions, Transaction, InternalReadSet, CurrUpdatedOps),
+                {NewUpdatedPartitions, UpdatedOps, TotalUpds + 1}
+
+            end, {UpdatedPartitions, ClientOps, 0}, PostHookUpdates);
+
+        {Key, Type, PostHookUpdate} ->
+            ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
+
+            {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key, Type, PostHookUpdate,
+                UpdatedPartitions, Transaction, InternalReadSet, ClientOps),
+            {NewUpdatedPartitions, UpdatedOps, 1}
+    end.
+
+generate_new_state(Key, Type, HookUpdate, Partitions, Transaction, ReadSet, Ops) ->
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
-    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
+    WriteSet = case lists:keyfind(Partition, 1, Partitions) of
                    false ->
                        [];
                    {Partition, WS} ->
                        WS
                end,
 
-    %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update) of
+    %% Generate the appropriate state operations based on older snapshots
+    GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
+        Transaction,
+        Partition,
+        Key,
+        Type,
+        HookUpdate,
+        WriteSet,
+        ReadSet
+    ),
+
+    case GenerateResult of
         {error, Reason} ->
-            lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};
 
-        {Key, Type, PostHookUpdate} ->
+        {ok, DownstreamOp} ->
+            ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
 
-            %% Generate the appropriate state operations based on older snapshots
-            GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
-                Transaction,
-                Partition,
-                Key,
-                Type,
-                PostHookUpdate,
+            %% Append to the write set of the updated partition
+            GeneratedUpdate = {Key, Type, DownstreamOp},
+            NewUpdatedPartitions = append_updated_partitions(
+                Partitions,
                 WriteSet,
-                InternalReadSet
+                Partition,
+                GeneratedUpdate
             ),
 
-            case GenerateResult of
-                {error, Reason} ->
-                    {error, Reason};
-
-                {ok, DownstreamOp} ->
-                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
-
-                    %% Append to the write set of the updated partition
-                    GeneratedUpdate = {Key, Type, DownstreamOp},
-                    NewUpdatedPartitions = append_updated_partitions(
-                        UpdatedPartitions,
-                        WriteSet,
-                        Partition,
-                        GeneratedUpdate
-                    ),
-
-                    UpdatedOps = [{Key, Type, PostHookUpdate} | ClientOps],
-                    {NewUpdatedPartitions, UpdatedOps}
-            end
+            UpdatedOps = [{Key, Type, HookUpdate} | Ops],
+            {NewUpdatedPartitions, UpdatedOps}
     end.
 
 %% @doc Add new updates to the write set of the given partition.
