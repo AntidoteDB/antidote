@@ -284,6 +284,7 @@ finish_op(From, Key, Result) ->
 %% @doc Initialize the state.
 %% #Locks
 init([From, ClientClock, Properties, StayAlive]) ->
+    lager:info("clocksi_interactive_coord_11111(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, false, false, Properties),
     
     Locks = lists:keyfind(locks,1,Properties),
@@ -296,6 +297,7 @@ init([From, ClientClock, Properties, StayAlive]) ->
 
 %% @doc Initialize static transaction with Operations.
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
+    lager:info("clocksi_interactive_coord_22222(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, true, true, Properties),
     State = start_tx_internal(From, ClientClock, Properties, BaseState),
     {ok, execute_op, State#coord_state{operations = Operations, from = From}, [{state_timeout, 0, timeout}]}.
@@ -743,7 +745,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                              ignore ->
                                  get_snapshot_time();
                              _ ->
-                                 ClientClock
+                                 {ok,ClientClock}
                          end,
     DcId = ?DC_META_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),

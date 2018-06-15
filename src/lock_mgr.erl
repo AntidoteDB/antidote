@@ -444,8 +444,13 @@ am_i_leader() ->
                              end, [], OtherDCDescriptors),
     Ordd = orddict:new(),
     OrddAllDCIDs = lists:foldl(fun(Id, DCIDs) -> orddict:store(Id,0,DCIDs) end, Ordd, AllDCIds),
-    {Key,_Value} = hd(OrddAllDCIDs),
-    Key== MyDCId.
+    case OrddAllDCIDs of 
+        []->
+            true;
+        _ ->
+        {Key,_Value} = hd(OrddAllDCIDs),
+        Key== MyDCId
+    end.
 
 %% Locks : list of locks
 %% Returns a list of the snapshot times the specified locks were released the last time

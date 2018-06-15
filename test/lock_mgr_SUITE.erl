@@ -318,22 +318,21 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
         {error,{error,_Missing_Locks}} ->
             helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object)
     end.    
-helper_multi_value_register_test([],_,_,_)-> ok;
-helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes],Keys,Object,Snapshot)->
-    case rpc:call(Current_Node, cure, start_transaction, [Snapshot, [{locks,Keys}]]) of 
-        {ok, TxId1} ->
-            case Value2 of
-                n1 -> ok;
-                _ ->
-                    {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
-                    ?assertEqual(Value1,Read_Val)
-            end,
-            ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
-            {ok, Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
-            helper_multi_value_register_test(Remaining_Nodes, Keys, Object,Clock1);
-        {error,{error,_Missing_Locks}} ->
-            helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object,Snapshot)
-    end.
+%helper_multi_value_register_test([],_,_,_)-> ok;
+%helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes],Keys,Object,Snapshot)->
+%    case rpc:call(Current_Node, cure, start_transaction, [Snapshot, [{locks,Keys}]]) of 
+%        {ok, TxId1} ->
+%            case Value2 of
+%                n1 -> ok;
+%                _ ->
+%                    {ok, [[Read_Val]|[]]} = rpc:call(Current_Node, cure, read_objects, [[Object], TxId1]),
+%                    ?assertEqual(Value1,Read_Val)
+%            end,
+%            ok = rpc:call(Current_Node, cure, update_objects, [[{Object,assign,Value2}],TxId1]),
+%            {ok, Clock1} = rpc:call(Current_Node, cure, commit_transaction, [TxId1]),
+%        {error,{error,_Missing_Locks}} ->
+%            helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes], Keys,Object,Snapshot)
+%    end.
 
 %% Let 3 processes asynchronously increment the same counter each 100times while using a lock to restrict the access.
 %% 30 ms delay between increments

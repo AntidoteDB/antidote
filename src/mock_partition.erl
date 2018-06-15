@@ -172,7 +172,7 @@ inc(_) -> ok.
 % added for lock tests
 
 get_locks([a,b], _TransactionId) ->
-    {ok,dict:new()};
+    {ok,[dict:new()]};
 get_locks([b,c], _TransactionId) ->
     {missing_locks, [b,c]}.
 
