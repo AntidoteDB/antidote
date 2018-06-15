@@ -25,6 +25,9 @@
 %%
 %% The commit hook function must be a function which take one argument which is
 %% of type update_object() and returns update_object().
+%% The update operation corresponds to a data-type specific operation as defined
+%% in the respective CRDT specification.
+%%
 %% fun (update_object()) -> {ok, update_object()} | {error, Reason}.
 %% -type update_object() :: {{key(), bucket()}, crdt_type(), op()}
 
@@ -137,6 +140,8 @@ execute_post_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
 
 -ifdef(TEST).
+%% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
+
 test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
     {ok, Object}.

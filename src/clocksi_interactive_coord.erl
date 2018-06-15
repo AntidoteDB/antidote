@@ -168,7 +168,7 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+-spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     Partition = ?LOG_UTIL:get_key_partition(Key),
@@ -831,6 +831,10 @@ execute_command(prepare, Protocol, Sender, State0) ->
             prepare(State)
     end;
 
+%% @doc Abort the current transaction
+execute_command(abort, _Protocol, Sender, State) ->
+    abort(State#coord_state{from=Sender});
+
 %% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #coord_state{
     transaction=Transaction,
@@ -1158,7 +1162,7 @@ append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
     lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
 
 
--spec async_log_propagation(index_node(), txid(), key(), type(), op()) -> ok.
+-spec async_log_propagation(index_node(), txid(), key(), type(), effect()) -> ok.
 async_log_propagation(Partition, TxId, Key, Type, Record) ->
     LogRecord = #log_operation{
         op_type=update,

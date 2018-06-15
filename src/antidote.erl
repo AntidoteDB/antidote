@@ -58,7 +58,7 @@ stop() ->
 
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
--spec get_log_operations([{bound_object(), snapshot_time()}]) -> {ok, [[{non_neg_integer(), #clocksi_payload{}}]]} | {error, reason()}.
+-spec get_log_operations([{bound_object(), snapshot_time()}]) -> {ok, [[{non_neg_integer(), clocksi_payload()}]]} | {error, reason()}.
 get_log_operations(ObjectClockPairs) ->
     %% result is a list of lists of lists
     %% internal list is {number, clocksi_payload}
@@ -121,7 +121,7 @@ unregister_hook(Prefix, Bucket) ->
 start_transaction(Clock, Properties) ->
     cure:start_transaction(Clock, Properties, false).
 
--spec abort_transaction(TxId::txid()) -> {error, reason()}.
+-spec abort_transaction(TxId::txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
     cure:abort_transaction(TxId).
 
