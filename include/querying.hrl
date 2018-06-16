@@ -9,7 +9,7 @@
 %% Table metadata definitions
 -define(TABLE(Name, Policy, Cols, FKeys, Indexes), {Name, Policy, Cols, FKeys, Indexes}).
 -define(ATTRIBUTE(Column, Type, Value), {{Column, Type}, Value}).
--define(FK(FkName, FkType, RefTableName, RefColName), {{FkName, FkType}, {RefTableName, RefColName}}).
+-define(FK(FkName, FkType, RefTableName, RefColName, DeleteRule), {{FkName, FkType}, {RefTableName, RefColName}, DeleteRule}).
 -define(TABLE_DT, antidote_crdt_map_go).
 -define(TABLE_NAME_DT, antidote_crdt_register_lww).
 -define(COLUMNS, {names}).

@@ -68,7 +68,7 @@ primary_key_name(Table) ->
 
 all_column_names(Table) ->
     TCols = column_names(Table),
-    SCols = lists:map(fun(?FK(FKName, _FKType, _RefTable, _RefCol)) -> FKName end, foreign_keys(Table)),
+    SCols = lists:map(fun(?FK(FKName, _FKType, _RefTable, _RefCol, _DelRule)) -> FKName end, foreign_keys(Table)),
     lists:append([['#st'], TCols, SCols]).
 
 %% Tables metadata is always read from the database;
@@ -109,7 +109,7 @@ is_column(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(C
     lists:member(ColumnName, ColList).
 
 is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
-    Aux = lists:dropwhile(fun(?FK(FkName, _FkType, _RefTable, _RefCol)) ->
+    Aux = lists:dropwhile(fun(?FK(FkName, _FkType, _RefTable, _RefCol, _DelRule)) ->
         ColumnName /= FkName end, FKeys),
     case Aux of
         [] -> false;
@@ -120,7 +120,7 @@ is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
 % {{col_name, datatype}, value}
 shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     %io:format(">> shadow_column_state:~n", []),
-    ?FK(FkName, FkType, _RefTable, _RefCol) = ShadowCol,
+    ?FK(FkName, FkType, _RefTable, _RefCol, _DelRule) = ShadowCol,
     %%io:format("ShadowCol: ~p~n", [ShadowCol]),
     ColName = {column_name(FkName), type_to_crdt(FkType, undefined)},
     %%io:format("ColName: ~p~n", [ColName]),

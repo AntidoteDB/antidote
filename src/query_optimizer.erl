@@ -322,7 +322,7 @@ get_shadow_columns(Table, RecordsData, TxId) ->
     ForeignKeys = table_utils:foreign_keys(Table),
 
     NewRecordsData = lists:foldl(fun(ForeignKey, Acc) ->
-        ?FK(FkName, _FkType, _RefTableName, _RefColName) = ForeignKey,
+        ?FK(FkName, _FkType, _RefTableName, _RefColName, _DeleteRule) = ForeignKey,
         lists:map(fun(RecordData) ->
             case table_utils:get_column({FkName, ?SHADOW_COL_ENTRY_DT}, RecordData) of
                 undefined ->
@@ -339,7 +339,7 @@ get_shadow_columns(Table, RecordsData, TxId) ->
 
 shadow_column_spec(FkName, Table) ->
     ForeignKeys = table_utils:foreign_keys(Table),
-    Search = lists:dropwhile(fun(?FK(Name, _Type, _RefTableName, _RefColName)) -> FkName /= Name end, ForeignKeys),
+    Search = lists:dropwhile(fun(?FK(Name, _Type, _RefTableName, _RefColName, _DeleteRule)) -> FkName /= Name end, ForeignKeys),
     case Search of
         [] -> none;
         [Result | _] -> Result
