@@ -136,7 +136,7 @@ commit_transaction(TxId) ->
 read_objects(Objects, TxId) ->
     cure:read_objects(Objects, TxId).
 
--spec read_objects(vectorclock(), txn_properties(), [bound_object()])
+-spec read_objects(snapshot_time() | ignore, txn_properties(), [bound_object()])
                   -> {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
     cure:read_objects(Clock, Properties, Objects).

@@ -124,7 +124,7 @@ get_objects(Clock, Properties, Objects) ->
     obtain_objects(Clock, Properties, Objects, false, object_state).
 
 
--spec obtain_objects(vectorclock(), txn_properties(), [bound_object()], boolean(), object_value|object_state) ->
+-spec obtain_objects(snapshot_time() | ignore, txn_properties(), [bound_object()], boolean(), object_value|object_state) ->
                           {ok, list(), vectorclock()} | {error, reason()}.
 obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
     SingleKey = case Objects of
