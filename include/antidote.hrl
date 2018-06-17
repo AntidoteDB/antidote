@@ -160,7 +160,7 @@
 -type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}].
 
 -record(transaction, {
-    snapshot_time :: snapshot_time(),
+    snapshot_time_local :: clock_time(),
     vec_snapshot_time :: snapshot_time(),
     properties :: txn_properties(),
     txn_id :: txid()
