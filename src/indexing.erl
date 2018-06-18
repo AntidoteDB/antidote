@@ -159,6 +159,8 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
     case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
             % Is a table update
+            %lager:info("Is a table update: ~p", [ObjUpdate]),
+
             SIdxUpdates = fill_index(ObjUpdate, Transaction),
             Upds = build_index_updates(SIdxUpdates, Transaction),
 
@@ -170,6 +172,8 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
             Upds;
         ?RECORD_UPD_TYPE ->
             % Is a record update
+            %lager:info("Is a record update: ~p", [ObjUpdate]),
+
             Table = table_utils:table_metadata(Bucket, Transaction),
             %lager:info("Got table metadata: ~p", [Table]),
             TableName = table_utils:table(Table),
@@ -177,6 +181,8 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                 undefined -> [];
                 _Else ->
                     % A table exists
+                    %lager:info("A table exists"),
+
                     PIdxName = generate_pindex_key(TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
@@ -247,11 +253,12 @@ create_index(_IndexName, _TxId) -> {error, not_implemented}.
 %% insert the new ones.
 build_index_updates([], _TxId) -> [];
 build_index_updates(Updates, _TxId) when is_list(Updates) ->
+    %lager:info("List of updates: ~p", [Updates]),
+
     lists:foldl(fun(Update, AccList) ->
         ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
 
         DBIndexName = generate_sindex_key(TableName, IndexName),
-
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
 
         IdxUpdate = case is_list(Op) of
@@ -366,10 +373,12 @@ fill_index(ObjUpdate, Transaction) ->
     case retrieve_index(ObjUpdate) of
         {_, []} ->
             % No index was created
+            %lager:info("No index was created"),
             [];
         {Table, Indexes} when is_list(Indexes) ->
             lists:foldl(fun(Index, Acc) ->
                 % A new index was created
+                %lager:info("A new index was created"),
 
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 [PrimaryKey] = table_utils:primary_key_name(Table),
@@ -388,6 +397,6 @@ fill_index(ObjUpdate, Transaction) ->
                             ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op})
                     end
                 end, Records),
-                lists:flatten(Acc, IdxUpds)
-            end,[], Indexes)
+                lists:append(Acc, lists:flatten(IdxUpds))
+            end, [], Indexes)
     end.
