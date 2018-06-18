@@ -209,11 +209,8 @@ read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
 
 read_data_item({Key, Type, Bucket}, Transaction) ->
     SendKey = {Key, Bucket},
-    %lager:info("{Key, Type}: ~p", [{SendKey, Type}]),
     Partition = ?LOG_UTIL:get_key_partition(SendKey),
-    %lager:info("Partition: ~p", [Partition]),
     {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, []),
-    %lager:info("Got snapshot: ~p", [Snapshot]),
     {ok, Snapshot}.
 
 map_update({{Key, CRDT}, {Op, Value} = Operation}) ->

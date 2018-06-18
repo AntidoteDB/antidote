@@ -39,9 +39,9 @@
          create_index_hooks/2,
          index_update_hook/1,
          index_update_hook/2,
-         empty_hook/1,
-         transaction_hook/1,
-         rwtransaction_hook/1,
+%%         empty_hook/1,
+%%         transaction_hook/1,
+%%         rwtransaction_hook/1,
          read_index/3,
          read_index_function/4,
          create_index/2,
@@ -57,83 +57,67 @@ table_name(?INDEX(_IndexName, TableName, _Attributes)) -> TableName.
 
 attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 
-% TODO clean the code
 create_index_hooks(Updates, _TxId) when is_list(Updates) ->
     lists:foldl(fun(ObjUpdate, UpdAcc) ->
         ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
         case update_type({Key, Type, Bucket}) of
             ?TABLE_UPD_TYPE ->
-                %[{{TableName, _CRDT}, {_CRDTOp, _Meta}}] = Param,
-                %io:format("Is a table update, where table = ~p~n", [TableName]),
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
                 case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
 
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
-                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
                 lists:append(UpdAcc, []);
-                %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
             ?RECORD_UPD_TYPE ->
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, index_update_hook),
                 case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
 
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, empty_hook),
-                %antidote_hooks:register_pre_hook(Bucket, ?MODULE, empty_hook),
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, transaction_hook),
-                %antidote_hooks:register_post_hook(Bucket, ?MODULE, rwtransaction_hook),
-
                 lists:append(UpdAcc, []);
-                %lists:append(UpdAcc, generate_index_updates(Key, Type, Bucket, {Op, Param}, TxId));
-                %lists:append(UpdAcc, fill_pindex(Key, Bucket));
-            _ -> lists:append(UpdAcc, [])
+            _ ->
+                lists:append(UpdAcc, [])
         end
     end, [], Updates).
 
 % Uncomment to use with following 3 hooks
-%fill_pindex(Key, Bucket) ->
-%    TableName = querying_utils:to_atom(Bucket),
-%    PIdxName = generate_pindex_key(TableName),
-%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-%    PIdxUpdate = {PIdxKey, add, Key},
-%    [PIdxUpdate].
-
-empty_hook({{Key, Bucket}, Type, Param}) ->
-    {ok, {{Key, Bucket}, Type, Param}}.
-
-transaction_hook({{Key, Bucket}, Type, Param}) ->
-    {UpdateOp, Updates} = Param,
-    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
-
-    {ok, TxId} = cure:start_transaction(ignore, [], false),
-    {ok, _} = cure:commit_transaction(TxId),
-
-    {ok, ObjUpdate}.
-
-rwtransaction_hook({{Key, Bucket}, Type, Param}) ->
-    {UpdateOp, Updates} = Param,
-    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
-
-    {ok, TxId} = cure:start_transaction(ignore, [], false),
-
-    %% write a key
-    [ObjKey] = querying_utils:build_keys(key1, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    Upd = querying_utils:create_crdt_update(ObjKey, ?MAP_OPERATION, {antidote_crdt_register_lww, pk1, {assign, val1}}),
-    {ok, _} = querying_utils:write_keys(Upd, TxId),
-
-    %% read a key
-    [ObjKey] = querying_utils:build_keys(key2, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    [_Obj] = querying_utils:read_keys(value, ObjKey, TxId),
-
-    {ok, _} = cure:commit_transaction(TxId),
-
-    {ok, ObjUpdate}.
+%%fill_pindex(Key, Bucket) ->
+%%    TableName = querying_utils:to_atom(Bucket),
+%%    PIdxName = generate_pindex_key(TableName),
+%%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    PIdxUpdate = {PIdxKey, add, Key},
+%%    [PIdxUpdate].
+%%
+%%empty_hook({{Key, Bucket}, Type, Param}) ->
+%%    {ok, {{Key, Bucket}, Type, Param}}.
+%%
+%%transaction_hook({{Key, Bucket}, Type, Param}) ->
+%%    {UpdateOp, Updates} = Param,
+%%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+%%
+%%    {ok, TxId} = cure:start_transaction(ignore, [], false),
+%%    {ok, _} = cure:commit_transaction(TxId),
+%%
+%%    {ok, ObjUpdate}.
+%%
+%%rwtransaction_hook({{Key, Bucket}, Type, Param}) ->
+%%    {UpdateOp, Updates} = Param,
+%%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+%%
+%%    {ok, TxId} = cure:start_transaction(ignore, [], false),
+%%
+%%    %% write a key
+%%    [ObjKey] = querying_utils:build_keys(key1, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    Upd = querying_utils:create_crdt_update(ObjKey, ?MAP_OPERATION, {antidote_crdt_register_lww, pk1, {assign, val1}}),
+%%    {ok, _} = querying_utils:write_keys(Upd, TxId),
+%%
+%%    %% read a key
+%%    [ObjKey] = querying_utils:build_keys(key2, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    [_Obj] = querying_utils:read_keys(value, ObjKey, TxId),
+%%
+%%    {ok, _} = cure:commit_transaction(TxId),
+%%
+%%    {ok, ObjUpdate}.
 
 index_update_hook(Update, Transaction) when is_tuple(Update) ->
     {{Key, Bucket}, Type, Param} = Update,
@@ -206,19 +190,6 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
             end;
         _ -> []
     end.
-
-%% Check if the object updates trigger index updates.
-%% If so, generate updates for the respective indexes.
-%index_update({{Key, Bucket}, Type, Param}, TxId) ->
-%    {UpdateOp, Updates} = Param,
-%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates), % TODO we assume the Op is always update
-%    SendUpdates = generate_index_updates(Key, Type, Bucket, Param, TxId),
-%
-%    case SendUpdates of
-%        [] -> ok;
-%        _ -> {ok, _CT} = querying_utils:write_keys(SendUpdates)
-%    end,
-%    {ok, ObjUpdate}.
 
 read_index(primary, TableName, TxId) ->
     IndexName = generate_pindex_key(TableName),
@@ -327,30 +298,6 @@ generate_sindex_key(TableName, IndexName) ->
     FullIndexName = lists:concat([?SINDEX_PREFIX, TableName, '.', IndexName]),
     %io:format("FullIndexName: ~p~n", [FullIndexName]),
     querying_utils:to_atom(FullIndexName).
-
-%% Each update is on the form: [{ {key, crdt_type, bucket}, operation, values}]
-%% For the OrSet, 'operation' can be one of these: add, add_all, remove, remove_all
-%% For the OrSet, 'values' are the values to be inserted in/removed from the set
-%% TODO deprecated
-%create_database_update(ObjectKey, add, Value) ->
-%    {ObjectKey, add, Value};
-%create_database_update(ObjectKey, add_all, Values) when is_list(Values) ->
-%    {ObjectKey, add_all, Values};
-%create_database_update(ObjectKey, remove, Value) ->
-%    {ObjectKey, remove, Value};
-%create_database_update(ObjectKey, remove_all, Values) when is_list(Values) ->
-%    {ObjectKey, remove_all, Values}.
-
-%% Entry update generator for the GMap CRDT
-%% TODO deprecated
-%prepare_update(IndexKey, add, {IndexedColVal, Value}) ->
-%    prepare_update(IndexKey, add_all, {IndexedColVal, [Value]});
-%prepare_update(_IndexKey, add_all, {IndexedColVal, Values}) when is_list(Values) ->
-%    {{IndexedColVal, ?SINDEX_ENTRY_DT}, {add_all, Values}};
-%prepare_update(IndexKey, remove, {IndexedColVal, Value}) ->
-%    prepare_update(IndexKey, remove_all, {IndexedColVal, [Value]});
-%prepare_update(_IndexKey, remove_all, {IndexedColVal, Values}) when is_list(Values) ->
-%    {{IndexedColVal, ?SINDEX_ENTRY_DT}, {remove_all, Values}}.
 
 update_type({?TABLE_METADATA_KEY, ?TABLE_METADATA_DT, ?AQL_METADATA_BUCKET}) -> ?TABLE_UPD_TYPE;
 update_type({_Key, ?TABLE_METADATA_DT, ?AQL_METADATA_BUCKET}) -> ?METADATA_UPD_TYPE;

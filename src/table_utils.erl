@@ -71,7 +71,7 @@ all_column_names(Table) ->
     SCols = lists:map(fun(?FK(FKName, _FKType, _RefTable, _RefCol, _DelRule)) -> FKName end, foreign_keys(Table)),
     lists:append([['#st'], TCols, SCols]).
 
-%% Tables metadata is always read from the database;
+%% Metadata from tables are always read from the database;
 %% Only individual table metadata is stored on cache.
 tables_metadata(TxId) ->
     ObjKey = querying_utils:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
@@ -79,24 +79,18 @@ tables_metadata(TxId) ->
     Meta.
 
 table_metadata(TableName, TxId) ->
-    %io:format(">> table_metadata:~n", []),
-    %lager:info(">> table_metadata:~n", []),
     case metadata_caching:get_key(TableName) of
         {error, _} ->
-            %io:format("Not in cache; reading from database...~n", []),
             Metadata = tables_metadata(TxId),
             TableNameAtom = querying_utils:to_atom(TableName),
             MetadataKey = {TableNameAtom, ?TABLE_NAME_DT},
             case proplists:get_value(MetadataKey, Metadata) of
                 undefined -> [];
                 TableMeta ->
-                    %lager:info("Not in cache; reading from database: ~p~n", [TableMeta]),
                     ok = metadata_caching:insert_key(TableName, TableMeta),
                     TableMeta
             end;
         TableMetaObj ->
-            %io:format("In cache; retrieving object~n", []),
-            %lager:info("In cache; retrieving object: ~p~n", [TableMetaObj]),
             TableMetaObj %% table metadata is a 'value' type object
     end.
 
@@ -119,20 +113,13 @@ is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
 % RecordData represents a single record, i.e. a list of tuples on the form:
 % {{col_name, datatype}, value}
 shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
-    %io:format(">> shadow_column_state:~n", []),
     ?FK(FkName, FkType, _RefTable, _RefCol, _DelRule) = ShadowCol,
-    %%io:format("ShadowCol: ~p~n", [ShadowCol]),
     ColName = {column_name(FkName), type_to_crdt(FkType, undefined)},
-    %%io:format("ColName: ~p~n", [ColName]),
     RefColValue = lookup_value(ColName, RecordData),
-    %%io:format("RefColValue: ~p~n", [RefColValue]),
     StateObjKey = querying_utils:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
-    %io:format("StateObjKey: ~p~n", [StateObjKey]),
     [ShColData] = querying_utils:read_keys(value, StateObjKey, TxId),
-    %io:format("ShColData: ~p~n", [ShColData]),
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
     State = lookup_value(RefColName, ShColData),
-    %io:format("State: ~p~n", [State]),
     State.
 
 record_data(PKeys, TableName, TxId) when is_list(PKeys) ->

@@ -44,15 +44,10 @@
 
 %% TODO support more than one table per filter, for supporting join queries
 query_filter(Filter, TxId) when is_list(Filter) ->
-    %io:format(">> query_filter:~n", []),
-
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
-
     ProjectionCols = projection(Filter),
     Conditions = conditions(Filter),
-
-    %io:format("Table: ~p~n", [Table]),
 
     FilteredResult =
         case Conditions of
@@ -66,8 +61,7 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                        false -> sets:to_list(FilteredResult);
                        true -> FilteredResult
                    end,
-    %io:format("ResultToList: ~p~n", [ResultToList]),
-    %io:format("ProjectionCols: ~p~n", [ProjectionCols]),
+
     case ProjectionCols of
         ?WILDCARD ->
             {ok, apply_projection(table_utils:column_names(Table), ResultToList)};
@@ -99,8 +93,6 @@ conditions(Filter) ->
 %% Internal functions
 %% ====================================================================
 apply_filter(Conditions, Table, TxId) ->
-    %lager:info(">> apply_filter:~n", []),
-    %lager:info("Conditions: ~p~n", [Conditions]),
     case is_disjunction(Conditions) of
         true ->
             lists:foldl(fun(Conjunction, FinalRes) ->
@@ -111,23 +103,23 @@ apply_filter(Conditions, Table, TxId) ->
                 %io:format("ResultSet: ~p~n", [ResultSet]),
                 sets:union(FinalRes, ResultSet)
             end, sets:new(), Conditions);
-        false -> throw("The current condition is not valid")
+        false ->
+            throw("The current condition is not valid")
     end.
 
+%% The sub-queries mentioned here are conditions that are
+%% surrounded by parenthesis.
 read_subqueries([{sub, Conds} | Tail], Table, TxId, RemainConds, PartialRes) ->
-    %lager:info(">> process_subqueries: is sub query~n", []),
     Result = apply_filter(Conds, Table, TxId),
     ResultSet = case is_list(Result) of
                        true -> sets:from_list(Result);
                        false -> Result
                 end,
-    %io:format("PartialRes: ~p~n", [PartialRes]),
-    %io:format("ResultSet: ~p~n", [ResultSet]),
+
     Intersection = case PartialRes of
                        nil -> ResultSet;
                        _Else -> sets:intersection(PartialRes, ResultSet)
                    end,
-    %lager:info("Intersection: ~p~n", [Intersection]),
     read_subqueries(Tail, Table, TxId, RemainConds, Intersection);
 read_subqueries([Cond | Tail], Table, TxId, RemainConds, PartialRes) ->
     read_subqueries(Tail, Table, TxId, lists:append(RemainConds, [Cond]), PartialRes);
@@ -139,21 +131,14 @@ read_subqueries([], Table, TxId, RemainConds, PartialRes) ->
 
 read_remaining(_Conditions, _Table, [], _TxId) -> [];
 read_remaining(Conditions, Table, CurrentData, TxId) ->
-    %lager:info(">> process_remaining:~n"),
-    %lager:info("Conditions: ~p~n", [Conditions]),
-    %lager:info("Table: ~p~n", [Table]),
-    %lager:info("CurrentData: ~p~n", [CurrentData]),
     TableName = table_utils:table(Table),
     RangeQueries = range_queries:get_range_query(Conditions),
-    %lager:info("RangeQueries: ~p~n", [RangeQueries]),
     case RangeQueries of
         nil -> [];
         _Else ->
             case CurrentData of
                 nil ->
                     {Remain, Indexes} = read_indexes(RangeQueries, Table),
-                    %lager:info("Remain: ~p~n", [Remain]),
-                    %lager:info("Indexes: ~p~n", [Indexes]),
                     LeastKeys = lists:foldl(fun(Index, Curr) ->
                         ReadKeys = interpret_index(Index, Table, RangeQueries, TxId),
                         case Curr of
@@ -161,31 +146,23 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             Curr -> ordsets:intersection(Curr, ReadKeys)
                         end
                     end, nil, Indexes),
-                    %lager:info("LeastKeys: ~p~n", [LeastKeys]),
+
                     case LeastKeys of
                         nil ->
                             ObjsData = iterate_ranges(RangeQueries, Table, TxId),
-                            %lager:info("ObjsData: ~p~n", [ObjsData]),
                             get_shadow_columns(Table, ObjsData, TxId);
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
-                            %case KeyList of
-                            %    [] -> lager:alert("LeastKeys is empty!!");
-                            %    _ -> ok
-                            %end,
-
                             Objects = read_records(KeyList, TableName, TxId),
-                            %lager:info("Objects: ~p~n", [Objects]),
                             ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
                                 GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
                                 FilterFun = read_predicate(GetRange),
                                 filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
                             end, Objects, Remain),
-                            %lager:info("ObjsData: ~p~n", [ObjsData]),
+
                             get_shadow_columns(Table, ObjsData, TxId)
                     end;
                 CurrentData ->
-                    %lager:info("CurrentData: ~p~n", [CurrentData]),
                     iterate_ranges(RangeQueries, Table, CurrentData, TxId)
             end
     end.
@@ -194,9 +171,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
 iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:table(Table),
     Keys = indexing:read_index(primary, TableName, TxId),
-    %lager:info("Keys: ~p", [Keys]),
     Data = read_records(Keys, TableName, TxId),
-    %lager:info("Data: ~p", [Data]),
     iterate_ranges(RangeQueries, Table, Data, TxId).
 
 iterate_ranges(RangeQueries, Table, Data, TxId) ->
@@ -221,9 +196,6 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                 end
             end, {0, []}, Args),
 
-            %lager:info("ConditionCol: ~p~n", [ConditionCol]),
-            %lager:info("Records content: ~p~n", [Records]),
-
             lists:foldl(fun(Record, Acc) ->
                 ColValue = case table_utils:is_foreign_key(ConditionCol, Table) of
                                true ->
@@ -232,30 +204,25 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                                        undefined ->
                                            ShCol = shadow_column_spec(ConditionCol, Table),
                                            table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
-                                       ?ATTRIBUTE(_C, _T, V) -> V
+                                       ?ATTRIBUTE(_C, _T, V) ->
+                                           V
                                    end;
                                false ->
-                                   ?ATTRIBUTE(_C, _T, V) = table_utils:get_column(ConditionCol, Record), V
-                                   %case table_utils:get_column(ConditionCol, Record) of
-                                   %    undefined ->
-                                   %        %lager:error("Error: ~p on record ~p~n ", [ConditionCol, Record]),
-                                   %        throw("An error occurred on function_filtering");
-                                   %    ?ATTRIBUTE(_C, _T, V) -> V
-                                   %end
+                                   ?ATTRIBUTE(_C, _T, V) = table_utils:get_column(ConditionCol, Record),
+                                   V
                            end,
 
-                %lager:info("ColValue: ~p~n", [ColValue]),
                 ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
                 Result = builtin_functions:exec({FuncName, ReplaceArgs}),
-                %lager:info("Result: ~p~n", [Result]),
                 case Predicate(Result) of
-                    true -> %io:format("Predicate(Result) = true~n", []),
+                    true ->
                         lists:append(Acc, [Record]);
-                    false -> %io:format("Predicate(Result) = false~n", []),
+                    false ->
                         Acc
                 end
             end, [], Records);
-        false -> throw(lists:concat(["Invalid function: ", Func]))
+        false ->
+            throw(lists:concat(["Invalid function: ", Func]))
     end;
 function_filtering(Condition, Table, Records, TxId) ->
     ?CONDITION(Func, {Op, _}, Value) = Condition,
@@ -268,8 +235,6 @@ filter_objects({Column, Predicate}, Table, Objects, TxId) ->
         false -> filter_objects(Column, Predicate, Objects, TxId, [])
     end;
 filter_objects(Condition, Table, Objects, TxId) ->
-    %lager:info(">> filter_objects:~n", []),
-    %lager:info("Objects: ~p~n", [Objects]),
     ?CONDITION(Column, Comparison, Value) = Condition,
     {Op, _} = Comparison,
     Predicate = comp_to_predicate(Op, Value),
@@ -280,7 +245,7 @@ filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Objec
         ?ATTRIBUTE(ColName, _CRDT, Val) = Attr,
         Column == ColName andalso Predicate(Val)
     end, Object),
-    %io:format("Find: ~p~n", [Find]),
+
     case Find of
         [] -> filter_objects(Column, Predicate, Objs, TxId, Acc);
         _Else -> filter_objects(Column, Predicate, Objs, TxId, lists:append(Acc, [Object]))
@@ -302,7 +267,6 @@ comp_to_predicate(Comparator, Value) ->
         lessereq -> fun(Elem) -> Elem =< Value end
     end.
 
-
 %% TODO support this search to comprise indexes with multiple attributes
 find_index_by_attribute(_Attribute, []) -> [];
 find_index_by_attribute(Attribute, IndexList) when is_list(IndexList) ->
@@ -317,7 +281,6 @@ find_index_by_attribute(_Attribute, _Idx) -> [].
 
 get_shadow_columns(_Table, [], _TxId) -> [];
 get_shadow_columns(Table, RecordsData, TxId) ->
-    %io:format(">> get_shadow_columns:~n", []),
     TableName = table_utils:table(Table),
     ForeignKeys = table_utils:foreign_keys(Table),
 
@@ -334,7 +297,7 @@ get_shadow_columns(Table, RecordsData, TxId) ->
             end
         end, Acc)
     end, RecordsData, ForeignKeys),
-    %io:format("NewRecordsData: ~p~n", [NewRecordsData]),
+
     NewRecordsData.
 
 shadow_column_spec(FkName, Table) ->
@@ -353,15 +316,12 @@ apply_projection(Projection, Object) ->
     apply_projection(Projection, [Object]).
 
 apply_projection(Projection, [Object | Objs], Acc) ->
-    %io:format(">> apply_projection:~n", []),
-    %io:format("Projection: ~p~n", [Projection]),
     FilteredObj = lists:foldl(fun(Col, ObjAcc) ->
         case table_utils:get_column(Col, Object) of
             ?ATTRIBUTE(Col, _Type, _Value) = Attr -> lists:append(ObjAcc, [Attr]);
             undefined -> throw(io_lib:format("Invalid projection column: ~p", [Col]))
         end
     end, [], Projection),
-    %io:format("FilteredObj: ~p~n", [FilteredObj]),
     apply_projection(Projection, Objs, lists:append(Acc, [FilteredObj]));
 apply_projection(_Projection, [], Acc) ->
     Acc.
@@ -419,29 +379,24 @@ read_indexes(RangeQueries, Table) ->
 interpret_index({primary, TableName}, Table, RangeQueries, TxId) ->
     IdxData = indexing:read_index(primary, TableName, TxId),
     [PKCol] = table_utils:primary_key_name(Table),
-    %lager:info("IdxData: ~p~n", [IdxData]),
-    %lager:info("PKCol: ~p~n", [PKCol]),
+
     GetRange = range_queries:lookup_range(PKCol, RangeQueries),
-    %lager:info("GetRange: ~p~n", [GetRange]),
     FilterFun = read_pk_predicate(GetRange),
     ordsets:from_list(filter_keys(FilterFun, IdxData));
 interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -> %% TODO support more columns
-    %io:format(">> interpret_index:~n"),
     GetRange = range_queries:lookup_range(Col, RangeQueries),
-    %io:format("GetRange: ~p~n", [GetRange]),
+
     IdxData = case range_type(GetRange) of
                   equality ->
                       {{{_, Val}, {_, Val}}, _} = GetRange,
                       Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
                       [Res];
                   notequality ->
-                      %{_, InequalityPred} = range_queries:to_predicate(GetRange),
                       {_, Excluded} = GetRange,
                       InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
                       Aux = indexing:read_index(secondary, {TName, Name}, TxId),
                       lists:filter(fun({IdxVal, _Set}) -> InequalityPred(IdxVal) end, Aux);
                   range ->
-                      %{RangePred, InequalityPred} = range_queries:to_predicate(GetRange),
                       {{LeftBound, RightBound}, Excluded} = GetRange,
                       Index = indexing:read_index_function(secondary,
                           {TName, Name}, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
@@ -449,8 +404,6 @@ interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -
                       InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
                       lists:filter(fun({IdxCol, _PKs}) -> InequalityPred(IdxCol) end, Index)
               end,
-
-    %io:format("IdxData: ~p~n", [IdxData]),
 
     lists:foldl(fun({_IdxCol, PKs}, Set) ->
         %% there's an assumption that the accumulator will never have repeated keys
@@ -492,19 +445,5 @@ projection_test() ->
     ],
     Result = apply_projection(['Col1', 'Col2'], Objects),
     ?assertEqual(Result, ExpectedResult1).
-
-%%filter_test() ->
-%%    Objects = [
-%%        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
-%%        [{{'Col1', crdt}, "A2"}, {{'Col2', crdt}, "Jon"}, {{'Col3', crdt}, 2008}],
-%%        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
-%%    ],
-%%    Condition1 = {'Col3', {greater, ignore}, 2008},
-%%    ExpectedResult1 = [
-%%        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
-%%        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
-%%    ],
-%%    Result = filter_objects(Condition1, Objects),
-%%    ?assertEqual(Result, ExpectedResult1).
 
 -endif.
