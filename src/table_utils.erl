@@ -43,6 +43,7 @@
          is_column/2,
          is_foreign_key/2,
          shadow_column_state/4,
+         record_data/2,
          record_data/3,
          get_column/2,
          lookup_value/2,
@@ -121,6 +122,14 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
     State = lookup_value(RefColName, ShColData),
     State.
+
+record_data(Keys, TxId) when is_list(Keys) ->
+    case querying_utils:read_keys(value, Keys, TxId) of
+        [[]] -> [];
+        ObjValues -> ObjValues
+    end;
+record_data(Key, TxId) ->
+    record_data([Key], TxId).
 
 record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
     PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),

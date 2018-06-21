@@ -131,7 +131,7 @@ read_subqueries([], Table, TxId, RemainConds, PartialRes) ->
 
 read_remaining(_Conditions, _Table, [], _TxId) -> [];
 read_remaining(Conditions, Table, CurrentData, TxId) ->
-    TableName = table_utils:table(Table),
+    %TableName = table_utils:table(Table),
     RangeQueries = range_queries:get_range_query(Conditions),
     case RangeQueries of
         nil -> [];
@@ -153,7 +153,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             get_shadow_columns(Table, ObjsData, TxId);
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
-                            Objects = read_records(KeyList, TableName, TxId),
+                            % Objects = read_records(KeyList, TableName, TxId), TODO old
+                            Objects = read_records(KeyList, TxId),
                             ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
                                 GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
                                 FilterFun = read_predicate(GetRange),
@@ -171,7 +172,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
 iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:table(Table),
     Keys = indexing:read_index(primary, TableName, TxId),
-    Data = read_records(Keys, TableName, TxId),
+    %Data = read_records(Keys, TableName, TxId), TODO old
+    Data = read_records(Keys, TxId),
     iterate_ranges(RangeQueries, Table, Data, TxId).
 
 iterate_ranges(RangeQueries, Table, Data, TxId) ->
@@ -328,6 +330,8 @@ apply_projection(_Projection, [], Acc) ->
 
 read_records(PKey, TableName, TxId) ->
     table_utils:record_data(PKey, TableName, TxId).
+read_records(Key, TxId) ->
+    table_utils:record_data(Key, TxId).
 
 is_disjunction(Query) ->
     querying_utils:is_list_of_lists(Query).
@@ -353,10 +357,25 @@ read_predicate(Range) ->
             fun(V) -> Pred1(V) andalso Pred2(V) end
     end.
 
+read_predicate_pk(Range) ->
+    case range_queries:to_predicate(Range) of
+        {{{_, LPred}, infinity}, Inequality} ->
+            fun({V, _, _}) -> LPred(V) andalso Inequality(V) end;
+        {{infinity, {_, RPred}}, Inequality} ->
+            fun({V, _, _}) -> RPred(V) andalso Inequality(V) end;
+        {{{_, LPred}, {_, RPred}}, Inequality} ->
+            fun({V, _, _}) -> LPred(V) andalso RPred(V) andalso Inequality(V) end;
+        {ignore, Pred} when is_function(Pred) ->
+            fun({V, _, _}) -> Pred(V) end;
+        {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
+            fun({V, _, _}) -> Pred1(V) andalso Pred2(V) end
+    end.
+
 read_pk_predicate(Range) ->
     {{{LB, Val1}, {RB, Val2}}, Excluded} = Range,
     NewRange = {{LB, querying_utils:to_atom(Val1)}, {RB, querying_utils:to_atom(Val2)}},
-    read_predicate({NewRange, Excluded}).
+    %% read_predicate({NewRange, Excluded}). TODO old
+    read_predicate_pk({NewRange, Excluded}).
 
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:table(Table),

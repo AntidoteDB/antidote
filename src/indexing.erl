@@ -172,7 +172,8 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
 
                     {K, T, B} = PIdxKey,
 
-                    PIdxUpdate = {{K, B}, T, {add, Key}},
+                    %PIdxUpdate = {{K, B}, T, {add, Key}},
+                    PIdxUpdate = {{K, B}, T, {add, {Key, Type, Bucket}}},
                     Indexes = table_utils:indexes(Table),
                     SIdxUpdates = lists:foldl(fun(Operation, IdxUpdates2) ->
                         {{Col, CRDT}, {_CRDTOper, Val} = Op} = Operation,
@@ -180,11 +181,13 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                             [] -> IdxUpdates2;
                             Idxs ->
                                 AuxUpdates = lists:map(fun(Idx) ->
-                                    ?INDEX_UPDATE(TableName, index_name(Idx), {Val, CRDT}, {Key, Op})
-                                                       end, Idxs),
+                                    ?INDEX_UPDATE(TableName, index_name(Idx), {Val, CRDT}, {{Key, Type, Bucket}, Op})
+                                end, Idxs),
                                 lists:append(IdxUpdates2, AuxUpdates)
                         end
-                                              end, [], Updates),
+                    end, [], Updates),
+
+                    %lager:info("SIdxUpdates: ~p", [SIdxUpdates]),
 
                     lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, Transaction))
             end;
@@ -197,8 +200,8 @@ read_index(primary, TableName, TxId) ->
     [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
     IdxObj;
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    %% The secondary index is identified by the notation "#2i_IndexName", where
-    %% IndexName = "table_name.index_name"
+    %% The secondary index is identified by the notation #2i_<IndexName>, where
+    %% <IndexName> = <table_name>.<index_name>
 
     FullIndexName = generate_sindex_key(TableName, IndexName),
     ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
@@ -243,10 +246,29 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
                             [{{K, B}, T, {UpdateOp, Upd}}]
                     end,
 
+        %lager:info("IdxUpdate: ~p", [IdxUpdate]),
+
         lists:append([AccList, IdxUpdate])
     end, [], Updates);
 build_index_updates(Update, TxId) when ?is_index_upd(Update) ->
     build_index_updates([Update], TxId).
+
+%%build_pindex_update(Update, _TxId) when ?is_index_upd(Update) ->
+%%    ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
+%%    [IndexKey] = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+%%
+%%    IdxUpdate = case is_list(Op) of
+%%                    true ->
+%%                        lists:map(fun(Op2) ->
+%%                            {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op2}),
+%%                            {{K, B}, T, {UpdateOp, Upd}}
+%%                                  end, Op);
+%%                    false ->
+%%                        {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op}),
+%%                        [{{K, B}, T, {UpdateOp, Upd}}]
+%%                end,
+%%    IdxUpdate.
+
 
 apply_updates(Update, TxId) when ?is_index_upd(Update) ->
     apply_updates([Update], TxId);
@@ -312,7 +334,9 @@ retrieve_index(ObjUpdate) ->
 
 is_element(IndexedVal, Pk, IndexObj) ->
     case orddict:find(IndexedVal, IndexObj) of
-        {ok, Pks} -> ordsets:is_element(Pk, Pks);
+        {ok, Pks} ->
+            lists:dropwhile(fun({K, _T, _B}) -> K /= Pk end, Pks) /= [];
+            %ordsets:is_element(Pk, Pks);
         error -> false
     end.
 
@@ -332,18 +356,23 @@ fill_index(ObjUpdate, Transaction) ->
                 PIndexObject = read_index(primary, TableName, Transaction),
                 SIndexObject = read_index(secondary, {TableName, IndexName}, Transaction),
 
-                Records = table_utils:record_data(PIndexObject, TableName, Transaction),
+                %Records = table_utils:record_data(PIndexObject, TableName, Transaction), TODO old
 
-                IdxUpds = lists:map(fun(Record) ->
-                    PkValue = querying_utils:to_atom(table_utils:lookup_value(PrimaryKey, Record)),
-                    ?ATTRIBUTE(_ColName, Type, Value) = table_utils:get_column(IndexedColumn, Record),
-                    case is_element(Value, PkValue, SIndexObject) of
-                        true -> [];
-                        false ->
-                            Op = table_utils:crdt_to_op(Type, Value), %% generate an op according to Type
-                            ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op})
+                IdxUpds = lists:map(fun(ObjKey) ->
+                    case table_utils:record_data(ObjKey, Transaction) of
+                        [] -> [];
+                        [Record] ->
+                            PkValue = querying_utils:to_atom(table_utils:lookup_value(PrimaryKey, Record)),
+                            ?ATTRIBUTE(_ColName, Type, Value) = table_utils:get_column(IndexedColumn, Record),
+                            case is_element(Value, PkValue, SIndexObject) of
+                                true -> [];
+                                false ->
+                                    Op = table_utils:crdt_to_op(Type, Value), %% generate an op according to Type
+                                    %?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op}) TODO old
+                                    ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {ObjKey, Op})
+                            end
                     end
-                end, Records),
+                end, PIndexObject),
                 lists:append(Acc, lists:flatten(IdxUpds))
             end, [], Indexes)
     end.
