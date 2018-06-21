@@ -151,7 +151,7 @@ dets_info() ->
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
 %% Sends remote_lock_request(Locks,0,dcid) messages to all other DCs.
--spec required(key(),txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+-spec required([key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 required(Locks,TxId,Timestamp,Local_Locks) ->
     DCID = dc_meta_data_utilities:get_my_dc_id(),
         remote_lock_request(DCID, 0, Locks),  % TODO Key value ? (currently 0)
@@ -167,7 +167,7 @@ required(Locks,TxId,Timestamp,Local_Locks) ->
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Returns {locks_in_use,[{txid(),[locks]}]} if all locks are owned by this DC but are used by another Transaction
 %% Updates the local_locks list if the locks were available by adding {TxId,{using,Locks}} to local_locks
--spec using(key(),txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}] | {atom(),[key()]} | {atom(),[{txid(),[key()]}]}.
+-spec using([key()],txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}] | {atom(),[key()]} | {atom(),[{txid(),[key()]}]}.
 using(Locks,TxId,Local_Locks) ->
         Missing_Locks = lists:foldl(fun(Lock,AccIn)->
                         case check_lock(Lock) of
@@ -191,7 +191,7 @@ using(Locks,TxId,Local_Locks) ->
 %% Locks : Locks that are to be checked if they are used by a transaction (of this dc)
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns [{txid(),[locks]}] for all transactions that currently use the locks specified by Locks (only the intersection is returned)
--spec locks_used_by_other_tx(key(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+-spec locks_used_by_other_tx([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
 locks_used_by_other_tx(Locks,Local_Locks) ->
     _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
         case Elem of
@@ -479,7 +479,8 @@ update_last_changed(Locks) ->
                 [{Current_Lock,Transfer_History,Old_Snapshot}] ->
                     {ok,Now} = get_snapshot_time(),
                     New_Snapshot = vectorclock:max([Now,Old_Snapshot]),
-                    dets:insert(?DETS_FILE_NAME,{Current_Lock,Transfer_History,New_Snapshot});
+                    dets:insert(?DETS_FILE_NAME,{Current_Lock,Transfer_History,New_Snapshot}),
+                    ok;
                 [] ->
                     AccIn
             end
