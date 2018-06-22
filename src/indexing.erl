@@ -62,14 +62,14 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
         ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
         case update_type({Key, Type, Bucket}) of
             ?TABLE_UPD_TYPE ->
-                case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
+                case antidote_hooks:has_hook(pre_commit, Bucket) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
 
                 lists:append(UpdAcc, []);
             ?RECORD_UPD_TYPE ->
-                case antidote_hooks:has_hook(pre_commit, Bucket, ?MODULE, index_update_hook) of
+                case antidote_hooks:has_hook(pre_commit, Bucket) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
@@ -318,7 +318,6 @@ generate_pindex_key(TableName) ->
 
 generate_sindex_key(TableName, IndexName) ->
     FullIndexName = lists:concat([?SINDEX_PREFIX, TableName, '.', IndexName]),
-    %io:format("FullIndexName: ~p~n", [FullIndexName]),
     querying_utils:to_atom(FullIndexName).
 
 update_type({?TABLE_METADATA_KEY, ?TABLE_METADATA_DT, ?AQL_METADATA_BUCKET}) -> ?TABLE_UPD_TYPE;
@@ -367,7 +366,7 @@ fill_index(ObjUpdate, Transaction) ->
                             case is_element(Value, PkValue, SIndexObject) of
                                 true -> [];
                                 false ->
-                                    Op = table_utils:crdt_to_op(Type, Value), %% generate an op according to Type
+                                    Op = table_utils:to_insert_op(Type, Value), %% generate an op according to Type
                                     %?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op}) TODO old
                                     ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {ObjKey, Op})
                             end

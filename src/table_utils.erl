@@ -47,7 +47,8 @@
          record_data/3,
          get_column/2,
          lookup_value/2,
-         crdt_to_op/2]).
+         to_insert_op/2,
+         type_to_crdt/2]).
 
 table(?TABLE(TName, _Policy, _Cols, _SCols, _Idx)) -> TName.
 
@@ -164,23 +165,31 @@ lookup_value(ColumnName, Record) ->
         undefined -> undefined
     end.
 
-crdt_to_op(?CRDT_INTEGER, Value) -> {assign, Value};
-crdt_to_op(?CRDT_VARCHAR, Value) -> {assign, Value};
-crdt_to_op(?CRDT_BOOLEAN, Value) ->
+%to_insert_op(?CRDT_INTEGER, Value) -> {assign, Value};
+to_insert_op(?CRDT_VARCHAR, Value) -> {assign, Value};
+to_insert_op(?CRDT_BOOLEAN, Value) ->
     case Value of
         true -> {enable, {}};
         false -> {disable, {}}
     end;
-crdt_to_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
+to_insert_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
     {Inc, Dec} = Value,
     IncList = orddict:to_list(Inc),
     DecList = orddict:to_list(Dec),
     SumInc = lists:sum([Val || {_Ids, Val} <- IncList]),
     SumDec = lists:sum([Val || {_Ids, Val} <- DecList]),
-    IncUpdate = increment_counter(SumInc),
-    DecUpdate = decrement_counter(SumDec),
+    IncUpdate = increment_bcounter(SumInc),
+    DecUpdate = decrement_bcounter(SumDec),
     lists:flatten([IncUpdate, DecUpdate]);
-crdt_to_op(_, _) -> {error, invalid_crdt}.
+to_insert_op(?CRDT_COUNTER_INT, Value) ->
+    increment_counter(Value);
+to_insert_op(_, _) -> {error, invalid_crdt}.
+
+type_to_crdt(?AQL_INTEGER, _) -> ?CRDT_INTEGER;
+type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
+type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
+type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
+type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
 
 %% ====================================================================
 %% Internal functions
@@ -189,18 +198,20 @@ crdt_to_op(_, _) -> {error, invalid_crdt}.
 column_name([{_TableName, ColName}]) -> ColName;
 column_name(FkName) -> FkName.
 
-type_to_crdt(?AQL_INTEGER, _) -> ?CRDT_INTEGER;
-type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
-type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
-type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
-type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
-
 increment_counter(0) -> [];
 increment_counter(Value) when is_integer(Value) ->
+    {increment, Value}.
+
+%decrement_counter(0) -> [];
+%decrement_counter(Value) when is_integer(Value) ->
+%    {decrement, Value}.
+
+increment_bcounter(0) -> [];
+increment_bcounter(Value) when is_integer(Value) ->
     bcounter_op(increment, Value).
 
-decrement_counter(0) -> [];
-decrement_counter(Value) when is_integer(Value) ->
+decrement_bcounter(0) -> [];
+decrement_bcounter(Value) when is_integer(Value) ->
     bcounter_op(decrement, Value).
 
 bcounter_op(Op, Value) ->

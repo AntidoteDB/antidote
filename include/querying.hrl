@@ -24,7 +24,7 @@
 
 %% Data types definitions
 -define(AQL_INTEGER, integer).
--define(CRDT_INTEGER, antidote_crdt_integer).
+-define(CRDT_INTEGER, antidote_crdt_register_lww).
 
 -define(AQL_VARCHAR, varchar).
 -define(CRDT_VARCHAR, antidote_crdt_register_lww).

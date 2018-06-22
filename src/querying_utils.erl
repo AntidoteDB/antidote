@@ -217,7 +217,11 @@ map_update({{Key, CRDT}, {Op, Value} = Operation}) ->
     case CRDT:is_operation(Operation) of
         true -> [{{Key, CRDT}, {Op, Value}}];
         false -> throw(lists:concat(?INVALID_OP_MSG(Operation, CRDT)))
-    end.
+    end;
+map_update(Values) when is_list(Values) ->
+    lists:foldl(fun(Update, Acc) ->
+        lists:append(Acc, map_update(Update))
+                end, [], Values).
 index_update({CRDT, Key, {Op, Value} = Operation}) ->
     case CRDT:is_operation(Operation) of
         true -> [{CRDT, Key, {Op, Value}}];

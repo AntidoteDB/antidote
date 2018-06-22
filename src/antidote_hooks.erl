@@ -56,7 +56,7 @@
 -export([register_pre_hook/3,
          register_post_hook/3,
          get_hooks/2,
-         has_hook/4,
+         has_hook/2,
          unregister_hook/2,
          execute_pre_commit_hook/1,
          execute_pre_commit_hook/3,
@@ -107,14 +107,12 @@ get_hooks(pre_commit, Bucket) ->
 get_hooks(post_commit, Bucket) ->
     riak_core_metadata:get(?PREFIX_POST, Bucket).
 
-has_hook(PreOrPost, Bucket, Module, Fun)
-    when is_atom(PreOrPost) andalso is_atom(Bucket)
-    andalso is_atom(Module) andalso is_atom(Fun) ->
+has_hook(PreOrPost, Bucket)
+    when is_atom(PreOrPost) andalso is_atom(Bucket) ->
 
     case get_hooks(PreOrPost, Bucket) of
-        {Module, Fun} -> true;
         undefined -> false;
-        {_, _} -> false
+        {_, _} -> true
     end.
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
