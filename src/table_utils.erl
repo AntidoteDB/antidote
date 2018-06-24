@@ -48,7 +48,8 @@
          get_column/2,
          lookup_value/2,
          to_insert_op/2,
-         type_to_crdt/2]).
+         type_to_crdt/2,
+         record_value/2]).
 
 table(?TABLE(TName, _Policy, _Cols, _SCols, _Idx)) -> TName.
 
@@ -176,8 +177,8 @@ to_insert_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
     {Inc, Dec} = Value,
     IncList = orddict:to_list(Inc),
     DecList = orddict:to_list(Dec),
-    SumInc = lists:sum([Val || {_Ids, Val} <- IncList]),
-    SumDec = lists:sum([Val || {_Ids, Val} <- DecList]),
+    SumInc = sum_values(IncList),
+    SumDec = sum_values(DecList),
     IncUpdate = increment_bcounter(SumInc),
     DecUpdate = decrement_bcounter(SumDec),
     lists:flatten([IncUpdate, DecUpdate]);
@@ -190,6 +191,15 @@ type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
 type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
 type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
 type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
+
+record_value(?CRDT_BCOUNTER_INT, {Inc, Dec}) ->
+    IncList = orddict:to_list(Inc),
+    DecList = orddict:to_list(Dec),
+    SumInc = sum_values(IncList),
+    SumDec = sum_values(DecList),
+    SumInc - SumDec;
+record_value(_, Value) ->
+    Value.
 
 %% ====================================================================
 %% Internal functions
@@ -216,3 +226,6 @@ decrement_bcounter(Value) when is_integer(Value) ->
 
 bcounter_op(Op, Value) ->
     {Op, {Value, term}}.
+
+sum_values(List) when is_list(List) ->
+    lists:sum([Value || {_Ids, Value} <- List]).

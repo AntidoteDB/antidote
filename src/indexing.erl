@@ -159,13 +159,11 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
             %lager:info("Is a record update: ~p", [ObjUpdate]),
 
             Table = table_utils:table_metadata(Bucket, Transaction),
-            %lager:info("Got table metadata: ~p", [Table]),
             TableName = table_utils:table(Table),
             case Table of
                 undefined -> [];
                 _Else ->
                     % A table exists
-                    %lager:info("A table exists"),
 
                     PIdxName = generate_pindex_key(TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
@@ -246,29 +244,10 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
                             [{{K, B}, T, {UpdateOp, Upd}}]
                     end,
 
-        %lager:info("IdxUpdate: ~p", [IdxUpdate]),
-
         lists:append([AccList, IdxUpdate])
     end, [], Updates);
 build_index_updates(Update, TxId) when ?is_index_upd(Update) ->
     build_index_updates([Update], TxId).
-
-%%build_pindex_update(Update, _TxId) when ?is_index_upd(Update) ->
-%%    ?INDEX_UPDATE(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
-%%    [IndexKey] = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-%%
-%%    IdxUpdate = case is_list(Op) of
-%%                    true ->
-%%                        lists:map(fun(Op2) ->
-%%                            {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op2}),
-%%                            {{K, B}, T, {UpdateOp, Upd}}
-%%                                  end, Op);
-%%                    false ->
-%%                        {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?MAP_OPERATION, {Type, PkValue, Op}),
-%%                        [{{K, B}, T, {UpdateOp, Upd}}]
-%%                end,
-%%    IdxUpdate.
-
 
 apply_updates(Update, TxId) when ?is_index_upd(Update) ->
     apply_updates([Update], TxId);

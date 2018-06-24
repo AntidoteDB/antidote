@@ -46,14 +46,15 @@
 query_filter(Filter, TxId) when is_list(Filter) ->
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
-    ProjectionCols = projection(Filter),
+    Projection = projection(Filter),
     Conditions = conditions(Filter),
 
     FilteredResult =
         case Conditions of
             [] ->
                 Index = indexing:read_index(primary, TableName, TxId),
-                read_records(Index, TableName, TxId);
+                Records = read_records(Index, TableName, TxId),
+                prepare_records(table_utils:column_names(Table), Table, Records);
             _Else ->
                 apply_filter(Conditions, Table, TxId)
         end,
@@ -62,12 +63,12 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                        true -> FilteredResult
                    end,
 
-    case ProjectionCols of
-        ?WILDCARD ->
-            {ok, apply_projection(table_utils:column_names(Table), ResultToList)};
-        _Proj ->
-            {ok, apply_projection(ProjectionCols, ResultToList)}
-    end.
+    ProjectionCols = case Projection of
+                         ?WILDCARD -> table_utils:column_names(Table);
+                         _ -> Projection
+                     end,
+
+    {ok, apply_projection(ProjectionCols, ResultToList)}.
 
 get_partial_object(Key, Type, Bucket, Filter, TxId) ->
     ObjectKey = querying_utils:build_keys(Key, Type, Bucket),
@@ -155,11 +156,13 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             KeyList = ordsets:to_list(LeastKeys),
                             % Objects = read_records(KeyList, TableName, TxId), TODO old
                             Objects = read_records(KeyList, TxId),
+                            PreparedObjs = prepare_records(table_utils:column_names(Table), Table, Objects),
+
                             ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
                                 GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
                                 FilterFun = read_predicate(GetRange),
                                 filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
-                            end, Objects, Remain),
+                            end, PreparedObjs, Remain),
 
                             get_shadow_columns(Table, ObjsData, TxId)
                     end;
@@ -174,7 +177,8 @@ iterate_ranges(RangeQueries, Table, TxId) ->
     Keys = indexing:read_index(primary, TableName, TxId),
     %Data = read_records(Keys, TableName, TxId), TODO old
     Data = read_records(Keys, TxId),
-    iterate_ranges(RangeQueries, Table, Data, TxId).
+    PreparedData = prepare_records(table_utils:column_names(Table), Table, Data),
+    iterate_ranges(RangeQueries, Table, PreparedData, TxId).
 
 iterate_ranges(RangeQueries, Table, Data, TxId) ->
     dict:fold(fun(Column, Range, AccObjs) ->
@@ -244,8 +248,8 @@ filter_objects(Condition, Table, Objects, TxId) ->
 
 filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
     Find = lists:filter(fun(Attr) ->
-        ?ATTRIBUTE(ColName, _CRDT, Val) = Attr,
-        Column == ColName andalso Predicate(Val)
+        ?ATTRIBUTE(ColName, CRDT, Val) = Attr,
+        Column == ColName andalso Predicate(table_utils:record_value(CRDT, Val))
     end, Object),
 
     case Find of
@@ -327,6 +331,38 @@ apply_projection(Projection, [Object | Objs], Acc) ->
     apply_projection(Projection, Objs, lists:append(Acc, [FilteredObj]));
 apply_projection(_Projection, [], Acc) ->
     Acc.
+
+%% This function reads all remaining data of each record.
+%% A record may not have its full data if:
+%% - At least one of its bounded counter columns has the initial value
+%%   (which means to have the initial state of a bounded counter);
+%% - Or it does not have the values (i.e. states) of its shadow columns.
+prepare_records(Columns, Table, Records) ->
+    TColumns = table_utils:columns(Table),
+    BCounterCols = lists:foldl(fun(ColName, AccCols) ->
+        case maps:get(ColName, TColumns) of
+            {_, ?AQL_COUNTER_INT, _} = Col ->
+                lists:append(AccCols, [Col]);
+            _Else ->
+                AccCols
+        end
+    end, [], Columns),
+    prepare_records0(BCounterCols, Records, []).
+
+prepare_records0(BCounterCols, [Record | Records], Acc) ->
+    NewBCounter = ?CRDT_BCOUNTER_INT:new(),
+    NewObj = lists:foldl(fun({BCounterName, _, _}, AccRecord) ->
+        case table_utils:get_column(BCounterName, AccRecord) of
+            undefined ->
+                lists:append(AccRecord, [?ATTRIBUTE(BCounterName, ?CRDT_BCOUNTER_INT, NewBCounter)]);
+            _Else ->
+                AccRecord
+        end
+    end, Record, BCounterCols),
+
+    NewObjsAcc = lists:append(Acc, [NewObj]),
+    prepare_records0(BCounterCols, Records, NewObjsAcc);
+prepare_records0(_, [], Acc) -> Acc.
 
 read_records(PKey, TableName, TxId) ->
     table_utils:record_data(PKey, TableName, TxId).
