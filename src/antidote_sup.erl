@@ -72,7 +72,7 @@ init(_Args) ->
 
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
     LockManager = ?CHILD(lock_mgr, worker, []),
-
+    LockManager_es = ?CHILD(lock_mgr_es, worker, []),
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
@@ -138,5 +138,6 @@ init(_Args) ->
        MetaDataSenderSup,
        BCounterManager,
        LockManager,
+       LockManager_es,
        LogResponseReaderSup,
        Elli]}}.

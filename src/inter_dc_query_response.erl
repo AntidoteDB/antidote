@@ -92,7 +92,20 @@ handle_cast({request_locks, BinaryRequest, QueryState}, State) ->
     ok = lock_mgr:request_locks_remote(Operation),
     ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
     {noreply, State};
-
+%% #Locks
+handle_cast({send_locks_es, BinaryRequest, QueryState}, State) ->
+    {send_locks_es, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = lock_mgr_es:send_locks_remote_es(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
+    {noreply, State};
+%% #Locks
+handle_cast({request_locks_es, BinaryRequest, QueryState}, State) ->
+    {request_locks_es, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = lock_mgr_es:request_locks_remote_es(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
+    {noreply, State};
 handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
     {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
     BinaryResp = BinaryRequest,

@@ -29,7 +29,7 @@
 
 % interface functions
 -export([start_link/0,
-        get_locks/2,
+        get_locks/3,
         release_locks/1]).
 
 % gen_server interface functions
@@ -43,9 +43,9 @@
 
 % functions used for inter-dc-communictaion
 -export([  
-        request_response/2,
-        send_locks_remote/1,
-        request_locks_remote/1
+        request_response_es/2,
+        send_locks_remote_es/1,
+        request_locks_remote_es/1
         ]).
 
 % functions not used
@@ -57,8 +57,15 @@
 -export([stateinfo/0,
         local_locks_info/0,
         dets_info/0,
-        am_i_leader/0
+        am_i_leader/0,
+         update_send_history2/2,
+         update_send_history/2
 ]).
+% TODO to remove
+-export([remote_lock_request_es/4
+]).
+
+
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -68,10 +75,10 @@
 
 %TODO
 %% Data Type: state
-%% local_locks: list of currently requeired and used locks  [{txid,{required,[locks()],timestamp}}|{txid,{using,[locks()]}} ]
-%% lock_requests: list of locks requested by other DCs  [{dcid,[{lock,timestamp}]}]
+%% local_locks: list of currently requeired and used locks  [{txid,{required,[locks()],[locks()],timestamp}}|{txid,{using,[locks()],[locks()]}}]
+%% lock_requests: list of locks requested by other DCs  [{dcid,[{lock,amount,timestamp}]}]
 %% transfer_timer: timer to shedule periodic lock transfers
-%% dets_ref: dets table storing received and send locks [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}}}]
+%% dets_ref: dets table storing received and send lock parts [{lock,[{from,[{to,amount}]}],last_modified}]
 -record(state, {local_locks,lock_requests, transfer_timer,dets_ref}).
 -define(LOG_UTIL, log_utilities).
 -define(DATA_TYPE, antidote_crdt_counter_b).
@@ -94,20 +101,21 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 %TODO
 init([]) ->
-    lager:info("Started Lock manager at node ~p", [node()]),
+    lager:info("Started Lock manager ES at node ~p", [node()]),
     Timer=erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
     {ok, Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     {ok, #state{local_locks = orddict:new(),lock_requests=orddict:new(), transfer_timer=Timer,dets_ref=Ref }}.
 %TODO
-%% Locks : list of locks that are to be requested
+%% Shared_Locks : list of shared locks that are to be requested
+%% Exclusive_Locks : list of exclusive locks that are to be requested
 %% TxId : transaction id for which the locks should be reserved
 %% Tries to reserve the locks for the specified transaction
 %% Returns {ok,[snapshot_time()]} if all locks were available. The snapshot times correspond to the latest time the locks were released
-%% Returns {missing_locks, [key()]} if any requested keys are not currently owned by this dc
+%% Returns {missing_locks, {[key()],[key()]}} if any requested keys are not currently owned by this dc
 %% Returns {locks_in_use, [txid()]} if all keys are owned by this dc but are in use by other transacitons
--spec get_locks([key()],txid()) -> {ok,[snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
-get_locks(Locks,TxId) ->
-    gen_server:call(?MODULE, {get_locks, TxId,Locks}).
+-spec get_locks([key()],[key()],txid()) -> {ok,[snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+get_locks(Shared_Locks,Exclusive_Locks,TxId) ->
+    gen_server:call(?MODULE, {get_locks, TxId,Shared_Locks,Exclusive_Locks}).
 %% TxId : transaction id for which all locks are to be released
 %% Releases all locks requested for the specified transaction and updates the corresponding last_changed timestamps
 -spec release_locks(txid()) -> ok.
@@ -120,13 +128,13 @@ release_locks(TxId) ->
 %TODO
 %% callback function used for inter dc communication
 %% Handles incomming lock send to this dc by another dc
-send_locks_remote({remote_send_lock, TransferOp}) ->
-    gen_server:cast(?MODULE, {remote_send_lock, TransferOp}).
+send_locks_remote_es({remote_send_lock_history, TransferOp}) ->
+    gen_server:cast(?MODULE, {remote_send_lock_history, TransferOp}).
 %TODO
 %% callback function used for inter dc communication
 %% Handles incomming remote lock requests comming from other dcs
-request_locks_remote({remote_lock_request, TransferOp}) ->
-    gen_server:cast(?MODULE, {remote_lock_request, TransferOp}).
+request_locks_remote_es({remote_lock_request_es, TransferOp}) ->
+    gen_server:cast(?MODULE, {remote_lock_request_es, TransferOp}).
 
 % ===================================================================
 % For Testing
@@ -152,11 +160,11 @@ dets_info() ->
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
-%% Sends remote_lock_request(Locks,0,dcid) messages to all other DCs.
--spec required([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+%% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
+-spec required([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
 required(Shared_Locks,Exclusive_Locks,TxId,Timestamp,Local_Locks) ->
     DCID = dc_meta_data_utilities:get_my_dc_id(),
-    remote_lock_request(DCID, 0, Shared_Locks),  % TODO
+    remote_lock_request_es(DCID,0,Shared_Locks,Exclusive_Locks), 
     _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
 
@@ -185,8 +193,8 @@ using(Shared_Locks,Exclusive_Locks,TxId,Local_Locks) ->
                                 false -> [Lock|AccIn]
                         end
                 end,
-                [],Shared_Locks),
-        case {Missing_Locks_Exclusive,Missing_Locks_Shared} of
+                [],Exclusive_Locks),
+        case {Missing_Locks_Shared,Missing_Locks_Exclusive} of
                 {[],[]} -> 
                     case exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) of
                         [] ->
@@ -265,7 +273,7 @@ remove_old_required_locks(Local_Locks,Timeout) ->
 %  Data structure: lock_requests - [{dcid,[{lock,amount,timestamp}]}]  - amount: int() | all
 %  Used to memorize which DC requested how many part of a lock
 
-
+%TODO
 %% Locks : list of {lock,amount} tuple to be added to lock_requests
 %% DcId : dcid that requested the locks
 %% Timestamp : timestamp of the request
@@ -332,15 +340,15 @@ create_dets_ref_lock_entry(Lock) ->
     AllDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
                                 [Id | IdsList]
                              end, [], OtherDCDescriptors),
-    AllDCIds2 = 
+    AllDCIds2 =
         case lists:member(MyDCId,AllDCIds) of
             true -> AllDCIds;
-            false -> MyDCId
+            false -> [MyDCId|AllDCIds]
         end,
     {ok,Now} = get_snapshot_time(),
     _New_Dets_Ref_Table_Entry =
         {Lock,lists:foldl(fun(DCId_From,AccIn1)->
-            [{DCId_From,lists:fold(fun(DCId_To,AccIn2)->
+            [{DCId_From,lists:foldl(fun(DCId_To,AccIn2)->
                 [{DCId_To,0}|AccIn2]
             end,[],AllDCIds2)}|AccIn1]
         end,[],AllDCIds2),Now}.
@@ -367,16 +375,21 @@ send_lock(Lock,Amount,To)->
                 all ->
                     update_dets_ref_send_entry(Lock, MyDCId, To, Owned_Lock_Parts),
                     New_Lock_Send_History = get_send_history_of(Lock),
-                    remote_send_lock(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0); %TODO Needs to be implemented accordingly
+                    remote_send_lock_history(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0); %TODO Needs to be implemented accordingly
                 _ ->
-                    Amount_To_Send = case Owned_Lock_Parts > Amount of
-                                         true -> Amount;
-                                         false -> Owned_Lock_Parts - 1
+                    Amount_Needed = Amount - count_lock_parts(Lock,To),
+                    Amount_To_Send = case (Owned_Lock_Parts > Amount_Needed)of
+                                         true when (Amount_Needed > 0) -> Amount_Needed;
+                                         false -> Owned_Lock_Parts - 1;
+                                         _ -> 0
                                      end,
-                    
-                    update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send)
-                    New_Lock_Send_History = get_send_history_of(Lock),
-                    remote_send_lock(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0) % TODO Send the whole {lock,send_history,snaphot} tuple
+                    case ((Amount_To_Send > 0) and is_integer(Amount_To_Send)) of
+                        true ->
+                            update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send),
+                            New_Lock_Send_History = get_send_history_of(Lock),
+                            remote_send_lock_history(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0); % TODO Send the whole {lock,send_history,snaphot} tuple
+                        false -> ok
+                    end
             end;
         [] ->
             case am_i_leader() of
@@ -394,23 +407,25 @@ send_lock(Lock,Amount,To)->
                     update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                     update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send),
                     New_Lock_Send_History = get_send_history_of(Lock),
-                    remote_send_lock(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0);
+                    remote_send_lock_history(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0),
                     ok;
                 false ->
+                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                     ok
             end;
         {error,_Reason} ->
             ok
     end.
 
--spec get_send_history_of(key()) -> {key(),[{dcid(),[{dcid(),non_negative_integer() | all}]}],snapshot_time()}
+-spec get_send_history_of(key()) -> {key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time()}.
 get_send_history_of(Lock) ->
     {ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     case dets:lookup(?DETS_FILE_NAME,Lock) of
-        [{Lock,Send_History,Snapshot}] ->
+        [{Lock,Send_History,_Snapshot}] ->
             Send_History;
         {error,_Reason} ->
-            {error,_Reason}
+            {error,_Reason};
         _ ->
             {error,entry_not_found}
     end.
@@ -452,46 +467,85 @@ update_dets_ref_send_entry(Lock,From,To,Additional_Amount) ->
                     {ok,Now} = get_snapshot_time(),
                     dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],Now})
     end.
-        
+%% Old_Send_History : Send history of a specific lock to be updated
+%% New_Send_History : Send history of the same lock to update the other one
+%% Updates every value in Old_Send_History by allways choosing the max value of both send histories.
+%% (How many lock parts were send in totoal from one DC to another DC)
+-spec update_send_history([{dcid(),[{dcid(),non_neg_integer() | all}]}],[{dcid(),[{dcid(),non_neg_integer() | all}]}]) ->[{dcid(),[{dcid(),non_neg_integer() | all}]}].
+update_send_history(Old_Send_History,New_Send_History) ->
+    % Update all entries of Old_Send_History and memorize those DCs, for which Old_Send_History has no entry
+    {Updated_Send_History,To_Add_From} = lists:foldl(fun({From1,To_Amount_List1},{Acc1,Acc2})->
+            case lists:keyfind(From1,1,New_Send_History) of
+                {From1,To_Amount_List2} ->
+                    % Update all entries of Old_Send_History's To_Amount_List and memorize those DCs, for which Old_Send_History's To_Amount_List has no entry
+                    {New_To_Amount_List1,To_Add_List} = lists:foldl(fun({To1,Amount1},{New_To_Amount_List2,To_Add})->
+                            case lists:keyfind(To1,1,To_Amount_List2) of
+                                {To1,Amount2} ->
+                                    New_Amount = case Amount1 > Amount2 of
+                                        true -> Amount1;
+                                        false -> Amount2
+                                    end,
+                                    {[{To1,New_Amount}|New_To_Amount_List2],[To1|Acc2]};
+                                false ->
+                                    {[{To1,Amount1}|New_To_Amount_List2],To_Add}
+                            end
+                        end,{[],[]},To_Amount_List1),
+                    % Add all entries that were missing in Old_Send_History's To_Amount_List but present in New_Send_History's To_Amount_List
+                    Added_New_To_Amount_List1 = lists:foldl(fun({To2,Amount3},Acc)->
+                            case lists:member(To2,To_Add_List) of
+                                true -> Acc;
+                                false -> [{To2,Amount3}|Acc]
+                            end
+                        end,New_To_Amount_List1,To_Amount_List2),
+                    {[{From1,Added_New_To_Amount_List1}|Acc1],[From1|Acc2]};
+                false ->
+                    {[{From1,To_Amount_List1}|Acc1],Acc2}
+                end
+        end,{[],[]},Old_Send_History),
+    % Add all entries that were missing in Old_Send_History but present in New_Send_History
+    lists:foldl(fun({From2,To_Amount_List3},Acc3)->
+            case lists:member(From2,To_Add_From) of
+                true -> Acc3;
+                false -> [{From2,To_Amount_List3}|Acc3]
+            end
+        end,Updated_Send_History,New_Send_History).
 
+%% Old_Send_History : Send history of a specific lock to be updated
+%% New_Send_History : Send history of the same lock to update the other one
+%% Updates every value in Old_Send_History by allways choosing the max value of both send histories.
+%% (How many lock parts were send in totoal from one DC to another DC)
+-spec update_send_history2([{dcid(),[{dcid(),non_neg_integer() | all}]}],[{dcid(),[{dcid(),non_neg_integer() | all}]}]) ->[{dcid(),[{dcid(),non_neg_integer() | all}]}].
+update_send_history2(Old_Send_History,New_Send_History) ->
+    Sorted_Old_Send_History = lists:keysort(1,Old_Send_History),
+    Sorted_New_Send_History = lists:keysort(1,New_Send_History),
+    orddict:merge(fun(_Key,Value1,Value2)->
+                          Sorted_Value1 = lists:keysort(1,Value1),
+                          Sorted_Value2 = lists:keysort(1,Value2),
+                          orddict:merge(fun(_Key2,Value3,Value4)->
+                                case Value3 > Value4 of
+                                    true -> Value3;
+                                    false -> Value4
+                                end
+                            end,Sorted_Value1,Sorted_Value2)
+                    end,Sorted_Old_Send_History,Sorted_New_Send_History).
 %TODO
 %% Lock : lock received by another dc
 %% From : dc which send the lock
-%% Amount : number of lock parts this dc received from the other dc(From)
+%% New_Send_History : History of lock parts send form each DC to each DC
 %% Last_Changed : snapshot when the lock was released the last time
-%% Updates the {Lock,[{From,[{To,Amount}]}],Snapshot} entry of dets_ref of the specified lock
--spec received_lock(key(),dcid(),non_neg_integer(),snapshot_time()) -> ok.
-received_lock(Lock,From,Amount,Last_Changed)->
+%% Updates the {Lock,Send_History,Snapshot} entry of dets_ref of the specified lock
+-spec received_lock(key(),dcid(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time()) -> ok.
+received_lock(Lock,_From,New_Send_History,Last_Changed)->  %TODO Change so that it updates the send history of the respective lock
+    {ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     case dets:lookup(?DETS_FILE_NAME,Lock) of
         [{Lock,Send_History,Old_Snapshot}] ->
             Snapshot = vectorclock:max([Old_Snapshot,Last_Changed]),
-            MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-            case lists:keyfind(From,1,Send_History) of
-                false ->
-                    New_Send_History = lists:keystore(From,1,Send_History,{From,[{MyDCId,Amount}]}),
-                    dets:insert(?DETS_FILE_NAME,{Lock,New_Send_History,Snapshot});
-                {From,To_Amount_List} ->
-                    case lists:keyfind(MyDCId,1,To_Amount_List) of
-                        false ->
-                            New_To_Amount_List = lists:keystore(MyDCId,1,To_Amount_List,{MyDCId,Amount}),
-                            New_Send_History = lists:keyreplace(From,1,Send_History,{From,New_To_Amount_List}),
-                            dets:insert(?DETS_FILE_NAME,{Lock,New_Send_History,Snapshot});
-                        {MyDCId,Old_Amount}->
-                            case Old_Amount < Amount of
-                                true ->
-                                    New_To_Amount_List = lists:keyreplace(MyDCId,1,To_Amount_List,{MyDCId,Amount}),
-                                    New_Send_History = lists:keyreplace(From,1,Send_History,{From,New_To_Amount_List}),
-                                    dets:insert(?DETS_FILE_NAME,{Lock,New_Send_History,Snapshot});
-                                false -> ok
-                            end
-                    end
-            end;
+            Updated_Send_History = update_send_history2(Send_History, New_Send_History),
+            dets:insert(?DETS_FILE_NAME,{Lock,Updated_Send_History,Snapshot});
         []->
-            MYDCID = dc_meta_data_utilities:get_my_dc_id(),
-            dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{MYDCID,Amount}]}],Last_Changed});
-        {error,_Reason} ->
-            MYDCID = dc_meta_data_utilities:get_my_dc_id(),
-            dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{MYDCID,Amount}]}],Last_Changed})
+            dets:insert(?DETS_FILE_NAME,{Lock,New_Send_History,Last_Changed});
+        {error,Reason} ->
+            {error,Reason}
     end.
 %TODO
 %% Lock : lock to be checked
@@ -522,17 +576,21 @@ count_lock_parts(Lock,DC_ID) ->
                                                 end end,0,Lock_Information),
                     _Has_Lock_Parts = Total_Received - Total_Send;
                 [] ->
-                        {ok,Now} = get_snapshot_time(),
-                        %TODO
+                        MyDCId = dc_meta_data_utilities:get_my_dc_id(),
                         case am_i_leader() of
                                 true ->
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}},Now}),
-                                    true;
+                                    New_Lock_Parts = lock_part_amount(),
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
+                                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
+                                    case MyDCId == DC_ID of
+                                        true -> New_Lock_Parts;
+                                        false -> 0
+                                    end;
                                 false -> 
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                        dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[]}},Now}),
-                                    false
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
+                                    0
                         end;
                 {error,Reason} ->
                         {error,Reason}
@@ -567,16 +625,16 @@ check_lock_shared(Lock) ->
                                                 end end,0,Lock_Information),
                     _Has_Lock = Total_Send < Total_Received;
                 [] ->
-                        {ok,Now} = get_snapshot_time(),
-                        %TODO
                         case am_i_leader() of
                                 true ->
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}},Now}),
+                                    New_Lock_Parts = lock_part_amount(),
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
+                                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                                     true;
                                 false -> 
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                        dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[]}},Now}),
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     false
                         end;
                 {error,Reason} ->
@@ -620,16 +678,16 @@ check_lock_exclusive(Lock) ->
                                                   end,0,Lock_Information),
                     _Has_Lock = Total_Generated == (Total_Send - Total_Received);
                 [] ->
-                        {ok,Now} = get_snapshot_time(),
-                        %TODO
                         case am_i_leader() of
                                 true ->
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                    dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}},Now}),
+                                    New_Lock_Parts = lock_part_amount(),
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
+                                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                                     true;
                                 false -> 
-                                    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-                                        dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[]}},Now}),
+                                    New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
+                                    dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     false
                         end;
                 {error,Reason} ->
@@ -721,17 +779,18 @@ other_dcs_list() ->
 %% Key : ? TODO
 %% Locks : list of locks that are to be requested
 %% sends a message to all other DCs requesting the Locks.
--spec remote_lock_request(dcid(),term(),[key()])-> ok.
-remote_lock_request(MyDCId, Key, Locks) ->
+-spec remote_lock_request_es(dcid(),term(),[key()],[key()])-> ok.
+remote_lock_request_es(MyDCId, Key, Shared_Locks,Exclusive_Locks) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     Other_DCs_List = other_dcs_list(),
+    Locks = [{Key1,1} || Key1 <- Shared_Locks] ++ [{Key2,all} || Key2 <- Exclusive_Locks],
     spawn(fun()->   %TODO
     lists:foldl( 
         fun(RemoteId,AccIn) ->
-            BinaryMsg = term_to_binary({request_locks,
-            {remote_lock_request, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
-            [inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
-                BinaryMsg, fun lock_mgr:request_response/2) | AccIn]
+            BinaryMsg = term_to_binary({request_locks_es,
+            {remote_lock_request_es, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
+            [inter_dc_query:perform_request(?LOCK_MGR_ES_REQUEST, {RemoteId, LocalPartition},
+                BinaryMsg, fun lock_mgr_es:request_response_es/2) | AccIn]
         end
         ,[],Other_DCs_List)
     end), %TODO
@@ -739,25 +798,25 @@ remote_lock_request(MyDCId, Key, Locks) ->
 
 %TODO
 %% Lock : Lock to send to another DC
-%% Amount : Total number of times the lock was send to that DC from this DC
+%% Send_History : History of lock parts send from each DC to each DC
 %% Last_Changed : Snapshot of the last time this lock was released
 %% MyDCId : DCID of this DC
 %% RemoteId : DCID of the DC the lock is send to
 %% Key : ? TODO
 %% sends a message to the speciefed other DC containing the lock information
--spec remote_send_lock(key(),non_neg_integer(),snapshot_time(),dcid(),dcid(),key())-> ok.
-remote_send_lock(Lock,Amount, Last_Changed,MyDCId, RemoteId, Key) ->
+-spec remote_send_lock_history(key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time(),dcid(),dcid(),key())-> ok.
+remote_send_lock_history(Lock,Send_History, Last_Changed,MyDCId, RemoteId, Key) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
-    BinaryMsg = term_to_binary({send_locks,
-        {remote_send_lock, {Lock,Amount, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
+    BinaryMsg = term_to_binary({send_locks_es,
+        {remote_send_lock_history, {Lock,Send_History, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
     spawn(fun()->   %TODO
-    inter_dc_query:perform_request(?LOCK_MGR_SEND, {RemoteId, LocalPartition},
-        BinaryMsg, fun lock_mgr:request_response/2)
+    inter_dc_query:perform_request(?LOCK_MGR_ES_SEND, {RemoteId, LocalPartition},
+        BinaryMsg, fun lock_mgr_es:request_response_es/2)
     end), %TODO
     ok.
 
 %% Request response - do nothing. TODO  what is this function meant to do ?
-request_response(_BinaryRep, _RequestCacheEntry) -> ok.
+request_response_es(_BinaryRep, _RequestCacheEntry) -> ok.
 % ===================================================================
 % Callbacks
 % ===================================================================
@@ -770,12 +829,12 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 %TODO
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
-handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, State) ->
-        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w,~w},state)~n",[Lock,Amount,Snapshot,From,MyDCID1]),
+handle_cast({remote_send_lock_history, {Lock,Send_History,Snapshot,From,MyDCID1}}, State) ->
+        lager:info("handle_cast({remote_send_lock_history,~w,~w,~w,~w,~w},state)~n",[Lock,Send_History,Snapshot,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
-                        received_lock(Lock,From,Amount, Snapshot),
+                        received_lock(Lock,From,Send_History, Snapshot),
                         {noreply, State};
                 false -> {noreply, State}
         end;
@@ -783,8 +842,8 @@ handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, State) ->
 %% Takes a list of Locks and a Sender as input
 %% Adds {dcid,[{lock,timestamp}]} to lock_requests to remember which DC requested which Locks
 %% Adds a timestamp to filter too old requests
-handle_cast({remote_lock_request, {Locks, Sender}}, #state{lock_requests=Lock_Requests}=State) ->
-    lager:info("handle_cast({remote_lock_request,~w,~w},from,state)~n",[Locks,Sender]),
+handle_cast({remote_lock_request_es, {Locks, Sender}}, #state{lock_requests=Lock_Requests}=State) ->
+    lager:info("handle_cast({remote_lock_request_es,~w,~w},from,state)~n",[Locks,Sender]),
     Timestamp = erlang:timestamp(),
     New_Lock_Requests = requested(Locks, Sender, Timestamp, Lock_Requests),
         {noreply, State#state{lock_requests=New_Lock_Requests}}.
@@ -805,7 +864,7 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Shared_Locks,Exclusive_Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    lager:info("handle_call({get_locks,~w,~w,,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
+    lager:info("handle_call({get_locks,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
     New_Shared_Locks = Shared_Locks--Exclusive_Locks,
     case using(Shared_Locks,Exclusive_Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
@@ -851,11 +910,7 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                                                     _ -> 1
                                                 end;
                                             false ->
-                                                case AccIn of
-                                                    all -> all;
-                                                    1 -> 1;
-                                                    0 -> 0
-                                                end
+                                                AccIn
                                         end
                                     end;
                             _ -> AccIn
@@ -865,8 +920,12 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                 case In_Use of
                     all ->
                         ok;
-                    _ ->
-                        send_lock(Lock,Amount,DCID)
+                    1 ->
+                        case Amount of
+                            all -> ok;
+                            _ -> send_lock(Lock,Amount,DCID)
+                        end;
+                    0 -> send_lock(Lock,Amount,DCID) 
                 end
             end,ok,Lock_Amount_Timestamp_List)
         end, ok,Clean_Lock_Requests),
