@@ -29,6 +29,8 @@
          request_permissions/2,
          request_locks/2,
          send_locks/2,
+         request_locks_es/2,
+         send_locks_es/2,
          generate_server_name/1]).
 -export([init/1,
          handle_cast/2,
@@ -63,6 +65,15 @@ send_locks(BinaryRequest, QueryState) ->
 -spec request_locks(binary(), #inter_dc_query_state{}) -> ok.
 request_locks(BinaryRequest, QueryState) ->
     ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_locks, BinaryRequest, QueryState}).
+%% #Locks
+-spec send_locks_es(binary(), #inter_dc_query_state{}) -> ok.
+send_locks_es(BinaryRequest, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {send_locks_es, BinaryRequest, QueryState}).
+%% #Locks
+-spec request_locks_es(binary(), #inter_dc_query_state{}) -> ok.
+request_locks_es(BinaryRequest, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_locks_es, BinaryRequest, QueryState}).
+
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================

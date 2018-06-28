@@ -82,9 +82,9 @@
 -record(state, {local_locks,lock_requests, transfer_timer,dets_ref}).
 -define(LOG_UTIL, log_utilities).
 -define(DATA_TYPE, antidote_crdt_counter_b).
--define(LOCK_REQUEST_TIMEOUT, 1000000).     % Locks requested by other DCs ( in microseconds -- 1 000 000 equals 1 second)
--define(LOCK_REQUIRED_TIMEOUT,500000).     % Locks requested by transactions of this DC (in microseconds -- 1 000 000 equals 1 second)
--define(LOCK_TRANSFER_FREQUENCY,1000).
+-define(LOCK_REQUEST_TIMEOUT, 3000000).     % Locks requested by other DCs ( in microseconds -- 1 000 000 equals 1 second)
+-define(LOCK_REQUIRED_TIMEOUT,600000).     % Locks requested by transactions of this DC (in microseconds -- 1 000 000 equals 1 second)
+-define(LOCK_TRANSFER_FREQUENCY,300).
 %-define(DETS_FILE_NAME, "lock_mgr_persistant_storage_"++ atom_to_list(element(1,dc_meta_data_utilities:get_my_dc_id()))++ "_" ++lists:concat(tuple_to_list(element(2,dc_meta_data_utilities:get_my_dc_id())))).
 -define(DETS_FILE_NAME, filename:join(app_helper:get_env(riak_core, platform_data_dir),"lock_mgr_es_persistant_storage_"++ atom_to_list(element(1,dc_meta_data_utilities:get_my_dc_id())))).
 -define(DETS_SETTINGS, [{access, read_write},{auto_save, 180000},{estimated_no_objects, 256},{file, ?DETS_FILE_NAME},
@@ -93,6 +93,8 @@
 -define(DC_META_UTIL, dc_meta_data_utilities).
 -define(LOCK_PART_TO_DC_FACTOR,2). % float() #Lock_Parts = round(#DCs*LOCK_PART_TO_DC_FACTOR) + LOCK_PART_TO_DC_OFFSET
 -define(LOCK_PART_TO_DC_OFFSET,0). % non_neg_integer()
+-define(WAIT_FOR_SHARED_LOCKS,true). % Compilation Flag:  defined - When acquiring a exclusive lock, the transaction will wait for data updates of all shared lock commits
+                                   %                    undefined -The transaction will only wait for the data of commits of exclusive locks
 % ===================================================================
 % Public API
 % ===================================================================
@@ -231,12 +233,31 @@ exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) ->
         end,
         [],Local_Locks).
 
-
-
+% Compiliation flag that determines if transactions should wait for the updates made using shared locks or not
+-ifdef(WAIT_FOR_SHARED_LOCKS).
 
 %% TxId : transaction whose locks are to be released
 %% Local_Locks : orddict managing all transaction requesting and using locks 
-%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId
+%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (for exclusive and shared locks)
+%% Releases ownership and lock requests of all locks of the specified TxId
+%% Returns the updated lokal_locks list
+-spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+release_locks(TxId,Local_Locks) ->
+    case orddict:find(TxId,Local_Locks) of
+        {ok,{using,Shared_Locks,Exclusive_Locks}} ->
+            All_Locks = Shared_Locks ++ Exclusive_Locks,
+            update_last_changed(All_Locks);
+        error ->
+            lager:error("release_locks(~w,~w)~n",[TxId,Local_Locks]),
+            ok
+    end,
+    _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
+
+-else.
+
+%% TxId : transaction whose locks are to be released
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (only for exclusive locks)
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
 -spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
@@ -252,6 +273,7 @@ release_locks(TxId,Local_Locks) ->
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
+-endif.
 
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Timeout : timeout value in ms
@@ -414,8 +436,8 @@ send_lock(Lock,Amount,To)->
                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                     ok
             end;
-        {error,_Reason} ->
-            ok
+        {error,Reason} ->
+            {error,Reason}
     end.
 
 -spec get_send_history_of(key()) -> {key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time()}.
@@ -424,8 +446,8 @@ get_send_history_of(Lock) ->
     case dets:lookup(?DETS_FILE_NAME,Lock) of
         [{Lock,Send_History,_Snapshot}] ->
             Send_History;
-        {error,_Reason} ->
-            {error,_Reason};
+        {error,Reason} ->
+            {error,Reason};
         _ ->
             {error,entry_not_found}
     end.
@@ -540,7 +562,7 @@ received_lock(Lock,_From,New_Send_History,Last_Changed)->  %TODO Change so that 
     case dets:lookup(?DETS_FILE_NAME,Lock) of
         [{Lock,Send_History,Old_Snapshot}] ->
             Snapshot = vectorclock:max([Old_Snapshot,Last_Changed]),
-            Updated_Send_History = update_send_history2(Send_History, New_Send_History),
+            Updated_Send_History = update_send_history2(Send_History, New_Send_History), %TODO Decide if update_send_history2 or update_send_history is better (also check if both are correct)
             dets:insert(?DETS_FILE_NAME,{Lock,Updated_Send_History,Snapshot});
         []->
             dets:insert(?DETS_FILE_NAME,{Lock,New_Send_History,Last_Changed});
@@ -676,7 +698,7 @@ check_lock_exclusive(Lock) ->
                                                                 Amount
                                                         end 
                                                   end,0,Lock_Information),
-                    _Has_Lock = Total_Generated == (Total_Send - Total_Received);
+                    _Has_Lock = (Total_Generated == (Total_Received - Total_Send)) and (Total_Generated > 0);
                 [] ->
                         case am_i_leader() of
                                 true ->
@@ -733,7 +755,7 @@ get_last_modified(Locks)->
 %% Exclusive_Locks : list of exclusive locks
 %% updates the last_changed value of the specified locks to the max of a current snapshot and the old last_changed value
 -spec update_last_changed([key()]) -> ok.
-update_last_changed(Exclusive_Locks) ->
+update_last_changed(Locks) ->
     %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     lists:foldl(
         fun(Lock,AccIn) ->
@@ -747,7 +769,7 @@ update_last_changed(Exclusive_Locks) ->
                     AccIn
             end
         end,
-        ok,Exclusive_Locks).
+        ok,Locks).
 
 %% Returns the current snapshot time of this dc
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
@@ -896,36 +918,64 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
         fun(DCID,Lock_Amount_Timestamp_List,ok)->
             lists:foldl(
                 fun({Lock,Amount, _Timestamp},ok) ->
-                In_Use = orddict:fold(
-                    fun(_TxId,Value2,AccIn) ->
+                {In_Use,Required} = orddict:fold(
+                    fun(_TxId,Value2,{AccIn,AccInRequired}) ->
                         case Value2 of
                             {using,Shared_Lock_List,Exclusive_Lock_List} -> 
                                 case lists:member(Lock,Exclusive_Lock_List) of
-                                    true -> all;
+                                    true -> {all,AccInRequired};
                                     false ->
                                         case lists:member(Lock,Shared_Lock_List) of
                                             true -> 
                                                 case AccIn of
-                                                    all -> all;
-                                                    _ -> 1
+                                                    all -> {all,AccInRequired};
+                                                    _ -> {1,AccInRequired}
                                                 end;
                                             false ->
-                                                AccIn
+                                                {AccIn,AccInRequired}
                                         end
                                     end;
-                            _ -> AccIn
+                            {required,Shared_Lock_List2,Exclusive_Lock_List2,_Timestamp2} -> 
+                                case lists:member(Lock,Exclusive_Lock_List2) of
+                                    true -> {AccIn,all};
+                                    false ->
+                                        case lists:member(Lock,Shared_Lock_List2) of
+                                            true -> 
+                                                case AccInRequired of
+                                                    all -> {AccIn,all};
+                                                    _ -> {AccIn,1}
+                                                end;
+                                            false ->
+                                                {AccIn,AccInRequired}
+                                        end
+                                    end;
+                            _ -> {AccIn,AccInRequired}
                         end
                     end,
-                0,Clear_Local_Locks),
-                case In_Use of
-                    all ->
+                {0,0},Clear_Local_Locks),
+                case {In_Use,Required} of
+                    {all,_} ->
                         ok;
-                    1 ->
-                        case Amount of
-                            all -> ok;
-                            _ -> send_lock(Lock,Amount,DCID)
+                    {1,all} when (Amount /= all)->
+                        MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+                        case MyDCId > DCID of
+                            true -> ok;
+                            false-> send_lock(Lock,Amount,DCID)
                         end;
-                    0 -> send_lock(Lock,Amount,DCID) 
+                    {1,1} when (Amount /= all) ->
+                        send_lock(Lock,Amount,DCID);
+                    {1,0} when (Amount /= all) ->
+                        send_lock(Lock,Amount,DCID);
+                    {0,all} ->
+                        MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+                        case MyDCId > DCID of
+                            true -> ok;
+                            false-> send_lock(Lock,Amount,DCID)
+                        end;
+                    {0,1} when (Amount /= all) ->
+                        send_lock(Lock,Amount,DCID);
+                    _ ->
+                        send_lock(Lock,Amount,DCID)
                 end
             end,ok,Lock_Amount_Timestamp_List)
         end, ok,Clean_Lock_Requests),
