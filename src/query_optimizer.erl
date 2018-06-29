@@ -46,29 +46,31 @@
 query_filter(Filter, TxId) when is_list(Filter) ->
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
+    TCols = table_utils:column_names(Table),
     Projection = projection(Filter),
-    Conditions = conditions(Filter),
 
-    FilteredResult =
-        case Conditions of
-            [] ->
-                Index = indexing:read_index(primary, TableName, TxId),
-                Records = read_records(Index, TableName, TxId),
-                prepare_records(table_utils:column_names(Table), Table, Records);
-            _Else ->
-                apply_filter(Conditions, Table, TxId)
-        end,
-    ResultToList = case is_list(FilteredResult) of
-                       false -> sets:to_list(FilteredResult);
-                       true -> FilteredResult
-                   end,
+    case validate_projection(Projection, TCols) of
+        {error, Msg} ->
+            {error, Msg};
+        {ok, ProjectionCols} ->
+            Conditions = conditions(Filter),
 
-    ProjectionCols = case Projection of
-                         ?WILDCARD -> table_utils:column_names(Table);
-                         _ -> Projection
-                     end,
+            FilteredResult =
+                case Conditions of
+                    [] ->
+                        Index = indexing:read_index(primary, TableName, TxId),
+                        Records = read_records(Index, TableName, TxId),
+                        prepare_records(table_utils:column_names(Table), Table, Records);
+                    _Else ->
+                        apply_filter(Conditions, Table, TxId)
+                end,
+            ResultToList = case is_list(FilteredResult) of
+                               false -> sets:to_list(FilteredResult);
+                               true -> FilteredResult
+                           end,
 
-    {ok, apply_projection(ProjectionCols, ResultToList)}.
+            {ok, apply_projection(ProjectionCols, ResultToList)}
+    end.
 
 get_partial_object(Key, Type, Bucket, Filter, TxId) ->
     ObjectKey = querying_utils:build_keys(Key, Type, Bucket),
@@ -202,24 +204,27 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                 end
             end, {0, []}, Args),
 
+            lager:info("ConditionCol: ~p", [ConditionCol]),
+
             lists:foldl(fun(Record, Acc) ->
-                ColValue = case table_utils:is_foreign_key(ConditionCol, Table) of
-                               true ->
-                                   EntryKey = {ConditionCol, ?SHADOW_COL_ENTRY_DT},
-                                   case table_utils:get_column(EntryKey, Record) of
-                                       undefined ->
-                                           ShCol = shadow_column_spec(ConditionCol, Table),
-                                           table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
-                                       ?ATTRIBUTE(_C, _T, V) ->
-                                           V
-                                   end;
-                               false ->
-                                   ?ATTRIBUTE(_C, _T, V) = table_utils:get_column(ConditionCol, Record),
-                                   V
-                           end,
+                lager:info("Record: ~p", [Record]),
+                ColValue =
+                    case table_utils:get_column(ConditionCol, Record) of
+                        undefined ->
+                            case table_utils:is_foreign_key(ConditionCol, Table) of
+                                true ->
+                                    ShCol = shadow_column_spec(ConditionCol, Table),
+                                    table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
+                                _ -> undefined
+                            end;
+                        ?ATTRIBUTE(_C, _T, V) -> V
+                    end,
+
+                lager:info("ColValue: ~p", [ColValue]),
 
                 ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
-                Result = builtin_functions:exec({FuncName, ReplaceArgs}),
+                Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
+                lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
                 case Predicate(Result) of
                     true ->
                         lists:append(Acc, [Record]);
@@ -312,6 +317,23 @@ shadow_column_spec(FkName, Table) ->
     case Search of
         [] -> none;
         [Result | _] -> Result
+    end.
+
+validate_projection(?WILDCARD, Columns) ->
+    {ok, Columns};
+validate_projection(Projection, Columns) ->
+    Invalid = lists:foldl(fun(ProjCol, AccInvalid) ->
+        case lists:member(ProjCol, Columns) of
+            true ->
+                AccInvalid;
+            false ->
+                lists:append(AccInvalid, [ProjCol])% throw(io_lib:format("Invalid projection column: ~p", [ProjCol]))
+        end
+    end, [], Projection),
+    case Invalid of
+        [] -> {ok, Projection};
+        _Else ->
+            {error, {invalid_projection, Invalid}}
     end.
 
 apply_projection([], Objects) ->

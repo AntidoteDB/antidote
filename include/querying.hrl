@@ -21,6 +21,8 @@
 -define(SHADOW_COL_ENTRY_DT, antidote_crdt_register_mv).
 -define(STATE_COL, '#st').
 -define(STATE_COL_DT, antidote_crdt_register_mv).
+-define(VERSION_COL, '#version').
+-define(VERSION_COL_DT, antidote_crdt_counter_pn).
 
 %% Data types definitions
 -define(AQL_INTEGER, integer).

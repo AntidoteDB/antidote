@@ -109,11 +109,7 @@ get_hooks(post_commit, Bucket) ->
 
 has_hook(PreOrPost, Bucket)
     when is_atom(PreOrPost) andalso is_atom(Bucket) ->
-
-    case get_hooks(PreOrPost, Bucket) of
-        undefined -> false;
-        {_, _} -> true
-    end.
+    get_hooks(PreOrPost, Bucket) =/= undefined.
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
         {term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}.

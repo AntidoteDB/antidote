@@ -176,9 +176,9 @@ update_objects(Updates, TxId) ->
             %ok = indexing:create_index_hooks(Updates),
             %cure:update_objects(Updates, TxId);
 
-            NewUpdates = lists:append(Updates, indexing:create_index_hooks(Updates, TxId)),
+            NewUpdates = lists:append(Updates, indexing:create_index_hooks(Updates, ignore)),
+            %triggers:create_triggers(Updates),
             cure:update_objects(NewUpdates, TxId);
-
         {error, Reason} ->
             {error, Reason}
     end.
@@ -193,6 +193,7 @@ update_objects(Clock, Properties, Updates) ->
             %cure:update_objects(Clock, Properties, Updates);
 
             NewUpdates = lists:append(Updates, indexing:create_index_hooks(Updates, ignore)),
+            %triggers:create_triggers(Updates),
             cure:update_objects(Clock, Properties, NewUpdates);
         {error, Reason} ->
             {error, Reason}
