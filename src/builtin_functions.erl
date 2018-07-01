@@ -36,9 +36,11 @@
 -endif.
 
 -define(MALFORMED_FUNC(Func), lists:concat(["Malformed function header: ", Function])).
+-define(ADD_WINS, add).
+-define(REMOVE_WINS, remove).
 
 %% API
--export([exec/2, find_first/3, assert_version/3, is_function/1]).
+-export([exec/2, find_last/3, assert_version/3, is_function/1]).
 
 %% This function receives a function name and its parameters, and computes
 %% the result of applying the parameters to the function.
@@ -52,25 +54,33 @@ exec({Function, Args}, TxId) ->
 exec(Function, TxId) ->
     exec(parse_function(Function), TxId).
 
-%% Given a list of items (Values) search the item that appears first
+%% Given a list of items (Values) search the item that appears last
 %% in the second list (List)
-find_first(Values, List, _TxId) when is_list(Values) andalso is_list(List) ->
+find_last(Values, List, _TxId) when is_list(Values) andalso is_list(List) ->
     [First | Tail] = Values,
-    find_first0(First, Tail, List);
-find_first(Value, _List, _TxId) -> Value.
+    find_last0(First, Tail, List);
+find_last(Value, _List, _TxId) -> Value.
 
-assert_version({Key, Version}, Table, TxId) ->
+assert_version({Key, Version}, TableName, TxId) ->
     KeyAtom = querying_utils:to_atom(Key),
-    BoundObj = querying_utils:build_keys(KeyAtom, ?TABLE_DT, Table),
+    BoundObj = querying_utils:build_keys(KeyAtom, ?TABLE_DT, TableName),
     [RefData] = querying_utils:read_keys(value, BoundObj, TxId),
     VersionKey = {?VERSION_COL, ?VERSION_COL_DT},
     RefVersion = table_utils:lookup_value(VersionKey, RefData),
-    lager:info("Version: ~p", [Version]),
-    lager:info("BoundObj: ~p", [BoundObj]),
-    lager:info("RefData: ~p", [RefData]),
-    lager:info("RefVersion: ~p", [RefVersion]),
-    FinalRes = is_visible(RefData, Table, TxId) andalso RefVersion =:= Version,
-    lager:info("{~p, ~p}: ~p", [Key, Version, FinalRes]),
+
+    Table = table_utils:table_metadata(TableName, TxId),
+    Policy = table_utils:policy(Table),
+    %lager:info("Version: ~p", [Version]),
+    %lager:info("BoundObj: ~p", [BoundObj]),
+    %lager:info("RefData: ~p", [RefData]),
+    %lager:info("RefVersion: ~p", [RefVersion]),
+    %lager:info("Policy: ~p", [Policy]),
+    FinalRes =
+        case table_crps:p_dep_level(Policy) of
+            ?REMOVE_WINS -> RefVersion =:= Version andalso is_visible(RefData, Table, TxId);
+            _ -> is_visible(RefData, Table, TxId)
+        end,
+    %lager:info("{~p, ~p}: ~p", [Key, Version, FinalRes]),
     FinalRes.
 
 is_function({FuncName, Args}) ->
@@ -105,33 +115,34 @@ parse_function(Function) when is_list(Function) ->
 %% Internal functions
 %% ===================================================================
 
-find_first0(V1, [V2 | Tail], List) ->
+find_last0(V1, [V2 | Tail], List) ->
     Current = pick(V1, V2, List),
-    find_first0(Current, Tail, List);
-find_first0(V1, [], _List) -> V1.
+    find_last0(Current, Tail, List);
+find_last0(V1, [], _List) -> V1.
 
-pick(V1, _V2, [V1 | _Tail]) -> V1;
-pick(_V1, V2, [V2 | _Tail]) -> V2;
+pick(V1, V2, [V1 | _Tail]) -> V2;
+pick(V1, V2, [V2 | _Tail]) -> V1;
 pick(V1, V1, _List) -> V1;
 pick(V1, V2, [_V3 | Tail]) -> pick(V1, V2, Tail);
 pick(_, _, []) -> error.
 
-is_visible(ObjData, TableName, TxId) ->
-    Table = table_utils:table_metadata(TableName, TxId),
+is_visible(ObjData, Table, TxId) ->
     Rule = table_crps:get_rule(Table),
     ObjState = table_utils:lookup_value({?STATE_COL, ?STATE_COL_DT}, ObjData),
 
     FKeys = table_utils:foreign_keys(Table),
 
-    lager:info("Rule: ~p", [Rule]),
-    lager:info("ObjState: ~p", [ObjState]),
-    lager:info("FKeys: ~p", [FKeys]),
+    %lager:info("Rule: ~p", [Rule]),
+    %lager:info("ObjState: ~p", [ObjState]),
+    %lager:info("FKeys: ~p", [FKeys]),
 
-    find_first(ObjState, Rule, ignore) =/= d andalso is_visible0(FKeys, ObjData, TxId).
+    find_last(ObjState, Rule, ignore) =/= d andalso is_visible0(FKeys, ObjData, TxId).
 
-is_visible0([?FK(FkName, _, FkTable, _, _) | Tail], Record, TxId) ->
+is_visible0([?FK(FkName, _, FkTable, _, _) | Tail], Record, TxId) when length(FkName) == 1 ->
     ObjVersion = table_utils:lookup_value(FkName, Record),
     assert_version(ObjVersion, FkTable, TxId) andalso is_visible0(Tail, Record, TxId);
+is_visible0([?FK(FkName, _, _, _, _) | Tail], Record, TxId) when length(FkName) > 1 ->
+    is_visible0(Tail, Record, TxId);
 is_visible0([], _Record, _TxId) -> true.
 
 get_function_info(FunctionName) when is_atom(FunctionName) ->
@@ -151,7 +162,7 @@ validate_func(FunctionName, Args) ->
 
 -ifdef(TEST).
 
-find_first_test() ->
+find_last_test() ->
     Values1 = [a, b, c],
     Values2 = [c, c, b],
     Values3 = [d],
@@ -159,10 +170,10 @@ find_first_test() ->
     List1 = [a, b, c, d, e],
     List2 = [e, b, c, a, d],
     List3 = [d, e, c, a, b],
-    ?assertEqual(a, find_first(Values1, List1, ignore)),
-    ?assertEqual(b, find_first(Values1, List2, ignore)),
-    ?assertEqual(c, find_first(Values2, List3, ignore)),
-    ?assertEqual(d, find_first(Values3, List1, ignore)),
-    ?assertEqual(error, find_first(Values4, List2, ignore)).
+    ?assertEqual(c, find_last(Values1, List1, ignore)),
+    ?assertEqual(a, find_last(Values1, List2, ignore)),
+    ?assertEqual(b, find_last(Values2, List3, ignore)),
+    ?assertEqual(d, find_last(Values3, List1, ignore)),
+    ?assertEqual(error, find_last(Values4, List2, ignore)).
 
 -endif.

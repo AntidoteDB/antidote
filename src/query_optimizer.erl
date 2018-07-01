@@ -204,10 +204,10 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                 end
             end, {0, []}, Args),
 
-            lager:info("ConditionCol: ~p", [ConditionCol]),
+            %lager:info("ConditionCol: ~p", [ConditionCol]),
 
             lists:foldl(fun(Record, Acc) ->
-                lager:info("Record: ~p", [Record]),
+                %lager:info("Record: ~p", [Record]),
                 ColValue =
                     case table_utils:get_column(ConditionCol, Record) of
                         undefined ->
@@ -220,11 +220,11 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                         ?ATTRIBUTE(_C, _T, V) -> V
                     end,
 
-                lager:info("ColValue: ~p", [ColValue]),
+                %lager:info("ColValue: ~p", [ColValue]),
 
                 ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
                 Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
-                lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
+                %lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
                 case Predicate(Result) of
                     true ->
                         lists:append(Acc, [Record]);
