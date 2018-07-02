@@ -78,7 +78,12 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
     {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
   end,
   NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
-  process_queue(NewState).
+  process_queue(NewState);
+
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
+  %% This case must not happen
+  lager:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]).
+
 
 %%%% Methods ----------------------------------------------------------------+
 process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
