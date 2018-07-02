@@ -198,21 +198,21 @@ using(Shared_Locks,Exclusive_Locks,TxId,Local_Locks) ->
                 [],Exclusive_Locks),
         case {Missing_Locks_Shared,Missing_Locks_Exclusive} of
                 {[],[]} -> 
-                    case exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) of
-                        [] ->
+                    case {check_if_used_for_exclusive_locks(Exclusive_Locks++Shared_Locks,Local_Locks),check_if_used_for_shared_locks(Exclusive_Locks, Local_Locks)} of
+                        {[],[]} ->
                             _New_Local_Locks = orddict:store(TxId,{using,Shared_Locks,Exclusive_Locks},Local_Locks);
-                        Used_Exclusive_Locks_List -> 
-                            {locks_in_use, Used_Exclusive_Locks_List}
+                        Used_As_Exclusive_Locks_List -> 
+                            {locks_in_use, Used_As_Exclusive_Locks_List}
                     end;
                 Missing_Locks_Lists -> 
                     {missing_locks,Missing_Locks_Lists}
         end.
 
-%% Exclusive_Locks : Exclusive that are to be checked if they are used by a transaction (of this dc)
+%% Locks : Locks to check
 %% Local_Locks : orddict managing all transaction requesting and using locks 
-%% Returns [{txid(),[locks]}] for all transactions that currently use the exclusive locks specified by Exclusive_Locks (only the intersection is returned)
--spec exclusive_locks_used_by_other_tx([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
-exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) ->
+%% Returns [{txid(),[locks]}] for all transactions that currently use the exclusive locks specified by Locks (only the intersection is returned)
+-spec check_if_used_for_exclusive_locks([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
+check_if_used_for_exclusive_locks(Locks,Local_Locks) ->
     _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
         case Elem of
             {_TxId,{required,_Shared_Locks_required,_Exclusive_Locks_required,_Timestamp}} ->
@@ -224,7 +224,7 @@ exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) ->
                             false -> AccIn2
                         end
                     end,
-                    [],Exclusive_Locks),
+                    [],Locks),
                 case Used_by_other_TxId of
                     [] -> AccIn;
                     _ -> [{TxId_other,Used_by_other_TxId}|AccIn]
@@ -232,7 +232,30 @@ exclusive_locks_used_by_other_tx(Exclusive_Locks,Local_Locks) ->
             end
         end,
         [],Local_Locks).
-
+%% Locks : Locks to check
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Returns [{txid(),[locks]}] for all transactions that currently use the shared locks specified by Locks (only the intersection is returned)
+-spec check_if_used_for_shared_locks([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
+check_if_used_for_shared_locks(Locks,Local_Locks) ->
+    _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
+        case Elem of
+            {_TxId,{required,_Shared_Locks_required,_Exclusive_Locks_required,_Timestamp}} ->
+                AccIn;
+            {TxId_other,{using,Shared_Locks_in_use,_Exclusive_Locks_in_use}} ->
+                Used_by_other_TxId = lists:foldl(fun(Elem2,AccIn2) ->
+                        case lists:member(Elem2,Shared_Locks_in_use) of
+                            true -> [Elem2|AccIn2];
+                            false -> AccIn2
+                        end
+                    end,
+                    [],Locks),
+                case Used_by_other_TxId of
+                    [] -> AccIn;
+                    _ -> [{TxId_other,Used_by_other_TxId}|AccIn]
+                end
+            end
+        end,
+        [],Local_Locks).
 % Compiliation flag that determines if transactions should wait for the updates made using shared locks or not
 -ifdef(WAIT_FOR_SHARED_LOCKS).
 
@@ -966,6 +989,8 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                         send_lock(Lock,Amount,DCID);
                     {1,0} when (Amount /= all) ->
                         send_lock(Lock,Amount,DCID);
+                    {1,_} when (Amount == all)->
+                        ok;
                     {0,all} ->
                         MyDCId = dc_meta_data_utilities:get_my_dc_id(),
                         case MyDCId > DCID of
@@ -974,8 +999,12 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                         end;
                     {0,1} when (Amount /= all) ->
                         send_lock(Lock,Amount,DCID);
+                    {0,1} when (Amount == all) ->   %Since exclusive lock requests are prioritized above shared lock requests
+                        send_lock(Lock,Amount,DCID);
+                    {0,0} ->
+                        send_lock(Lock,Amount,DCID);
                     _ ->
-                        send_lock(Lock,Amount,DCID)
+                        ok  
                 end
             end,ok,Lock_Amount_Timestamp_List)
         end, ok,Clean_Lock_Requests),
