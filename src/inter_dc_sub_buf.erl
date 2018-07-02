@@ -82,7 +82,8 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
   %% This case must not happen
-  lager:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]).
+  lager:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
+  State.
 
 
 %%%% Methods ----------------------------------------------------------------+
