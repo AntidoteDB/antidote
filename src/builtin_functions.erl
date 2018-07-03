@@ -35,7 +35,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(MALFORMED_FUNC(Func), lists:concat(["Malformed function header: ", Function])).
+-define(MALFORMED_FUNC(Func), io_lib:format("Malformed function header: ~p", [Function])).
 -define(ADD_WINS, add).
 -define(REMOVE_WINS, remove).
 
@@ -49,7 +49,7 @@
 exec({Function, Args}, TxId) ->
     case validate_func(Function, Args) of
         {_F, _A} -> apply(?MODULE, Function, lists:append(Args, [TxId])); % TODO apply(Function, Params)
-        false -> throw(?MALFORMED_FUNC(Function))
+        false -> throw(lists:flatten(?MALFORMED_FUNC(Function)))
     end;
 exec(Function, TxId) ->
     exec(parse_function(Function), TxId).
@@ -105,10 +105,11 @@ parse_function(Function) when is_list(Function) ->
         validate_func(FuncName, Args)
     of
         {F, P} -> {F, P};
-        false -> throw(?MALFORMED_FUNC(Function))
+        false -> throw(lists:flatten(?MALFORMED_FUNC(Function)))
     catch
         Exception ->
-            lager:error(lists:concat(["An error ocurred when parsing a function: ", Exception]))
+            ErrorMsg = io_lib:format("An error ocurred when parsing a function: ~p", [Exception]),
+            lager:error(lists:flatten(ErrorMsg))
     end.
 
 %% ===================================================================

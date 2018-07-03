@@ -38,7 +38,7 @@
 -define(CRDT_INDEX, antidote_crdt_index_go).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
--define(INVALID_OP_MSG(Operation, CRDT), ["The operation ", Operation, " is not part of the ", CRDT, " specification"]).
+-define(INVALID_OP_MSG(Operation, CRDT), io_lib:format("The operation ~p is not part of the ~p specification", [Operation, CRDT])).
 
 %% API
 -export([build_keys/3,
@@ -142,7 +142,9 @@ remove_duplicates(List) when is_list(List) ->
 remove_duplicates(Other) ->
     case sets:is_set(Other) of
         true -> Other;
-        false -> throw(lists:concat(["Cannot remove duplicates in this object: ", Other]))
+        false ->
+            ErrorMsg = io_lib:format("Cannot remove duplicates in this object: ~p", [Other]),
+            throw(lists:flatten(ErrorMsg))
     end.
 
 create_crdt_update({_Key, ?CRDT_MAP, _Bucket} = ObjKey, UpdateOp, Value) ->
@@ -216,7 +218,7 @@ read_data_item({Key, Type, Bucket}, Transaction) ->
 map_update({{Key, CRDT}, {Op, Value} = Operation}) ->
     case CRDT:is_operation(Operation) of
         true -> [{{Key, CRDT}, {Op, Value}}];
-        false -> throw(lists:concat(?INVALID_OP_MSG(Operation, CRDT)))
+        false -> throw(lists:flatten(?INVALID_OP_MSG(Operation, CRDT)))
     end;
 map_update(Values) when is_list(Values) ->
     lists:foldl(fun(Update, Acc) ->
@@ -225,7 +227,7 @@ map_update(Values) when is_list(Values) ->
 index_update({CRDT, Key, {Op, Value} = Operation}) ->
     case CRDT:is_operation(Operation) of
         true -> [{CRDT, Key, {Op, Value}}];
-        false -> throw(lists:concat(?INVALID_OP_MSG(Operation, CRDT)))
+        false -> throw(lists:flatten(?INVALID_OP_MSG(Operation, CRDT)))
     end;
 index_update({CRDT, Key, Operations}) when is_list(Operations) ->
     lists:foldl(fun(Op, Acc) ->
@@ -239,5 +241,5 @@ index_update(Values) when is_list(Values) ->
 set_update({_Key, ?CRDT_SET, _Bucket} = ObjKey, UpdateOp, Value) ->
     case ?CRDT_SET:is_operation(UpdateOp) of
         true -> {ObjKey, UpdateOp, Value};
-        false -> throw(lists:concat(?INVALID_OP_MSG(UpdateOp, ?CRDT_SET)))
+        false -> throw(lists:flatten(?INVALID_OP_MSG(UpdateOp, ?CRDT_SET)))
     end.

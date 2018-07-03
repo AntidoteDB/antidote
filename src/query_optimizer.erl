@@ -35,6 +35,7 @@
 -endif.
 
 -define(FUNCTION(Name, Params), {func, Name, Params}).
+-define(COLUMN(Name), {col, Name}).
 
 %% API
 -export([query_filter/2,
@@ -194,15 +195,10 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
     TableName = table_utils:table(Table),
     case builtin_functions:is_function({FuncName, Args}) of
         true ->
-            AllCols = table_utils:all_column_names(Table),
+            %lager:info("{FuncName, Args}: ~p", [?FUNCTION(FuncName, Args)]),
+            %lager:info("Table: ~p", [Table]),
             %% TODO This assumes that a function can only reference one column. Support more in the future.
-            {_, [{ColPos, ConditionCol}]} = lists:foldl(fun(Arg, Acc) ->
-                {Pos, Cols} = Acc,
-                case lists:member(Arg, AllCols) of
-                    true -> {Pos + 1, lists:append(Cols, [{Pos, Arg}])};
-                    false -> {Pos + 1, Cols}
-                end
-            end, {0, []}, Args),
+            {_, [{ColPos, ConditionCol}]} = read_columns_from_args(Func, Table),
 
             %lager:info("ConditionCol: ~p", [ConditionCol]),
 
@@ -233,7 +229,8 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                 end
             end, [], Records);
         false ->
-            throw(lists:concat(["Invalid function: ", Func]))
+            ErrorMsg = io_lib:format("Invalid function: ~p", [Func]),
+            throw(lists:flatten(ErrorMsg))
     end;
 function_filtering(Condition, Table, Records, TxId) ->
     ?CONDITION(Func, {Op, _}, Value) = Condition,
@@ -347,7 +344,9 @@ apply_projection(Projection, [Object | Objs], Acc) ->
     FilteredObj = lists:foldl(fun(Col, ObjAcc) ->
         case table_utils:get_column(Col, Object) of
             ?ATTRIBUTE(Col, _Type, _Value) = Attr -> lists:append(ObjAcc, [Attr]);
-            undefined -> throw(io_lib:format("Invalid projection column: ~p", [Col]))
+            undefined ->
+                ErrorMsg = io_lib:format("Invalid projection column: ~p", [Col]),
+                throw(lists:flatten(ErrorMsg))
         end
     end, [], Projection),
     apply_projection(Projection, Objs, lists:append(Acc, [FilteredObj]));
@@ -391,11 +390,35 @@ read_records(PKey, TableName, TxId) ->
 read_records(Key, TxId) ->
     table_utils:record_data(Key, TxId).
 
+read_columns_from_args(?FUNCTION(FuncName, Args), Table) ->
+    TableName = table_utils:table(Table),
+    AllCols = table_utils:all_column_names(Table),
+    lists:foldl(fun(Arg, Acc) ->
+        {Pos, Cols} = Acc,
+        case is_column(Arg) of
+            true ->
+                ?COLUMN(ColName) = Arg,
+                case lists:member(ColName, AllCols) of
+                    true ->
+                        {Pos + 1, lists:append(Cols, [{Pos, ColName}])};
+                    false ->
+                        ErrorMsg =
+                            io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FuncName, TableName]),
+                        throw(lists:flatten(ErrorMsg))
+                end;
+            false ->
+                {Pos + 1, Cols}
+        end
+   end, {0, []}, Args).
+
 is_disjunction(Query) ->
     querying_utils:is_list_of_lists(Query).
 
 is_func(?FUNCTION(_Name, _Params)) -> true;
 is_func(_) -> false.
+
+is_column(?COLUMN(_Name)) -> true;
+is_column(_) -> false.
 
 range_type({{{greatereq, _Val}, {lessereq, _Val}}, _}) -> equality;
 range_type({{{nil, infinity}, {nil, infinity}}, Excluded}) when length(Excluded) > 0 -> notequality;
