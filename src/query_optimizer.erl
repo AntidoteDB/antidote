@@ -65,10 +65,11 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                     _Else ->
                         apply_filter(Conditions, Table, TxId)
                 end,
-            ResultToList = case is_list(FilteredResult) of
-                               false -> sets:to_list(FilteredResult);
-                               true -> FilteredResult
-                           end,
+            ResultToList =
+                case is_list(FilteredResult) of
+                    false -> sets:to_list(FilteredResult);
+                    true -> FilteredResult
+                end,
 
             {ok, apply_projection(ProjectionCols, ResultToList)}
     end.
@@ -205,7 +206,7 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
             lists:foldl(fun(Record, Acc) ->
                 %lager:info("Record: ~p", [Record]),
                 ColValue =
-                    case table_utils:get_column(ConditionCol, Record) of
+                    case record_utils:get_column(ConditionCol, Record) of
                         undefined ->
                             case table_utils:is_foreign_key(ConditionCol, Table) of
                                 true ->
@@ -251,7 +252,7 @@ filter_objects(Condition, Table, Objects, TxId) ->
 filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
     Find = lists:filter(fun(Attr) ->
         ?ATTRIBUTE(ColName, CRDT, Val) = Attr,
-        Column == ColName andalso Predicate(table_utils:record_value(CRDT, Val))
+        Column == ColName andalso Predicate(crdt_utils:convert_value(CRDT, Val))
     end, Object),
 
     case Find of
@@ -295,7 +296,7 @@ get_shadow_columns(Table, RecordsData, TxId) ->
     NewRecordsData = lists:foldl(fun(ForeignKey, Acc) ->
         ?FK(FkName, _FkType, _RefTableName, _RefColName, _DeleteRule) = ForeignKey,
         lists:map(fun(RecordData) ->
-            case table_utils:get_column({FkName, ?SHADOW_COL_ENTRY_DT}, RecordData) of
+            case record_utils:get_column({FkName, ?SHADOW_COL_ENTRY_DT}, RecordData) of
                 undefined ->
                     FkState = table_utils:shadow_column_state(TableName, ForeignKey, RecordData, TxId),
                     NewEntry = ?ATTRIBUTE(FkName, ?SHADOW_COL_ENTRY_DT, FkState),
@@ -342,7 +343,7 @@ apply_projection(Projection, Object) ->
 
 apply_projection(Projection, [Object | Objs], Acc) ->
     FilteredObj = lists:foldl(fun(Col, ObjAcc) ->
-        case table_utils:get_column(Col, Object) of
+        case record_utils:get_column(Col, Object) of
             ?ATTRIBUTE(Col, _Type, _Value) = Attr -> lists:append(ObjAcc, [Attr]);
             undefined ->
                 ErrorMsg = io_lib:format("Invalid projection column: ~p", [Col]),
@@ -373,7 +374,7 @@ prepare_records(Columns, Table, Records) ->
 prepare_records0(BCounterCols, [Record | Records], Acc) ->
     NewBCounter = ?CRDT_BCOUNTER_INT:new(),
     NewObj = lists:foldl(fun({BCounterName, _, _}, AccRecord) ->
-        case table_utils:get_column(BCounterName, AccRecord) of
+        case record_utils:get_column(BCounterName, AccRecord) of
             undefined ->
                 lists:append(AccRecord, [?ATTRIBUTE(BCounterName, ?CRDT_BCOUNTER_INT, NewBCounter)]);
             _Else ->
@@ -386,9 +387,9 @@ prepare_records0(BCounterCols, [Record | Records], Acc) ->
 prepare_records0(_, [], Acc) -> Acc.
 
 read_records(PKey, TableName, TxId) ->
-    table_utils:record_data(PKey, TableName, TxId).
+    record_utils:record_data(PKey, TableName, TxId).
 read_records(Key, TxId) ->
-    table_utils:record_data(Key, TxId).
+    record_utils:record_data(Key, TxId).
 
 read_columns_from_args(?FUNCTION(FuncName, Args), Table) ->
     TableName = table_utils:table(Table),

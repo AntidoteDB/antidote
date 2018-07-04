@@ -337,15 +337,15 @@ fill_index(ObjUpdate, Transaction) ->
                 %Records = table_utils:record_data(PIndexObject, TableName, Transaction), TODO old
 
                 IdxUpds = lists:map(fun(ObjKey) ->
-                    case table_utils:record_data(ObjKey, Transaction) of
+                    case record_utils:record_data(ObjKey, Transaction) of
                         [] -> [];
                         [Record] ->
-                            PkValue = querying_utils:to_atom(table_utils:lookup_value(PrimaryKey, Record)),
-                            ?ATTRIBUTE(_ColName, Type, Value) = table_utils:get_column(IndexedColumn, Record),
+                            PkValue = querying_utils:to_atom(record_utils:lookup_value(PrimaryKey, Record)),
+                            ?ATTRIBUTE(_ColName, Type, Value) = record_utils:get_column(IndexedColumn, Record),
                             case is_element(Value, PkValue, SIndexObject) of
                                 true -> [];
                                 false ->
-                                    Op = table_utils:to_insert_op(Type, Value), %% generate an op according to Type
+                                    Op = crdt_utils:to_insert_op(Type, Value), %% generate an op according to Type
                                     %?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {PkValue, Op}) TODO old
                                     ?INDEX_UPDATE(TableName, IndexName, {Value, Type}, {ObjKey, Op})
                             end

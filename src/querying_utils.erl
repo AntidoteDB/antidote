@@ -109,11 +109,15 @@ read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
     read_crdts(value, Reads).
 
-write_keys(Updates, TxId) ->
-    cure:update_objects(Updates, TxId).
+write_keys(Updates, TxId) when is_list(Updates) ->
+    cure:update_objects(Updates, TxId);
+write_keys(Update, TxId) when is_tuple(Update) ->
+    write_keys([Update], TxId).
 
-write_keys(Updates) ->
-    cure:update_objects(ignore, [], Updates).
+write_keys(Updates) when is_list(Updates) ->
+    cure:update_objects(ignore, [], Updates);
+write_keys(Update) when is_tuple(Update) ->
+    write_keys([Update]).
 
 start_transaction() ->
     cure:start_transaction(ignore, []).
