@@ -32,6 +32,8 @@
 -export([at_init_testsuite/0,
          pmap/2,
          connect_cluster/1,
+         connect_to_dc/2,
+         disconnect_from_dc/2,
          get_node_name/1,
          restart_nodes/2,
          partition_cluster/2,
@@ -242,7 +244,7 @@ join_cluster(Nodes) ->
 connect_cluster(Nodes) ->
    lager:info("Connect dcs ~p", [Nodes]),
    Descriptors = [descriptor(Node) || Node <- Nodes],
-   [ok = connect_to_dcs('127.0.0.1', pb_ports(Node), Descriptors) || Node <- Nodes].
+   [ok = connect_to_dcs(Descriptors, Node) || Node <- Nodes].
 
 descriptor(Node) ->
   Address = '127.0.0.1',
@@ -301,7 +303,9 @@ create_dc_pb(Address, Port, Nodes) ->
   Response.
 
 %% Connect DC in Address/Port to other DCs given by their Descriptors
-connect_to_dcs(Address, Port, Descriptors) ->
+connect_to_dcs(Descriptors, Node) ->
+    Address = '127.0.0.1',
+    Port = pb_ports(Node),
     {ok, Pid} = antidotec_pb_socket:start(Address, Port),
     Request = antidote_pb_codec:encode(connect_to_dcs, Descriptors),
     Result = antidotec_pb_socket:call_infinity(Pid, {req, Request, ?TIMEOUT}),
@@ -320,6 +324,19 @@ connect_to_dcs(Address, Port, Descriptors) ->
     end,
     _Disconnected = antidotec_pb_socket:stop(Pid),
     Response.
+
+%% MyDC stops getting update from RemoteDc.
+disconnect_from_dc(RemoteDC, MyDC) ->
+  Address = '127.0.0.1',
+  Port = pb_ports(RemoteDC),
+  {ok, DescriptorBinary} = get_connection_descriptor(Address, Port),
+  ok = rpc:call(MyDC, inter_dc_manager, forget_dcs, [[binary_to_term(DescriptorBinary)]]).
+%% MyDC starts getting update from RemoteDc.
+connect_to_dc(RemoteDC, MyDC) ->
+  Address = '127.0.0.1',
+  Port = pb_ports(RemoteDC),
+  {ok, Descriptor} = get_connection_descriptor(Address, Port),
+  connect_to_dcs([Descriptor], MyDC).
 
 %% Get the DC descriptor to be given to other DCs
 get_connection_descriptor(Address, Port) ->

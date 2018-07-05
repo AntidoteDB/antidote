@@ -34,7 +34,8 @@
 -export([simple_replication_test/1,
          multiple_keys_test/1,
          causality_test/1,
-         atomicity_test/1
+         atomicity_test/1,
+         recovery_test/1
          ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -72,7 +73,8 @@ end_per_testcase(Name, _) ->
 all() -> [simple_replication_test,
          multiple_keys_test,
          causality_test,
-         atomicity_test].
+         atomicity_test,
+         recovery_test].
 
 simple_replication_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
@@ -182,6 +184,40 @@ atomicity_test(Config) ->
             pass
     end.
 
+%% Check if replicas can recover missing updates after a disconnection
+recovery_test(Config) ->
+  Clusters = proplists:get_value(clusters, Config),
+  [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+  Key = recovery_test,
+  Type =  antidote_crdt_counter_pn,
+  NumUpdate = 100,
+
+  %% Fill up the log files.
+  % lists:foreach(fun(_Num) ->
+  %                     update_counters(Node1, [Key], [1], ignore, static)
+  %               end,
+  %               lists:seq(1, 60000)),
+  % timer:sleep(5000), %% give time to sync
+
+  %% Node2 stops getting updates from Node1
+  test_utils:disconnect_from_dc(Node1, Node2),
+  %% Perform updates on Node1
+  lists:foreach(fun(_Num) ->
+                      update_counters(Node1, [Key], [1], ignore, static)
+                end,
+                lists:seq(1,NumUpdate)),
+
+  %% Make sure that the nodes were disconnected.
+  check_read_key(Node2, Key, Type, 0, ignore, static),
+  %%reconnect node1 and Node2
+  test_utils:connect_to_dc(Node1, Node2),
+
+  {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
+  check_read_key(Node1, Key, Type, NumUpdate + 1, CommitTime, static),
+  %% read from Node2. Node2 must eventually get all updates.
+  check_read_key(Node2, Key, Type, NumUpdate + 1, CommitTime, static, 180000). %% Timeout 1 min
+
+
 atomic_write_txn(Node, Key1, Key2, Key3, _Type) ->
     update_counters(Node, [Key1, Key2, Key3], [1, 1, 1], ignore, static).
 
@@ -199,16 +235,19 @@ atomic_read_txn(Node, Key1, Key2, Key3, Type) ->
     R1.
 
 check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
-    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
+    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId, 60000). %%Default timeout 1 min.
 
-check_read(Node, Objects, Expected, Clock, TxId) ->
+check_read_key(Node, Key, Type, Expected, Clock, TxId, Timeout) ->
+    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId, Timeout).
+
+check_read(Node, Objects, Expected, Clock, TxId, Timeout) ->
     case TxId of
         static ->
-            {ok, Res, CT} = rpc:call(Node, antidote, read_objects, [Clock, [], Objects]),
+            {ok, Res, CT} = rpc:call(Node, antidote, read_objects, [Clock, [], Objects], Timeout),
             ?assertEqual(Expected, Res),
             {ok, Res, CT};
         _ ->
-            {ok, Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId]),
+            {ok, Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId], Timeout),
             ?assertEqual(Expected, Res),
             {ok, Res}
     end.
