@@ -35,7 +35,7 @@
 -define(LOG_UTIL, log_utilities).
 -endif.
 
--define(CRDT_INDEX, antidote_crdt_index_go).
+-define(CRDT_INDEX, antidote_crdt_index).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
 -define(INVALID_OP_MSG(Operation, CRDT), io_lib:format("The operation ~p is not part of the ~p specification", [Operation, CRDT])).
