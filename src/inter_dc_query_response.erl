@@ -101,13 +101,30 @@ get_entries_internal(Partition, From, To) ->
   %% We can remove this once the read_log_range is reimplemented.
   lists:filter(fun inter_dc_txn:is_local/1, Txns).
 
+
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
--spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#log_record{}].
 log_read_range(Partition, Node, From, To) ->
-  {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
-  OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
-  filter_operations(OpList, From, To).
+  log_read_range(Partition, Node, From, To, [], start).
+-spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#log_record{}].
+log_read_range(Partition, Node, From, To, OpsRead, NextChunk) ->
+  ReadChunk = logging_vnode:read_chunk({Partition, Node}, [Partition], NextChunk),
+  case ReadChunk of
+    {error, Reason} ->
+      lager:critical("Could not read operations from log ~p", Reason),
+      []; %return empty list
+    {Continuation, RawOpList} ->
+      OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
+      FilteredOpsChunk = filter_operations(OpList, From, To),
+      %%TODO: If the filter_operations also checks for local dcid we can stop as soon as 
+      %% we read the record with opnumber = TO, because the operations are ordered by op_number.local.
+      FilteredOps = OpsRead ++ FilteredOpsChunk,
+      case Continuation of
+        eof ->  FilteredOps; %return the ops
+        _ ->  %read more
+            log_read_range(Partition, Node, From, To, FilteredOps, Continuation)
+      end
+    end.
 
 -spec filter_operations([#log_record{}], log_opid(), log_opid()) -> [#log_record{}].
 filter_operations(Ops, Min, Max) ->
