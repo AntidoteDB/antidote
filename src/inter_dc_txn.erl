@@ -86,7 +86,7 @@ ops_by_type(#interdc_txn{log_records = Ops}, Type) ->
 -spec to_bin(#interdc_txn{}) -> binary().
 to_bin(Txn = #interdc_txn{partition = P}) ->
   Prefix = partition_to_bin(P),
-  Msg = term_to_binary(Txn),
+  Msg = term_to_binary(Txn, [{compressed, 6}]),
   <<Prefix/binary, Msg/binary>>.
 
 -spec from_bin(binary()) -> #interdc_txn{}.

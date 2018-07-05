@@ -18,19 +18,18 @@
 %%
 %% -------------------------------------------------------------------
 
-%% InterDC publisher - holds a ZeroMQ PUB socket and makes it available for Antidote processes.
+%% InterDC publisher - holds a connection to RabbitMQ and makes it available for Antidote processes.
 %% This vnode is used to publish interDC transactions.
 
 -module(inter_dc_pub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("amqp_client/include/amqp_client.hrl").
 
 %% API
 -export([
-  broadcast/1,
-  get_address/0,
-  get_address_list/0]).
+  broadcast/1]).
 
 %% Server methods
 -export([
@@ -43,42 +42,14 @@
   code_change/3]).
 
 %% State
--record(state, {socket}). %% socket :: erlzmq_socket()
+-record(state, {connection, channel}). %% connection :: amqp_connection, channel :: amqp_channel
 
 %%%% API --------------------------------------------------------------------+
 
--spec get_address() -> socket_address().
-get_address() ->
-  %% first try resolving our hostname according to the node name
-  [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-  Ip = case inet:getaddr(Hostname, inet) of
-    {ok, HostIp} -> HostIp;
-    {error, _} ->
-      %% cannot resolve hostname locally, fall back to interface ip
-      %% TODO check if we do not return a link-local address
-      {ok, List} = inet:getif(),
-      {IIp, _, _} = hd(List),
-      IIp
-  end,
-  Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-  {Ip, Port}.
-
--spec get_address_list() -> [socket_address()].
-get_address_list() ->
-    {ok, List} = inet:getif(),
-    List1 = [Ip1 || {Ip1, _, _} <- List],
-    %% get host name from node name
-    [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-    IpList = case inet:getaddr(Hostname, inet) of
-      {ok, HostIp} -> [HostIp|List1];
-      {error, _} -> List1
-    end,
-    Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-    [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
-
 -spec broadcast(#interdc_txn{}) -> ok.
-broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
+broadcast(Txn = #interdc_txn{partition = P}) ->
+  RoutingKey = list_to_binary(io_lib:format("P~p", [P])),
+  case catch gen_server:call(?MODULE, {publish, RoutingKey, term_to_binary(Txn, [{compressed, 6}])}) of
     {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
@@ -88,14 +59,29 @@ broadcast(Txn) ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  lager:info("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+  Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
+  lager:info("Connecting to RabbitMQ on host ~p", [Host]),
+  case amqp_connection:start(#amqp_params_network{host=Host}) of
+    {ok, Connection} ->
+      {ok, Channel} = amqp_connection:open_channel(Connection),
+      amqp_channel:call(Channel, #'exchange.declare'{exchange = <<"transactions">>,
+                                                      type = <<"direct">>}),
+      lager:info("Publisher started"),
+      {ok, #state{connection = Connection, channel = Channel}};
+    {error, Error} ->
+      lager:error("Error connecting to RabbitMQ: ~p", [Error]),
+      {error, Error}
+  end.
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+handle_call({publish, Partition, Message}, _From, State) -> {reply, amqp_channel:cast(State#state.channel, #'basic.publish'{
+                                                                                                              exchange = <<"transactions">>,
+                                                                                                              routing_key = Partition
+                                                                                                            },
+                                                                                                            #amqp_msg{payload = Message}), State}.
 
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+terminate(_Reason, State) ->
+  amqp_channel:close(State#state.channel),
+  amqp_connection:close(State#state.connection).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

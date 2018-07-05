@@ -15,6 +15,7 @@
 -define(NUM_R, 2).
 -define(DEFAULT_PUBSUB_PORT, 8086).
 -define(DEFAULT_LOGREADER_PORT, 8085).
+-define(DEFAULT_RABBITMQ_HOST, "localhost").
 
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects

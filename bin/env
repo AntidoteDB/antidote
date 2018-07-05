@@ -30,6 +30,11 @@ if [ -z "$METRICS_PORT" ]; then
   export METRICS_PORT=3001
 fi
 
+# RabbitMQ host.
+if [ -z "$RABBITMQ_HOST" ]; then
+  export RABBITMQ_HOST="localhost"
+fi
+
 # Ring State directory.
 if [ -z "$RING_STATE_DIR" ]; then
   export RING_STATE_DIR="data/ring"

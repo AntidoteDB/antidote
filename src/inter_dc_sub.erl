@@ -18,19 +18,14 @@
 %%
 %% -------------------------------------------------------------------
 
-%% InterDC subscriber - connects to remote PUB sockets and listens to a defined subset of messages.
-%% The messages are filter based on a binary prefix.
+%% InterDC subscriber - connects to RabbitMQ and listens to a defined subset of messages.
+%% The messages are filter based on the routing key.
 
 -module(inter_dc_sub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
-
-%% API
--export([
-  add_dc/2,
-  del_dc/1
-]).
+-include_lib("amqp_client/include/amqp_client.hrl").
 
 %% Server methods
 -export([
@@ -45,93 +40,57 @@
 
 %% State
 -record(state, {
-  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()) % DCID -> socket
+  connection, %% amqp_connection
+  channel %% amqp_channel
 }).
-
-%%%% API --------------------------------------------------------------------+
-
-%% TODO: persist added DCs in case of a node failure, reconnect on node restart.
--spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}, ?COMM_TIMEOUT).
-
--spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new()}}.
+init([]) ->
+    Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
+    lager:info("Connecting to RabbitMQ on host ~p", [Host]),
+    case amqp_connection:start(#amqp_params_network{host=Host}) of
+        {ok, Connection} ->
+            {ok, Channel} = amqp_connection:open_channel(Connection),
+            amqp_channel:call(Channel, #'exchange.declare'{exchange = <<"transactions">>,
+                                                            type = <<"direct">>}),
+            #'queue.declare_ok'{queue = Queue} =
+                amqp_channel:call(Channel, #'queue.declare'{exclusive = true}),
+            lists:foreach(fun(P) ->
+                            RoutingKey = list_to_binary(io_lib:format("P~p", [P])),
+                            lager:info("Subscribing to routing key ~p", [RoutingKey]),
+                            amqp_channel:call(Channel, #'queue.bind'{exchange = <<"transactions">>,
+                                                                    routing_key = RoutingKey,
+                                                                    queue = Queue})
+                        end, dc_utilities:get_my_partitions()),
+            amqp_channel:subscribe(Channel, #'basic.consume'{queue = Queue}, self()),
+            receive
+                #'basic.consume_ok'{} ->
 
-handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
-    %% First delete the DC if it is alread connected
-    {_, State} = del_dc(DCID, OldState),
-    case connect_to_nodes(Publishers, []) of
-        {ok, Sockets} ->
-            %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
-            %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
-            {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
-        connection_error ->
-            {reply, error, State}
-    end;
+                    lager:info("Subscriber started"),
+                    {ok, #state{connection = Connection, channel = Channel}}
+            end;
+        {error, Error} ->
+            lager:error("Error connecting to RabbitMQ: ~p", [Error]),
+            {error, Error}
+    end.
 
-handle_call({del_dc, DCID}, _From, State) ->
-    {Resp, NewState} = del_dc(DCID, State),
-    {reply, Resp, NewState}.
+handle_call(_Request, _From, Ctx) ->
+    {reply, not_implemented, Ctx}.
 
 %% handle an incoming interDC transaction from a remote node.
-handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
+handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload = BinaryMsg}}, State) ->
   %% decode the message
-  Msg = inter_dc_txn:from_bin(BinaryMsg),
+  Msg = binary_to_term(BinaryMsg),
   %% deliver the message to an appropriate vnode
   ok = inter_dc_sub_vnode:deliver_txn(Msg),
+  amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag}),
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
-  F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
-  lists:foreach(F, dict:to_list(State#state.sockets)).
+  amqp_channel:close(State#state.channel),
+  amqp_connection:close(State#state.connection).
 
-del_dc(DCID, State) ->
-    case dict:find(DCID, State#state.sockets) of
-        {ok, Sockets} ->
-            lists:foreach(fun zmq_utils:close_socket/1, Sockets),
-            {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
-        error ->
-            {ok, State}
-    end.
-
-connect_to_nodes([], Acc) ->
-    {ok, Acc};
-connect_to_nodes([Node|Rest], Acc) ->
-    case connect_to_node(Node) of
-        {ok, Socket} ->
-            connect_to_nodes(Rest, [Socket|Acc]);
-        connection_error ->
-            lists:foreach(fun zmq_utils:close_socket/1, Acc),
-            connection_error
-    end.
-
-connect_to_node([]) ->
-    lager:error("Unable to subscribe to DC"),
-    connection_error;
-connect_to_node([Address|Rest]) ->
-    %% Test the connection
-    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
-    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
-    ok = zmq_utils:sub_filter(Socket1, <<>>),
-    Res = erlzmq:recv(Socket1),
-    ok = zmq_utils:close_socket(Socket1),
-    case Res of
-        {ok, _} ->
-            %% Create a subscriber socket for the specified DC
-            Socket = zmq_utils:create_connect_socket(sub, true, Address),
-            %% For each partition in the current node:
-            lists:foreach(fun(P) ->
-                              %% Make the socket subscribe to messages prefixed with the given partition number
-                              ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
-                          end, dc_utilities:get_my_partitions()),
-            {ok, Socket};
-        _ ->
-            connect_to_node(Rest)
-    end.

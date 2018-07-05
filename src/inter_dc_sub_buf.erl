@@ -42,7 +42,7 @@ new_state(PDCID) ->
     state_name = normal,
     pdcid = PDCID,
     last_observed_opid = init,
-    queue = queue:new(),
+    queue = [],
     logging_enabled = EnableLogging
   }.
 
@@ -69,13 +69,14 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
-  push(Txn, State);
+  process_queue(push(Txn, State));
 
+% old stuff when requesting out-of-order packages instead of relying on the at-leat-once guarantee of RabbitMQ
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
   ok = lists:foreach(fun deliver/1, Txns),
-  NewLast = case queue:peek(Queue) of
-    empty -> State#inter_dc_sub_buf.last_observed_opid;
-    {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
+  NewLast = case Queue of
+    [] -> State#inter_dc_sub_buf.last_observed_opid;
+    [Txn|_Rest] -> Txn#interdc_txn.prev_log_opid#op_number.local
   end,
   NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
   process_queue(NewState);
@@ -87,10 +88,10 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal})
 
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
-  case queue:peek(Queue) of
-    empty -> State#inter_dc_sub_buf{state_name = normal};
-    {value, Txn} ->
+process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last}) ->
+  case Queue of
+    [] -> State#inter_dc_sub_buf{state_name = normal};
+    [Txn|Rest] ->
       TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
       case cmp(TxnLast, Last) of
 
@@ -98,56 +99,71 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
         eq ->
           deliver(Txn),
           Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-          process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
+          process_queue(State#inter_dc_sub_buf{queue = Rest, last_observed_opid = Max});
 
       %% If the transaction seems to come after an unknown transaction, ask the remote origin log
         gt ->
-        case EnableLogging of
-          true ->
-            lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-                  [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
-            try
-              case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
-                ok ->
-                  State#inter_dc_sub_buf{state_name = buffering};
-                _  ->
-                  lager:warning("Failed to send log query to DC, will retry on next ping message"),
-                  State#inter_dc_sub_buf{state_name = normal}
-              end
-            catch
-              _:_ ->
-                  lager:warning("Failed to send log query to DC, will retry on next ping message"),
-                  State#inter_dc_sub_buf{state_name = normal}
-            end;
-          false -> %% we deliver the transaction as we can't ask anything to the remote log
-                         %% as logging to disk is disabled.
-                    deliver(Txn),
-                    Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-                    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max})
-        end;
+          State#inter_dc_sub_buf{state_name = buffering};
+        % case EnableLogging of
+        %   true ->
+        %     lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+        %           [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
+        %     try
+        %       case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
+        %         ok ->
+        %           State#inter_dc_sub_buf{state_name = buffering};
+        %         _  ->
+        %           lager:warning("Failed to send log query to DC, will retry on next ping message"),
+        %           State#inter_dc_sub_buf{state_name = normal}
+        %       end
+        %     catch
+        %       _:_ ->
+        %           lager:warning("Failed to send log query to DC, will retry on next ping message"),
+        %           State#inter_dc_sub_buf{state_name = normal}
+        %     end;
+        %   false -> %% we deliver the transaction as we can't ask anything to the remote log
+        %                  %% as logging to disk is disabled.
+        %             deliver(Txn),
+        %             Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
+        %             process_queue(State#inter_dc_sub_buf{queue = Rest, last_observed_opid = Max})
+        % end;
 
       %% If the transaction has an old value, drop it.
         lt ->
             lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
-            process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
+            process_queue(State#inter_dc_sub_buf{queue = Rest})
       end
   end.
 
 -spec deliver(#interdc_txn{}) -> ok.
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 
-%% TODO: consider dropping messages if the queue grows too large.
-%% The lost messages would be then fetched again by the log_reader.
+%% Collect messages in case they are reordered by RabbitMQ.
 -spec push(#interdc_txn{}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
-push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_sub_buf.queue)}.
+push(Txn, State) -> State#inter_dc_sub_buf{queue = insert_txn(Txn, State#inter_dc_sub_buf.queue)}.
+
+-spec insert_txn(#interdc_txn{},[#interdc_txn{}]) -> [#interdc_txn{}].
+insert_txn(Txn, []) ->
+  [Txn];
+insert_txn(Txn, Q = [H|T]) ->
+  OpNrTop = H#interdc_txn.prev_log_opid#op_number.local,
+  OpNrNew = Txn#interdc_txn.prev_log_opid#op_number.local,
+  case cmp(OpNrNew, OpNrTop) of
+    eq ->
+      Q;
+    gt ->
+      [H|insert_txn(Txn, T)];
+    lt ->
+      [Txn, H|T]
+  end.
 
 %% Instructs the log reader to ask the remote DC for a given range of operations.
 %% Instead of a simple request/response with blocking, the result is delivered
 %% asynchronously to inter_dc_sub_vnode.
--spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
-query({DCID, Partition}, From, To) ->
-    BinaryRequest = term_to_binary({read_log, Partition, From, To}),
-    inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
+% -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
+% query({DCID, Partition}, From, To) ->
+%     BinaryRequest = term_to_binary({read_log, Partition, From, To}, [{compressed, 6}]),
+%     inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
 
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;
