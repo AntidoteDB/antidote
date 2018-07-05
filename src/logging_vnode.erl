@@ -44,7 +44,7 @@
          append_group/4,
          asyn_append_group/4,
          asyn_read_from/3,
-         read_from/3,
+         read_chunk/3,
          get_up_to_time/5,
          get_from_time/5,
            get_range/6,
@@ -98,11 +98,16 @@ asyn_read_from(Preflist, Log, From) ->
                                    {fsm, undefined, self()},
                                    ?LOGGING_MASTER).
 
-%% @doc synchronous read_from operation
--spec read_from({partition(), node()}, log_id(), op_id()) -> {ok, [term()]} | {error, term()}.
-read_from(Node, LogId, From) ->
+%% @doc synchronous read_chunk operation
+%% The read returns operations in blocks and the reference to the start of the
+%% next block to be used in the next read request.
+%% Usage:
+%%      {Next1, Ops1} = read_chunk(Node, LogId, start),
+%%      {Next2, Ops2} = read_chunk(Node, LogId, Next),
+-spec read_chunk({partition(), node()}, log_id(), start | disk_log:continuation()) -> {disk_log:continuation(), [term()]} | {error, term()}.
+read_chunk(Node, LogId, From) ->
     riak_core_vnode_master:sync_command(Node,
-                                        {read_from, LogId, From},
+                                        {read_chunk, LogId, From},
                                         ?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
@@ -338,31 +343,22 @@ handle_command({read, LogId}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-%% @doc Threshold read command: Returns the operations logged for Key
-%%      from a specified op_id-based threshold.
-%%
-%%      Input:  From: the oldest op_id to return
-%%              LogId: Identifies the log to be read
-%%      Output: {vnode_id, Operations} | {error, Reason}
-%%
-handle_command({read_from, LogId, _From}, _Sender,
-               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
+%% @doc Reads the operations in the log in blocks.
+%% Returns a reference from where the next block can be read.
+handle_command({read_chunk, LogId, From}, _Sender,
+               #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
             %% TODO should continue reading with the continuation??
             {Continuation, Ops} =
-                case disk_log:chunk(Log, Lastread) of
+                case disk_log:chunk(Log, From) of
                     {error, Reason} -> {error, Reason};
                     {C, O} -> {C, O};
                     {C, O, _} -> {C, O};
                     eof -> {eof, []}
                 end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
+             {reply, {Continuation, Ops}, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
