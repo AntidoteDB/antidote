@@ -59,12 +59,10 @@ get_column({ColumnName, CRDT}, Record) ->
         Entry -> Entry
     end;
 get_column(ColumnName, Record) ->
-    Aux = lists:dropwhile(fun(?ATTRIBUTE(Column, _Type, _Value)) ->
-        Column /= ColumnName end, Record),
-    case Aux of
-        [] -> undefined;
-        [Col | _] -> Col
-    end.
+    querying_utils:first_occurrence(
+        fun(?ATTRIBUTE(Column, _Type, _Value)) ->
+            Column == ColumnName
+        end, Record).
 
 lookup_value(_ColumnName, []) -> [];
 lookup_value({ColumnName, CRDT}, Record) ->

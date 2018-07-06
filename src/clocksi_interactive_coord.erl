@@ -818,10 +818,7 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
                 AccState#coord_state{return_accumulator = Err};
 
             {UpdatedPartitions, ClientOps, NumOfUpds} ->
-                %lager:info("UpdatedPartitions: ~p", [UpdatedPartitions]),
-                %lager:info("ClientOps: ~p", [ClientOps]),
                 NumToRead = AccState#coord_state.num_to_read,
-                %lager:info("NumOfUpds: ~p", [NumOfUpds]),
                 AccState#coord_state{
                     client_ops=ClientOps,
                     num_to_read=NumToRead + NumOfUpds,
@@ -837,7 +834,6 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
     ),
 
     LoggingState = NewCoordState#coord_state{from=Sender},
-    %lager:info("Update objects: ~p", [UpdateOps]),
 
     case LoggingState#coord_state.num_to_read > 0 of
         true ->
@@ -1032,7 +1028,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
     {Key, Type, Update} = Op,
 
     %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, Transaction) of
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, {Transaction, InternalReadSet}) of
         {error, Reason} ->
             lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};

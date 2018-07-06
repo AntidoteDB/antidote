@@ -119,6 +119,9 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
 %%
 %%    {ok, ObjUpdate}.
 
+%% The 'Transaction' object passed here is a tuple on the form
+%% {TxId, ReadSet} that represents a transaction id and a transaction
+%% read set, respectively.
 index_update_hook(Update, Transaction) when is_tuple(Update) ->
     {{Key, Bucket}, Type, Param} = Update,
     case generate_index_updates(Key, Type, Bucket, Param, Transaction) of
@@ -159,11 +162,11 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
             %lager:info("Is a record update: ~p", [ObjUpdate]),
 
             Table = table_utils:table_metadata(Bucket, Transaction),
-            TableName = table_utils:table(Table),
             case Table of
                 undefined -> [];
                 _Else ->
                     % A table exists
+                    TableName = table_utils:table(Table),
 
                     PIdxName = generate_pindex_key(TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
@@ -313,7 +316,7 @@ retrieve_index(ObjUpdate) ->
 is_element(IndexedVal, Pk, IndexObj) ->
     case orddict:find(IndexedVal, IndexObj) of
         {ok, Pks} ->
-            lists:dropwhile(fun({K, _T, _B}) -> K /= Pk end, Pks) /= [];
+            querying_utils:first_occurrence(fun({K, _T, _B}) -> K == Pk end, Pks) =/= undefined;
             %ordsets:is_element(Pk, Pks);
         error -> false
     end.

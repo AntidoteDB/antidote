@@ -79,7 +79,7 @@ lookup_range(Key, Ranges) ->
 
 to_predicate({?RANGE(nil, infinity, nil, infinity), Expected}) ->
     {ignore, fun(V) -> not lists:member(V, Expected) end};
-to_predicate({?RANGE_EQ(Val), Expected}) ->
+to_predicate({?RANGE(greatereq, Val, lessereq, Val), Expected}) ->
     Equality = fun(V) -> V == Val end,
     Inequality = fun(V) -> not lists:member(V, Expected) end,
     {Equality, Inequality};
@@ -173,12 +173,12 @@ to_readable_bound(_, infinity) -> {nil, infinity};
 to_readable_bound({BType, Bound}, Val) ->
     {to_cond(BType, Bound), Val}.
 
-intersects(?RANGE_EQ(Val) = Range1, {Range2, Expected}) ->
+intersects(?RANGE_EQ(Val) = Range1, {Range2, Excluded}) ->
     %io:format(">> intersects 1:~n", []),
     %io:format("~p~n", [Range1]),
     %io:format("~p~n", [Range2]),
     %io:format("~p~n", [Expected]),
-    not lists:member(Val, Expected) and intersects_ranges(Range1, Range2);
+    not lists:member(Val, Excluded) and intersects_ranges(Range1, Range2);
 intersects(Range1, {Range2, _Excluded}) ->
     %io:format(">> intersects 2:~n", []),
     %io:format("~p~n", [Range1]),

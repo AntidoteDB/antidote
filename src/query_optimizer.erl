@@ -36,6 +36,7 @@
 
 -define(FUNCTION(Name, Params), {func, Name, Params}).
 -define(COLUMN(Name), {col, Name}).
+-define(DISJUNCTION(Conditions), {disjunction, Conditions}).
 
 %% API
 -export([query_filter/2,
@@ -100,6 +101,7 @@ conditions(Filter) ->
 apply_filter(Conditions, Table, TxId) ->
     case is_disjunction(Conditions) of
         true ->
+            ?DISJUNCTION(Conjunctions) = Conditions,
             lists:foldl(fun(Conjunction, FinalRes) ->
                 {RemainConds, PartialRes} = read_subqueries(Conjunction, Table, TxId, [], nil),
                 PartialResult = read_remaining(RemainConds, Table, PartialRes, TxId),
@@ -107,7 +109,7 @@ apply_filter(Conditions, Table, TxId) ->
                 ResultSet = sets:from_list(PartialResult),
                 %io:format("ResultSet: ~p~n", [ResultSet]),
                 sets:union(FinalRes, ResultSet)
-            end, sets:new(), Conditions);
+            end, sets:new(), Conjunctions);
         false ->
             throw("The current condition is not valid")
     end.
@@ -130,11 +132,12 @@ read_subqueries([Cond | Tail], Table, TxId, RemainConds, PartialRes) ->
     read_subqueries(Tail, Table, TxId, lists:append(RemainConds, [Cond]), PartialRes);
 read_subqueries([], _Table, _TxId, RemainConds, nil) ->
     {RemainConds, nil};
-read_subqueries([], Table, TxId, RemainConds, PartialRes) ->
-    AddFks = get_shadow_columns(Table, sets:to_list(PartialRes), TxId),
-    {RemainConds, AddFks}.
+read_subqueries([], _Table, _TxId, RemainConds, PartialRes) ->
+    %AddFks = get_shadow_columns(Table, sets:to_list(PartialRes), TxId),
+    {RemainConds, sets:to_list(PartialRes)}.
 
 read_remaining(_Conditions, _Table, [], _TxId) -> [];
+read_remaining([], _Table, CurrentData, _TxId) -> CurrentData;
 read_remaining(Conditions, Table, CurrentData, TxId) ->
     %TableName = table_utils:table(Table),
     RangeQueries = range_queries:get_range_query(Conditions),
@@ -155,7 +158,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                     case LeastKeys of
                         nil ->
                             ObjsData = iterate_ranges(RangeQueries, Table, TxId),
-                            get_shadow_columns(Table, ObjsData, TxId);
+                            %get_shadow_columns(Table, ObjsData, TxId);
+                            ObjsData;
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
                             % Objects = read_records(KeyList, TableName, TxId), TODO old
@@ -168,7 +172,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                                 filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
                             end, PreparedObjs, Remain),
 
-                            get_shadow_columns(Table, ObjsData, TxId)
+                            %get_shadow_columns(Table, ObjsData, TxId)
+                            ObjsData
                     end;
                 CurrentData ->
                     iterate_ranges(RangeQueries, Table, CurrentData, TxId)
@@ -199,27 +204,34 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
             %lager:info("{FuncName, Args}: ~p", [?FUNCTION(FuncName, Args)]),
             %lager:info("Table: ~p", [Table]),
             %% TODO This assumes that a function can only reference one column. Support more in the future.
-            {_, [{ColPos, ConditionCol}]} = read_columns_from_args(Func, Table),
+            TableName = table_utils:table(Table),
+            AllCols = table_utils:all_column_names(Table),
+            %{_, FuncCols} = read_columns_from_args(Func, Table),
 
             %lager:info("ConditionCol: ~p", [ConditionCol]),
 
             lists:foldl(fun(Record, Acc) ->
                 %lager:info("Record: ~p", [Record]),
-                ColValue =
-                    case record_utils:get_column(ConditionCol, Record) of
-                        undefined ->
-                            case table_utils:is_foreign_key(ConditionCol, Table) of
-                                true ->
-                                    ShCol = shadow_column_spec(ConditionCol, Table),
-                                    table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
-                                _ -> undefined
-                            end;
-                        ?ATTRIBUTE(_C, _T, V) -> V
-                    end,
+                %  [{ColPos, ConditionCol}]
+                ReplaceArgs = replace_columns_in_args(?FUNCTION(FuncName, Args), TableName, AllCols, Record),
 
+%%                    lists:foldl(fun({ColPos, ConditionCol}) ->
+%%                    ColValue =
+%%                        case record_utils:get_column(ConditionCol, Record) of
+%%                            undefined ->
+%%                                case table_utils:is_foreign_key(ConditionCol, Table) of
+%%                                    true ->
+%%                                        ShCol = shadow_column_spec(ConditionCol, Table),
+%%                                        table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
+%%                                    _ -> undefined
+%%                                end;
+%%                            ?ATTRIBUTE(_C, _T, V) -> V
+%%                        end,
+%%                    querying_utils:replace(ColPos, ColValue, Args)
+%%                end, Args, FuncCols),
                 %lager:info("ColValue: ~p", [ColValue]),
 
-                ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
+                %ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
                 Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
                 %lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
                 case Predicate(Result) of
@@ -250,13 +262,14 @@ filter_objects(Condition, Table, Objects, TxId) ->
     filter_objects({Column, Predicate}, Table, Objects, TxId).
 
 filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
-    Find = lists:filter(fun(Attr) ->
-        ?ATTRIBUTE(ColName, CRDT, Val) = Attr,
-        Column == ColName andalso Predicate(crdt_utils:convert_value(CRDT, Val))
-    end, Object),
+    Find = querying_utils:first_occurrence(
+        fun(?ATTRIBUTE(ColName, CRDT, Val)) ->
+            ConvVal = crdt_utils:convert_value(CRDT, Val),
+            Column == ColName andalso Predicate(ConvVal)
+        end, Object),
 
     case Find of
-        [] -> filter_objects(Column, Predicate, Objs, TxId, Acc);
+        undefined -> filter_objects(Column, Predicate, Objs, TxId, Acc);
         _Else -> filter_objects(Column, Predicate, Objs, TxId, lists:append(Acc, [Object]))
     end;
 filter_objects(_Column, _Predicate, [], _TxId, Acc) ->
@@ -288,34 +301,37 @@ find_index_by_attribute(Attribute, IndexList) when is_list(IndexList) ->
      end, [], IndexList);
 find_index_by_attribute(_Attribute, _Idx) -> [].
 
-get_shadow_columns(_Table, [], _TxId) -> [];
-get_shadow_columns(Table, RecordsData, TxId) ->
-    TableName = table_utils:table(Table),
-    ForeignKeys = table_utils:foreign_keys(Table),
+%%get_shadow_columns(_Table, [], _TxId) -> [];
+%%get_shadow_columns(Table, RecordsData, TxId) ->
+%%    TableName = table_utils:table(Table),
+%%    ForeignKeys = table_utils:foreign_keys(Table),
+%%
+%%    NewRecordsData = lists:foldl(fun(ForeignKey, Acc) ->
+%%        ?FK(FkName, _FkType, _RefTableName, _RefColName, _DeleteRule) = ForeignKey,
+%%        lists:map(fun(RecordData) ->
+%%            case record_utils:get_column({FkName, ?SHADOW_COL_ENTRY_DT}, RecordData) of
+%%                undefined ->
+%%                    FkState = table_utils:shadow_column_state(TableName, ForeignKey, RecordData, TxId),
+%%                    NewEntry = ?ATTRIBUTE(FkName, ?SHADOW_COL_ENTRY_DT, FkState),
+%%                    lists:append(RecordData, [NewEntry]);
+%%                _Else ->
+%%                    RecordData
+%%            end
+%%        end, Acc)
+%%    end, RecordsData, ForeignKeys),
+%%
+%%    NewRecordsData.
 
-    NewRecordsData = lists:foldl(fun(ForeignKey, Acc) ->
-        ?FK(FkName, _FkType, _RefTableName, _RefColName, _DeleteRule) = ForeignKey,
-        lists:map(fun(RecordData) ->
-            case record_utils:get_column({FkName, ?SHADOW_COL_ENTRY_DT}, RecordData) of
-                undefined ->
-                    FkState = table_utils:shadow_column_state(TableName, ForeignKey, RecordData, TxId),
-                    NewEntry = ?ATTRIBUTE(FkName, ?SHADOW_COL_ENTRY_DT, FkState),
-                    lists:append(RecordData, [NewEntry]);
-                _Else ->
-                    RecordData
-            end
-        end, Acc)
-    end, RecordsData, ForeignKeys),
-
-    NewRecordsData.
-
-shadow_column_spec(FkName, Table) ->
-    ForeignKeys = table_utils:foreign_keys(Table),
-    Search = lists:dropwhile(fun(?FK(Name, _Type, _RefTableName, _RefColName, _DeleteRule)) -> FkName /= Name end, ForeignKeys),
-    case Search of
-        [] -> none;
-        [Result | _] -> Result
-    end.
+%%shadow_column_spec(FkName, Table) ->
+%%    ForeignKeys = table_utils:foreign_keys(Table),
+%%    Search = querying_utils:first_occurrence(
+%%        fun(?FK(Name, _Type, _RefTName, _RefColName, _DeleteRule)) ->
+%%            FkName == Name
+%%        end, ForeignKeys),
+%%    case Search of
+%%        undefined -> none;
+%%        Result -> Result
+%%    end.
 
 validate_projection(?WILDCARD, Columns) ->
     {ok, Columns};
@@ -391,29 +407,36 @@ read_records(PKey, TableName, TxId) ->
 read_records(Key, TxId) ->
     record_utils:record_data(Key, TxId).
 
-read_columns_from_args(?FUNCTION(FuncName, Args), Table) ->
-    TableName = table_utils:table(Table),
-    AllCols = table_utils:all_column_names(Table),
-    lists:foldl(fun(Arg, Acc) ->
-        {Pos, Cols} = Acc,
-        case is_column(Arg) of
-            true ->
-                ?COLUMN(ColName) = Arg,
-                case lists:member(ColName, AllCols) of
-                    true ->
-                        {Pos + 1, lists:append(Cols, [{Pos, ColName}])};
-                    false ->
-                        ErrorMsg =
-                            io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FuncName, TableName]),
-                        throw(lists:flatten(ErrorMsg))
-                end;
-            false ->
-                {Pos + 1, Cols}
-        end
-   end, {0, []}, Args).
+replace_columns_in_args(?FUNCTION(FuncName, Args), TName, TCols, Record) ->
+    replace_columns_in_args(FuncName, Args, TName, TCols, Record, []).
 
-is_disjunction(Query) ->
-    querying_utils:is_list_of_lists(Query).
+replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) when is_list(Arg) ->
+    NewArg = replace_columns_in_args(?FUNCTION(FName, Arg), TName, TCols, Record),
+    replace_columns_in_args(FName, Args, TName, TCols, Record, lists:append(AccArgs, [NewArg]));
+replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) ->
+    NewArg = case is_column(Arg) of
+                 true ->
+                     ?COLUMN(ColName) = Arg,
+                     case lists:member(ColName, TCols) of
+                         true ->
+                             ?ATTRIBUTE(_C, _T, ColValue) = record_utils:get_column(ColName, Record),
+                             lists:append(AccArgs, [ColValue]);
+                         false ->
+                             ErrorMsg =
+                                 io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FName, TName]),
+                             throw(lists:flatten(ErrorMsg))
+                     end;
+                 false ->
+                     lists:append(AccArgs, [Arg])
+             end,
+    replace_columns_in_args(FName, Args, TName, TCols, Record, NewArg);
+replace_columns_in_args(_FName, [], _TName, _TCols, _Record, Acc) ->
+    Acc.
+
+is_disjunction(?DISJUNCTION(_)) ->
+    %querying_utils:is_list_of_lists(Query).
+    true;
+is_disjunction(_) -> false.
 
 is_func(?FUNCTION(_Name, _Params)) -> true;
 is_func(_) -> false.

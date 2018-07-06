@@ -40,7 +40,7 @@
 -define(REMOVE_WINS, remove).
 
 %% API
--export([exec/2, find_last/3, assert_visibility/3, is_function/1]).
+-export([exec/2, find_last/3, assert_visibility/4, is_function/1]).
 
 %% This function receives a function name and its parameters, and computes
 %% the result of applying the parameters to the function.
@@ -60,6 +60,15 @@ find_last(Values, List, _TxId) when is_list(Values) andalso is_list(List) ->
     [First | Tail] = Values,
     find_last0(First, Tail, List);
 find_last(Value, _List, _TxId) -> Value.
+
+assert_visibility(State, Rule, Versions, TxId) ->
+    find_last(State, Rule, ignore) =/= d andalso
+        check_versions(Versions, TxId).
+
+check_versions([[Version, TName] | Versions], TxId) ->
+    assert_visibility(Version, TName, TxId) andalso
+        check_versions(Versions, TxId);
+check_versions([], _TxId) -> true.
 
 assert_visibility({Key, Version}, TableName, TxId) ->
     KeyAtom = querying_utils:to_atom(Key),

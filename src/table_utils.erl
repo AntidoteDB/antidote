@@ -99,12 +99,12 @@ is_column(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(C
     lists:member(ColumnName, ColList).
 
 is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
-    Aux = lists:dropwhile(fun(?FK(FkName, _FkType, _RefTable, _RefCol, _DelRule)) ->
-        ColumnName /= FkName end, FKeys),
-    case Aux of
-        [] -> false;
-        [_Col | _] -> true
-    end.
+    Aux = querying_utils:first_occurrence(
+        fun(?FK(FkName, _FkType, _RefTable, _RefCol, _DelRule)) ->
+            ColumnName == FkName
+        end, FKeys),
+
+    Aux =/= undefined.
 
 % RecordData represents a single record, i.e. a list of tuples on the form:
 % {{col_name, datatype}, value}
