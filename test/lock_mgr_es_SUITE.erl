@@ -70,13 +70,13 @@ init_per_suite(Config) ->
     [{nodes, Clusters}|Config].
 
 end_per_suite(Config) ->
-                                                %application:stop(lager),
     Config.
 
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [
@@ -93,15 +93,15 @@ all() -> [
          asynchronous_test_4,
          asynchronous_test_5,
          a_lot_of_locks_per_transaction_1,
-         a_lot_of_locks_per_transaction_2 %,
-         %cluster_failure_test_1,
-         %cluster_failure_test_2
+         a_lot_of_locks_per_transaction_2,
+         cluster_failure_test_1,
+         cluster_failure_test_2
         ].
 
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used
 %% locks, do some updates and then releases them when the transaction is committed
 simple_transaction_tests_with_locks(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
@@ -132,7 +132,7 @@ simple_transaction_tests_with_locks(Config) ->
 
 %% test if after a transaction released some lock another transaction on the same node can aquire them
 locks_in_sequence_check(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
@@ -140,7 +140,7 @@ locks_in_sequence_check(Config) ->
     {_,{using,[],Used_Keys}} = lists:keyfind(TxId,1,Lock_Info1),
     ?assertEqual(length(Keys),length(Used_Keys)),
     ?assertEqual([],Keys--Used_Keys),
-    {error,{error,[{TxId,Missing_Keys}]}} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    {error,{error,{[{TxId,Missing_Keys}],[]}}} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     ?assertEqual(length(Keys),length(Missing_Keys)),
     ?assertEqual([],Keys -- Missing_Keys),
     Type = antidote_crdt_counter_pn,
@@ -169,7 +169,7 @@ locks_in_sequence_check(Config) ->
 %% starts a transaction on the leading node aquiring some lock.
 %% Tests if transactions of other nodes can not acquire a subset of these keys
 locks_required_by_another_transaction(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -181,7 +181,7 @@ locks_required_by_another_transaction(Config) ->
     ?assertEqual(length(Keys),length(Used_Keys)),
     ?assertEqual([],Keys--Used_Keys),
     % Test if transaction requiring the used keys can not start a transaction
-    {error,{error,[{TxId,Missing_Keys0}]}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    {error,{error,{[{TxId,Missing_Keys0}],[]}}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {error,{error,{[],Missing_Keys2}}} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,[hd(tl(Keys))]}]]),%TODO Error in testcase -- lock_mgr_es says ok instead of an error....
     {error,{error,{[],Missing_Keys3}}} = rpc:call(Node4, antidote, start_transaction, [ignore, [{exclusive_locks,tl(Keys)}]]),
     ?assertEqual(length(Keys),length(Missing_Keys0)),
@@ -197,7 +197,7 @@ locks_required_by_another_transaction(Config) ->
 %% Tests if lock acquisition in multiple dcs of the same locks can propperly acquire 
 %% them and the lock_mgr_es manages the lock data as intendet.
 lock_acquisition_test(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Keys = [lock21, lock22, lock23, lock24],
@@ -232,7 +232,7 @@ lock_acquisition_test(Config) ->
     ok.
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_1(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -264,7 +264,7 @@ get_lock_owned_by_other_dc_1(Config) ->
     ok.
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_2(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -290,7 +290,7 @@ helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
     end.
 %% Tests if a multi value register allways has the correct value when it is updated on multiple dcs using locks
 multi_value_register_test(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
@@ -337,7 +337,7 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
 %% Let 3 processes asynchronously increment the same counter each 100times while using a lock to restrict the access.
 %% 30 ms delay between increments
 asynchronous_test_1(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -360,7 +360,6 @@ asynchronous_test_1(Config) ->
         {done,Node3,3,Clocks3} ->
             _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    %lager:info("asynchronous_test_1 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -378,7 +377,7 @@ asynchronous_test_1(Config) ->
 %% Let 3 processes asynchronously increment the same counter 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_2(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -401,7 +400,6 @@ asynchronous_test_2(Config) ->
         {done,Node3,3,Clocks3} ->
             _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    %lager:info("asynchronous_test_2 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -433,7 +431,7 @@ asynchronous_test_helper(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 30 ms delay between increments
 asynchronous_test_3(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -456,7 +454,6 @@ asynchronous_test_3(Config) ->
         {done,Node3,3,Clocks3} ->
             _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    %lager:info("asynchronous_test_3 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -474,7 +471,7 @@ asynchronous_test_3(Config) ->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_4(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -497,7 +494,6 @@ asynchronous_test_4(Config) ->
         {done,Node3,3,Clocks3} ->
             _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end,
-    %lager:info("asynchronous_test_4 Clock_Locks : ~w",[Clocks_Locks_3]),
     {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
     {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
@@ -535,7 +531,7 @@ asynchronous_test_helper2(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 
 %% Runs asynchronous_test_1-4 in parallel
 asynchronous_test_5(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -600,7 +596,6 @@ helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},_Info) ->
         {done,Node3,Id3,Clocks3} ->
             _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
     end.
-    %lager:info("~w Clock_Locks : ~w",[Info,Clocks_Locks_3]).
 
 
 
@@ -626,7 +621,7 @@ helper_check_result2(Node,Keys,Object,Value) ->
 
 %% Asynchronously starts transactions on all DCs that require the same 100 locks each.
 a_lot_of_locks_per_transaction_1(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -644,7 +639,7 @@ a_lot_of_locks_per_transaction_1(Config) ->
 
 %% Asynchronously starts transactions on all DCs that require the same 500 locks each.  Remark 1000 timouted the gen_server call "get_locks" to lock_mgr_es an a personal pc
 a_lot_of_locks_per_transaction_2(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -674,7 +669,7 @@ generate_lock_helper(Amount,String,List) ->
 %% Starts a transactin that aquires a lock on one node. Then this node is killed and restarted.
 %% Then another transaction is started on another Node using the same lock.
 cluster_failure_test_1(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -688,10 +683,11 @@ cluster_failure_test_1(Config) ->
             %% Kill a node
             ct:print("Killing node ~w", [Node3]),
             [Node3] = test_utils:brutal_kill_nodes([Node3]),
-            %timer:sleep(10000), % since the brutal kill command is someties delayed ...
+            timer:sleep(10000), % since the brutal kill command is someties delayed ...
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node3]),
             [Node3] = test_utils:restart_nodes([Node3], Config),
+            timer:sleep(10000),
             {ok,TxId2} = helper_start_transaction(Keys, Node2, 100),
             {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
     end.
@@ -700,7 +696,7 @@ cluster_failure_test_1(Config) ->
 %% Then another transaction is started on Node2 trying to aquire the same lock.
 %% Then node3 is restarted and a transaction aquiring the lock on node2 is started again.
 cluster_failure_test_2(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
@@ -723,6 +719,7 @@ cluster_failure_test_2(Config) ->
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node3]),
             [Node3] = test_utils:restart_nodes([Node3], Config),
+            timer:sleep(10000),
             {ok,TxId2} = helper_start_transaction(Keys, Node2, 100),
             {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
     end.
@@ -750,7 +747,7 @@ to_string_helper([HD|TL],String)->
 
 %% Tests some internal functions of lock_mgr_es
 some_test(Config) ->
-    lager:info("Start ~w",[?FUNCTION_NAME]),
+    %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),

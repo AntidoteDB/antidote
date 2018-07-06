@@ -32,10 +32,8 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--define(How_LONG_TO_WAIT_FOR_LOCKS,3). % How often a transaction should retry to get the locks before it is aborted
--define(How_LONG_TO_WAIT_FOR_LOCKS_ES,3).
--define(GET_LOCKS_INTERVAL,500).        % How log the transaction waits between retrying to get the locks
--define(GET_LOCKS_INTERVAL_ES,500).
+-include("lock_mgr_es.hrl").
+-include("lock_mgr.hrl").
 -define(LOCK_MGR,mock_partition).
 -define(LOCK_MGR_ES,mock_partition).
 -define(DC_META_UTIL, mock_partition).
@@ -50,10 +48,8 @@
 
 
 -else.
--define(How_LONG_TO_WAIT_FOR_LOCKS,3).  % How often a transaction should retry to get the locks before it is aborted
--define(How_LONG_TO_WAIT_FOR_LOCKS_ES,3).
--define(GET_LOCKS_INTERVAL,500).        % How log the transaction waits between retrying to get the locks
--define(GET_LOCKS_INTERVAL_ES,500).
+-include("lock_mgr_es.hrl").
+-include("lock_mgr.hrl").
 -define(LOCK_MGR,lock_mgr).
 -define(LOCK_MGR_ES,lock_mgr_es).
 -define(DC_META_UTIL, dc_meta_data_utilities).
@@ -308,10 +304,23 @@ init([From, ClientClock, Properties, StayAlive]) ->
     {ok, execute_op, State};
 
 %% @doc Initialize static transaction with Operations.
+%% #Locks
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
     lager:info("clocksi_interactive_coord_22222(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, true, true, Properties),
-    State = start_tx_internal(From, ClientClock, Properties, BaseState),
+
+    Locks = lists:keyfind(locks,1,Properties),
+    Shared_Locks = lists:keyfind(shared_locks,1,Properties),
+    Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
+    State = if
+        ((Locks == false) and (Shared_Locks == false) and (Exclusive_Locks == false)) ->
+            start_tx_internal(From, ClientClock, Properties, BaseState);
+        true ->
+            Locks1 = case Locks of false -> []; {locks,A} -> A end,
+            Shared_Locks1 = case Shared_Locks of false -> []; {shared_locks,B} -> B end,
+            Exclusive_Locks1 = case Exclusive_Locks of false -> []; {exclusive_locks,C} -> C end,
+            start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,Locks1,Shared_Locks1,Exclusive_Locks1)
+    end,
     {ok, execute_op, State#coord_state{operations = Operations, from = From}, [{state_timeout, 0, timeout}]}.
 
 
@@ -416,7 +425,6 @@ start_tx(cast, {start_tx, From, ClientClock, Properties}, State) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, State)};
 
 %% Used by static update and read transactions
-%% TODO start_tx_internal_with_locks if lock are required (if that is necessary for static operations)
 start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, State) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
         State#coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]};
@@ -703,6 +711,7 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     }.
 %% @doc TODO
 %% #Locks
+%% Does the same is start_tx_internal with the addition of requesting the locks,shared_locks and/or exclusive_locks from lock_mgr and lock_mgr_es respectively.
 start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic},Locks,Shared_Locks,Exclusive_Locks) ->
     case create_transaction_record_with_locks(ClientClock, StayAlive, From, false, Properties, Locks,Shared_Locks,Exclusive_Locks) of
         {ok,Transaction,TransactionId} ->
@@ -717,7 +726,6 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
             State#coord_state{transaction = Transaction, num_to_read = 0, properties = Properties, transactionid = TransactionId};
-        % TODO Necessary to send an error message to From, when the lock were not aquired ?
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
             %lager:info("start_tx_internal- {error,Missing_Locks}  Msg Send",[]),
             From ! {error,Missing_Locks},
@@ -813,6 +821,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
+    lager:debug("create_transaction_record_with_locks: Locks: ~p, Shared_Locks: ~p, Exclusive_Locks: ~p", [Locks,Shared_Locks,Exclusive_Locks]),
     case {Locks,Shared_Locks,Exclusive_Locks} of
         {_,[],[]}->
             case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of

@@ -37,7 +37,24 @@
          lock_already_exclusive_test3/1,
          lock_already_shared_test1/1,
          lock_already_shared_test2/1,
-         lock_already_shared_test3/1
+         lock_already_shared_test3/1,
+         lock_shared_and_exclusive_test1/1,
+         lock_shared_and_exclusive_test2/1,
+         lock_shared_and_exclusive_test3/1,
+         lock_shared_and_exclusive_test4/1,
+         lock_acquisition_in_sequence_test1/1,
+         lock_acquisition_in_sequence_test2/1,
+         shared_locks_acquisition_in_sequence_test1/1,
+         shared_locks_acquisition_in_sequence_test2/1,
+         shared_locks_asynchroneous_test1/1,
+         shared_locks_asynchroneous_test2/1,
+         shared_locks_asynchroneous_test3/1,
+         shared_locks_asynchroneous_test4/1
+        ]).
+
+-export([
+        transaction_asynchroneous_helper2/6,
+        transaction_asynchroneous_in_sequence_helper2/8
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -64,7 +81,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [
@@ -75,7 +93,19 @@ all() -> [
          lock_already_exclusive_test3,
          lock_already_shared_test1,
          lock_already_shared_test2,
-         lock_already_shared_test3
+         lock_already_shared_test3,
+         lock_shared_and_exclusive_test1,
+         lock_shared_and_exclusive_test2,
+         lock_shared_and_exclusive_test3,
+         lock_shared_and_exclusive_test4,
+         lock_acquisition_in_sequence_test1,
+         lock_acquisition_in_sequence_test2,
+         shared_locks_acquisition_in_sequence_test1,
+         shared_locks_acquisition_in_sequence_test2,
+         shared_locks_asynchroneous_test1,
+         shared_locks_asynchroneous_test2,
+         shared_locks_asynchroneous_test3,
+         shared_locks_asynchroneous_test4
         ].
 % One dc (leader) tries to get the shared lock of a new lock
 single_dc_sl_test1(Config) ->
@@ -183,3 +213,315 @@ lock_already_shared_test3(Config) ->
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
     false = lists:keyfind(TxId1,1,Lock_Info2).
+
+%One dc (leader) gets the shared and exclusive lock at the same time for one transaction
+lock_shared_and_exclusive_test1(Config)->
+    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Keys =[lock_shared_and_exclusive_test1_key_1],
+    {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys},{exclusive_locks,Keys}]]),
+    Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
+    {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+    % checks if all locks are released
+    Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info2).
+
+%One dc (not leader) gets the shared and exclusive lock at the same time for one transaction
+lock_shared_and_exclusive_test2(Config)->
+    [_Node1,Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Keys =[lock_shared_and_exclusive_test2_key_1],
+    {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys},{exclusive_locks,Keys}]]),
+    Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
+    {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
+    % checks if all locks are released
+    Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info2).
+
+%One dc (leader) gets the shared and exclusive locks with a non empty intersection at the same time for one transaction
+lock_shared_and_exclusive_test3(Config)->
+    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Keys1 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_3,lock_shared_and_exclusive_test3_key_4],
+    Keys2 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_5,lock_shared_and_exclusive_test3_key_6],
+    {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys1},{exclusive_locks,Keys2}]]),
+    Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
+    {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+    % checks if all locks are released
+    Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info2).
+
+%One dc (not leader) gets the shared and exclusive locks with a non empty intersection at the same time for one transaction
+lock_shared_and_exclusive_test4(Config)->
+    [_Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Keys1 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_3,lock_shared_and_exclusive_test3_key_4],
+    Keys2 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_5,lock_shared_and_exclusive_test3_key_6],
+    {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys1},{exclusive_locks,Keys2}]]),
+    Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
+    {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
+    % checks if all locks are released
+    Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    false = lists:keyfind(TxId1,1,Lock_Info2).
+
+%Multiple dcs acquire and release a set of locks in a predefined order
+lock_acquisition_in_sequence_test1(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Exclusive_Locks = [lock_acquisition_in_sequence_test1_key_1,lock_acquisition_in_sequence_test1_key_2,lock_acquisition_in_sequence_test1_key_3,lock_acquisition_in_sequence_test1_key_4,lock_acquisition_in_sequence_test1_key_5],
+    Shared_Locks = [lock_acquisition_in_sequence_test1_key_5,lock_acquisition_in_sequence_test1_key_6,lock_acquisition_in_sequence_test1_key_7,lock_acquisition_in_sequence_test1_key_8],
+    DC_Sequence = [Node2,Node3,Node3,Node2,Node1,Node3,Node1,Node2,Node2,Node3,Node1,Node1,Node2],
+    lists:foreach(fun(Elem)->lock_get_and_release_helper(Elem,Shared_Locks,Exclusive_Locks,0) end,DC_Sequence).
+
+%Multiple dcs acquire and release a changing set of locks in a predefined order
+lock_acquisition_in_sequence_test2(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Exclusive_Locks1 = [lock_acquisition_in_sequence_test2_key_1,lock_acquisition_in_sequence_test2_key_2,lock_acquisition_in_sequence_test2_key_3,lock_acquisition_in_sequence_test2_key_4,lock_acquisition_in_sequence_test2_key_5],
+    Exclusive_Locks2 = [lock_acquisition_in_sequence_test2_key_2,lock_acquisition_in_sequence_test2_key_3],
+    Exclusive_Locks3 = [lock_acquisition_in_sequence_test2_key_1,lock_acquisition_in_sequence_test2_key_4,lock_acquisition_in_sequence_test2_key_5],
+    Shared_Locks1 = [lock_acquisition_in_sequence_test2_key_5,lock_acquisition_in_sequence_test2_key_6,lock_acquisition_in_sequence_test2_key_7,lock_acquisition_in_sequence_test2_key_8],
+    Shared_Locks2 = [lock_acquisition_in_sequence_test2_key_5,lock_acquisition_in_sequence_test2_key_6,lock_acquisition_in_sequence_test2_key_8],
+    Shared_Locks3 = [lock_acquisition_in_sequence_test2_key_6,lock_acquisition_in_sequence_test2_key_7],
+    
+    DC_Sequence = [{Node2,1},{Node3,1},{Node3,2},{Node2,1},{Node1,3},{Node3,3},{Node1,3},{Node2,1},{Node2,2},{Node3,1},{Node1,2},{Node1,3},{Node2,2}],
+    lists:foreach(fun({Node,Locks})-> case Locks of
+                                         1 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks1,Exclusive_Locks1,0);
+                                         2 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks2,Exclusive_Locks2,0);
+                                         3 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks3,Exclusive_Locks3,0)
+                                         end
+                                     end,DC_Sequence).
+
+%Multiple dcs acquire and release a set of shared locks in a predefined order
+shared_locks_acquisition_in_sequence_test1(Config)->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks = [shared_locks_acquisition_in_sequence_test1_key_1,shared_locks_acquisition_in_sequence_test1_key_2,shared_locks_acquisition_in_sequence_test1_key_3,shared_locks_acquisition_in_sequence_test1_key_4],
+    DC_Sequence = [Node2,Node3,Node3,Node2,Node1,Node3,Node1,Node2,Node2,Node3,Node1,Node1,Node2],
+    lists:foreach(fun(Elem)->lock_get_and_release_helper(Elem,Shared_Locks,[],0) end,DC_Sequence).
+
+%Multiple dcs acquire and release a changing set of shared locks in a predefined order
+shared_locks_acquisition_in_sequence_test2(Config)->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks1 = [shared_locks_acquisition_in_sequence_test2_key_1,shared_locks_acquisition_in_sequence_test2_key_2,shared_locks_acquisition_in_sequence_test2_key_3,shared_locks_acquisition_in_sequence_test2_key_4,shared_locks_acquisition_in_sequence_test2_key_5],
+    Shared_Locks2 = [shared_locks_acquisition_in_sequence_test2_key_2,shared_locks_acquisition_in_sequence_test2_key_3,shared_locks_acquisition_in_sequence_test2_key_5],
+    Shared_Locks3 = [shared_locks_acquisition_in_sequence_test2_key_1,shared_locks_acquisition_in_sequence_test2_key_3,shared_locks_acquisition_in_sequence_test2_key_4,shared_locks_acquisition_in_sequence_test2_key_5],
+    DC_Sequence = [{Node2,1},{Node3,1},{Node3,2},{Node2,1},{Node1,3},{Node3,3},{Node1,3},{Node2,1},{Node2,2},{Node3,1},{Node1,2},{Node1,3},{Node2,2}],
+    lists:foreach(fun({Node,Locks})-> case Locks of
+                                         1 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks1,[],0);
+                                         2 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks2,[],0);
+                                         3 ->
+                                            lock_get_and_release_helper(Node,Shared_Locks3,[],0)
+                                         end
+                                     end,DC_Sequence).
+
+%Multiple dcs try to get the same shared locks asynchroneously once
+shared_locks_asynchroneous_test1(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks = [shared_locks_asynchroneous_test1_key_1,shared_locks_asynchroneous_test1_key_2,shared_locks_asynchroneous_test1_key_3,shared_locks_asynchroneous_test1_key_4],
+    transaction_asynchroneous_helper1(Node1, Shared_Locks, [], 0, self(), 1),
+    transaction_asynchroneous_helper1(Node2, Shared_Locks, [], 0, self(), 2),
+    transaction_asynchroneous_helper1(Node3, Shared_Locks, [], 0, self(), 3),
+    ok = transaction_asynchroneous_helper3(1),
+    ok = transaction_asynchroneous_helper3(2),
+    ok = transaction_asynchroneous_helper3(3).
+
+
+
+%Multiple dcs try to get the same shared locks asynchroneously (many times) and increment a counter by 1.
+%Probably fails if "-ifdef(WAIT_FOR_SHARED_LOCKS)." is not true.
+shared_locks_asynchroneous_test2(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks = [shared_locks_asynchroneous_test2_key_1,shared_locks_asynchroneous_test2_key_2,shared_locks_asynchroneous_test2_key_3,shared_locks_asynchroneous_test2_key_4],
+    Key = shared_locks_asynchroneous_test2_counter_key,
+    Type = antidote_crdt_counter_pn,
+    Bucket = antidote_bucket,
+    Object = {Key, Type, Bucket},
+    Update = {Object, increment, 1},
+    {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
+    {ok, [0]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId]),
+    {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,5,Update,self(),11),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,5,Update,self(),22),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,5,Update,self(),33),
+    ok = transaction_asynchroneous_helper3(11),
+    ok = transaction_asynchroneous_helper3(22),
+    ok = transaction_asynchroneous_helper3(33),
+    % Using "Shared_Locks" as exclusive locks to make sure all updates are probagated before reading the value.
+    ok = check_value_helper(Node1,[],Shared_Locks,5,Object,30),
+    ok = check_value_helper(Node2,[],Shared_Locks,5,Object,30),
+    ok = check_value_helper(Node3,[],Shared_Locks,5,Object,30).
+
+
+%Multiple "clients" on Multiple dcs try to get the same shared locks asynchroneously (many times) and increment a counter by 1.
+%Probably fails if "-ifdef(WAIT_FOR_SHARED_LOCKS)." is not true.
+shared_locks_asynchroneous_test3(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks = [shared_locks_asynchroneous_test3_key_1,shared_locks_asynchroneous_test3_key_2,shared_locks_asynchroneous_test3_key_3,shared_locks_asynchroneous_test3_key_4],
+    Key = shared_locks_asynchroneous_test3_counter_key,
+    Type = antidote_crdt_counter_pn,
+    Bucket = antidote_bucket,
+    Object = {Key, Type, Bucket},
+    Update = {Object, increment, 1},
+    {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
+    {ok, [0]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId]),
+    {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,5,Update,self(),110),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,5,Update,self(),220),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,5,Update,self(),330),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,5,Update,self(),111),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,5,Update,self(),221),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,5,Update,self(),331),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,5,Update,self(),112),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,5,Update,self(),222),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,5,Update,self(),332),
+    ok = transaction_asynchroneous_helper3(110),
+    ok = transaction_asynchroneous_helper3(220),
+    ok = transaction_asynchroneous_helper3(330),
+    ok = transaction_asynchroneous_helper3(111),
+    ok = transaction_asynchroneous_helper3(221),
+    ok = transaction_asynchroneous_helper3(331),
+    ok = transaction_asynchroneous_helper3(112),
+    ok = transaction_asynchroneous_helper3(222),
+    ok = transaction_asynchroneous_helper3(332),
+    % Using "Shared_Locks" as exclusive locks to make sure all updates are probagated before reading the value.
+    ok = check_value_helper(Node1,[],Shared_Locks,5,Object,90),
+    ok = check_value_helper(Node2,[],Shared_Locks,5,Object,90),
+    ok = check_value_helper(Node3,[],Shared_Locks,5,Object,90).
+
+
+%Multiple "clients" on Multiple dcs try to get the same shared locks asynchroneously (many times) and increment a counter by 1.
+%In parallell 3 "client" tries to get the exclusive lock.
+%Probably fails if "-ifdef(WAIT_FOR_SHARED_LOCKS)." is not true.
+shared_locks_asynchroneous_test4(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Shared_Locks = [shared_locks_asynchroneous_test4_key_1,shared_locks_asynchroneous_test4_key_2,shared_locks_asynchroneous_test4_key_3,shared_locks_asynchroneous_test4_key_4],
+    Key = shared_locks_asynchroneous_test4_counter_key,
+    Type = antidote_crdt_counter_pn,
+    Bucket = antidote_bucket,
+    Object = {Key, Type, Bucket},
+    Update = {Object, increment, 1},
+    {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
+    {ok, [0]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId]),
+    {ok, _Clock3} = rpc:call(Node2, antidote, commit_transaction, [TxId]),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,15,Update,self(),110),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,15,Update,self(),220),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,15,Update,self(),330),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,Shared_Locks,1,15,Update,self(),440),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,15,Update,self(),111),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,15,Update,self(),221),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,15,Update,self(),331),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,Shared_Locks,1,15,Update,self(),441),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,15,Update,self(),112),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,15,Update,self(),222),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,15,Update,self(),332),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,Shared_Locks,1,15,Update,self(),442),
+    ok = transaction_asynchroneous_helper3(110),
+    ok = transaction_asynchroneous_helper3(220),
+    ok = transaction_asynchroneous_helper3(330),
+    ok = transaction_asynchroneous_helper3(111),
+    ok = transaction_asynchroneous_helper3(221),
+    ok = transaction_asynchroneous_helper3(331),
+    ok = transaction_asynchroneous_helper3(112),
+    ok = transaction_asynchroneous_helper3(222),
+    ok = transaction_asynchroneous_helper3(332),
+    ok = transaction_asynchroneous_helper3(440),
+    ok = transaction_asynchroneous_helper3(441),
+    ok = transaction_asynchroneous_helper3(442),
+    % Using "Shared_Locks" as exclusive locks to make sure all updates are probagated before reading the value.
+    ok = check_value_helper(Node1,[],Shared_Locks,5,Object,93),
+    ok = check_value_helper(Node2,[],Shared_Locks,5,Object,93),
+    ok = check_value_helper(Node3,[],Shared_Locks,5,Object,93).
+
+
+
+
+
+
+
+% Tries to start a transaction requesting the specified locks and stops the transaction then.
+% If the transaction start failed it will retry it "Retries" times.
+lock_get_and_release_helper(Node,Shared_Locks,Exclusive_Locks,Retries) when (Retries =< 0) ->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId1}->
+            {ok, _Clock} = rpc:call(Node, antidote, commit_transaction, [TxId1]);
+        {error,_} ->
+            {error,lock_get_and_release_helper}
+    end;
+lock_get_and_release_helper(Node,Shared_Locks,Exclusive_Locks,Retries) ->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId1}->
+            {ok, _Clock} = rpc:call(Node, antidote, commit_transaction, [TxId1]);
+        {error,_} ->
+            lock_get_and_release_helper(Node,Shared_Locks,Exclusive_Locks,Retries-1)
+    end.
+
+% Spawns an asynchroneous process that starts a transaction and stops the transaction and sends a message to the caller containing the id.
+% If the transaction start failed  it will retry it "Retries" times.
+transaction_asynchroneous_helper1(Node,Shared_Locks,Exclusive_Locks,Retries,Caller,Id)->
+    spawn(lock_mgr_es_2_SUITE,transaction_asynchroneous_helper2,[Node,Shared_Locks,Exclusive_Locks,Retries,Caller,Id]).
+
+transaction_asynchroneous_helper2(Node,Shared_Locks,Exclusive_Locks,Retries,Caller,Id) when (Retries =< 0)->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId1}->
+            {ok, _Clock} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+            Caller ! {ok,Id};
+        {error,_} ->
+            {error,transaction_asynchroneous_helper2,Id}
+    end;
+transaction_asynchroneous_helper2(Node,Shared_Locks,Exclusive_Locks,Retries,Caller,Id)->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId1}->
+            {ok, _Clock} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+            Caller ! {ok,Id};
+        {error,_} ->
+            transaction_asynchroneous_helper2(Node,Shared_Locks,Exclusive_Locks,Retries-1,Caller,Id)
+    end.
+transaction_asynchroneous_helper3(Id)->
+    receive 
+        {ok,Id}->ok;
+        {error,Error_Msg,Id} -> {error,Error_Msg}
+    end.
+% Asynchroneously starts a transaction on Node requesting the specified locks. Then it directly commits that transactions.
+% This is done "Repetitions" times.
+% If a transaction start failed it is retried "Retries_Per_Transaction" times.
+transaction_asynchroneous_in_sequence_helper1(Node,Shared_Locks,Exclusive_Locks,Repetitions,Retries_Per_Transaction,Update,Caller,Id)->
+    spawn(lock_mgr_es_2_SUITE,transaction_asynchroneous_in_sequence_helper2,[Node,Shared_Locks,Exclusive_Locks,Repetitions,Retries_Per_Transaction,Update,Caller,Id]).
+transaction_asynchroneous_in_sequence_helper2(_,_,_,0,_,_,Caller,Id)->
+    Caller ! {ok,Id};
+transaction_asynchroneous_in_sequence_helper2(Node,Shared_Locks,Exclusive_Locks,Repetitions,Retries_Per_Transaction,Update,Caller,Id)->
+    case transaction_asynchroneous_in_sequence_helper3(Node,Shared_Locks,Exclusive_Locks,Retries_Per_Transaction,Update) of
+        ok ->
+            transaction_asynchroneous_in_sequence_helper2(Node,Shared_Locks,Exclusive_Locks,Repetitions-1,Retries_Per_Transaction,Update,Caller,Id);
+        {error,transaction_asynchroneous_in_sequence_helper3}->
+            Caller ! {error,transaction_asynchroneous_in_sequence_helper2,Id}
+    end.
+transaction_asynchroneous_in_sequence_helper3(_,_,_,0,_)->
+    {error,transaction_asynchroneous_in_sequence_helper3};
+transaction_asynchroneous_in_sequence_helper3(Node,Shared_Locks,Exclusive_Locks,Retries_Per_Transaction,Update)->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId}->
+            ok = rpc:call(Node, antidote, update_objects, [[Update],TxId]),
+            {ok, _Clock3} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+            ok;
+        {error,_}->
+            transaction_asynchroneous_in_sequence_helper3(Node,Shared_Locks,Exclusive_Locks,Retries_Per_Transaction-1,Update)
+    end.
+check_value_helper(_,_,_,0,_,_)->
+    {error,check_value_helper};
+check_value_helper(Node,Shared_Locks,Exclusive_Locks,Retries,Object,Value)->
+    case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
+        {ok,TxId}->
+            {ok, [Val1]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
+            ?assertEqual(Value, Val1),
+            {ok, _Clock3} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+            ok;
+        {error,_}->
+            check_value_helper(Node,Shared_Locks,Exclusive_Locks,Retries-1,Object,Value)
+    end.
+
+
+
+

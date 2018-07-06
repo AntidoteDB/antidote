@@ -18,9 +18,9 @@
 % dc_meta_data_utilities -This module is mainly used to get the dc_id of this and the other DCs
 % -------
 % Additional information:
-% Used leader election strategy - The leader is chosen based on the order of dc_ids
-% Deadlock prevention strategy - Deadlocks are prevented by prioritizing DCs according to the
-%   order of dc_ids.
+% Used leader election strategy -   The leader is chosen based on the order of dc_ids
+% Deadlock prevention strategy -    Deadlocks are prevented by prioritizing DCs according to the
+%                                   order of dc_ids.
 
 
 
@@ -60,6 +60,7 @@
         am_i_leader/0
 ]).
 
+-include("lock_mgr.hrl").
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -ifdef(TEST).
@@ -74,10 +75,6 @@
 %% dets_ref: dets table storing received and send locks [{lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}}}]
 -record(state, {local_locks,lock_requests, transfer_timer,dets_ref}).
 -define(LOG_UTIL, log_utilities).
--define(DATA_TYPE, antidote_crdt_counter_b).
--define(LOCK_REQUEST_TIMEOUT, 1000000).     % Locks requested by other DCs ( in microseconds -- 1 000 000 equals 1 second)
--define(LOCK_REQUIRED_TIMEOUT,500000).     % Locks requested by transactions of this DC (in microseconds -- 1 000 000 equals 1 second)
--define(LOCK_TRANSFER_FREQUENCY,1000).
 %-define(DETS_FILE_NAME, "lock_mgr_persistant_storage_"++ atom_to_list(element(1,dc_meta_data_utilities:get_my_dc_id()))++ "_" ++lists:concat(tuple_to_list(element(2,dc_meta_data_utilities:get_my_dc_id())))).
 -define(DETS_FILE_NAME, filename:join(app_helper:get_env(riak_core, platform_data_dir),"lock_mgr_persistant_storage_"++ atom_to_list(element(1,dc_meta_data_utilities:get_my_dc_id())))).
 -define(DETS_SETTINGS, [{access, read_write},{auto_save, 180000},{estimated_no_objects, 256},{file, ?DETS_FILE_NAME},
@@ -628,10 +625,10 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
     Clear_Local_Locks = remove_old_required_locks(Local_Locks,?LOCK_REQUIRED_TIMEOUT),
     %lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
     % goes through all lock reuests. If the request is NOT in local_locks then the lock is send to the requesting DC
-    orddict:fold(
-        fun(DCID,Lock_Timestamp_List,ok)->
-            orddict:fold(
-                fun(Lock, _Timestamp,ok) ->
+    Updated_Lock_Requests = orddict:fold(
+        fun(DCID,Lock_Timestamp_List,Changed_Lock_Requests)->
+            Updated_Key_Value_List = orddict:fold(
+                fun(Lock, Timestamp,New_Key_Value_List) ->
                 In_Use = orddict:fold(
                     fun(_TxId,Value2,AccIn) ->
                         case Value2 of
@@ -643,16 +640,26 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                 case In_Use of
                     false ->
                         % lock is currently NOT used and therefore may be send to another DC
-                        % TODO also remove the corresponding lock request from the lock request list.
-                        send_lock(Lock,DCID);
+                        send_lock(Lock,DCID),
+                        New_Key_Value_List;
                     true ->
-                        ok
+                        orddict:store(Lock,Timestamp,New_Key_Value_List)
                         
                 end
-            end,ok,Lock_Timestamp_List)
-        end, ok,Clean_Lock_Requests),
+            end,orddict:new(),Lock_Timestamp_List),
+            case Updated_Key_Value_List of
+                [] ->
+                    Changed_Lock_Requests;
+                _ ->
+                    orddict:store(DCID,Updated_Key_Value_List,Changed_Lock_Requests)
+            end
+        end, orddict:new(),Clean_Lock_Requests),
     NewTimer=erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
-    {noreply, State#state{transfer_timer= NewTimer,local_locks=Clear_Local_Locks}}.
+    New_Lock_Requests_Value = case ?REDUCED_INTER_DC_COMMUNICATION of
+        true -> Updated_Lock_Requests;
+        false -> Clean_Lock_Requests
+    end,
+    {noreply, State#state{transfer_timer= NewTimer,local_locks=Clear_Local_Locks,lock_requests=New_Lock_Requests_Value}}.
 
 
 terminate(_Reason, _State) ->
