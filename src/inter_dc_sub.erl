@@ -81,19 +81,20 @@ handle_call(_Request, _From, Ctx) ->
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload = BinaryMsg}}, State) ->
-  %% decode the message
-  Msg = binary_to_term(BinaryMsg),
-  LocalDCId = dc_utilities:get_my_dc_id(),
-  case Msg#interdc_txn.dcid of
+    %% decode the message
+    Msg = binary_to_term(BinaryMsg),
+    LocalDCId = dc_utilities:get_my_dc_id(),
+    case Msg#interdc_txn.dcid of
     LocalDCId ->
         % ignore own messages
-        {noreply, State};
+        done;
     _ ->
         %% deliver the message to an appropriate vnode
         ok = inter_dc_sub_vnode:deliver_txn(Msg),
-        amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag}),
-        {noreply, State}
-  end.
+        done
+    end,
+    amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag}),
+    {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
