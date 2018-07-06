@@ -1,0 +1,12 @@
+% Parameters the lock_mgr can be modified with.
+-define(LOCK_REQUEST_TIMEOUT, 1000000).     % Locks requested by other DCs ( in microseconds -- 1 000 000 equals 1 second)
+                                            % Defines how long a DC stores a remote lock request to send the lock to that remote DC when it has the lock and can send it
+-define(LOCK_REQUIRED_TIMEOUT,500000).     % Locks requested by transactions of this DC (in microseconds -- 1 000 000 equals 1 second)
+                                            % Defines how long a DC stores a lock request of a transaction started on that DC to get the requested locks from other DCs
+-define(LOCK_TRANSFER_FREQUENCY,1000).       % Sets how long lock_mgr waits between each time it sends requested locks to other DCs (in milliseconds -- 1 000 equals 1second)
+-define(REDUCED_INTER_DC_COMMUNICATION,false).% true - Reduces the communication of lock_mgr_es with each other by answering to a lock request at most once.
+                                            % false - Improves performance of lock_mgr_es if bandwidth/inter_dc_communication is not the bottleneck
+
+% Parameters the clocksi_interactive_coord - lock_mgr_es interaction can be modified with.
+-define(How_LONG_TO_WAIT_FOR_LOCKS,3).   % Defines how often a transaction should retry to get the locks before it is aborted
+-define(GET_LOCKS_INTERVAL,500).         % Defines how long a transaction waits between retrying to get the locks
