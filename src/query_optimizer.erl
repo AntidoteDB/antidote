@@ -34,10 +34,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(FUNCTION(Name, Params), {func, Name, Params}).
--define(COLUMN(Name), {col, Name}).
--define(DISJUNCTION(Conditions), {disjunction, Conditions}).
-
 %% API
 -export([query_filter/2,
          get_partial_object/2,
@@ -99,7 +95,7 @@ conditions(Filter) ->
 %% Internal functions
 %% ====================================================================
 apply_filter(Conditions, Table, TxId) ->
-    case is_disjunction(Conditions) of
+    case ?is_disjunction(Conditions) of
         true ->
             ?DISJUNCTION(Conjunctions) = Conditions,
             lists:foldl(fun(Conjunction, FinalRes) ->
@@ -166,11 +162,17 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             Objects = read_records(KeyList, TxId),
                             PreparedObjs = prepare_records(table_utils:column_names(Table), Table, Objects),
 
-                            ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
-                                GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
-                                FilterFun = read_predicate(GetRange),
-                                filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
-                            end, PreparedObjs, Remain),
+                            RemainRanges = dict:filter(fun(Column, _Range) ->
+                                lists:member(Column, Remain)
+                            end, RangeQueries),
+
+                            ObjsData = iterate_ranges(RemainRanges, Table, PreparedObjs, TxId),
+
+                            %ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
+                            %    GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
+                            %    FilterFun = read_predicate(GetRange),
+                            %    filter_objects({RemainCol, FilterFun}, Table, AccObjs, TxId)
+                            %end, PreparedObjs, Remain),
 
                             %get_shadow_columns(Table, ObjsData, TxId)
                             ObjsData
@@ -190,104 +192,117 @@ iterate_ranges(RangeQueries, Table, TxId) ->
     iterate_ranges(RangeQueries, Table, PreparedData, TxId).
 
 iterate_ranges(RangeQueries, Table, Data, TxId) ->
-    dict:fold(fun(Column, Range, AccObjs) ->
+    %dict:fold(fun(Column, Range, AccObjs) ->
+    %    FilterFun = read_predicate(Range),
+    %    filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
+    %end, Data, RangeQueries).
+    Predicates = dict:fold(fun(Column, Range, FunList) ->
         FilterFun = read_predicate(Range),
-        filter_objects({Column, FilterFun}, Table, AccObjs, TxId)
-    end, Data, RangeQueries).
+        Fun = fun(Record) ->
+                satisfies_predicate({Column, FilterFun}, Table, Record, TxId)
+              end,
+        lists:append(FunList, [Fun])
+    end, [], RangeQueries),
+    OnePredicate = fun(Record) ->
+        lists:foldl(fun(F, Acc) -> Acc andalso F(Record) end, true, Predicates)
+        end,
+
+    lists:foldl(fun(Record, Acc) ->
+        case OnePredicate(Record) of
+            true -> lists:append(Acc, [Record]);
+            false -> Acc
+        end
+    end, [], Data).
+
+satisfies_predicate(_, _, [], _) ->
+    false;
+satisfies_predicate({Column, Predicate}, Table, Record, TxId) ->
+    case ?is_function(Column) of
+        true ->
+            record_utils:satisfies_function({Column, Predicate}, Table, Record, TxId);
+        false ->
+            record_utils:satisfies_predicate(Column, Predicate, Record)
+    end.
 
 %% Restriction: only functions are allowed to access foreign key states
-function_filtering({Func, Predicate}, Table, Records, TxId) ->
-    ?FUNCTION(FuncName, Args) = Func,
-    TableName = table_utils:table(Table),
-    case builtin_functions:is_function({FuncName, Args}) of
-        true ->
-            %lager:info("{FuncName, Args}: ~p", [?FUNCTION(FuncName, Args)]),
-            %lager:info("Table: ~p", [Table]),
-            %% TODO This assumes that a function can only reference one column. Support more in the future.
-            TableName = table_utils:table(Table),
-            AllCols = table_utils:all_column_names(Table),
-            %{_, FuncCols} = read_columns_from_args(Func, Table),
+%function_filtering({Func, Predicate}, Table, Records, TxId) ->
+%    lists:foldl(fun(Record, Acc) ->
+%        case record_utils:satisfies_function({Func, Predicate}, Table, Record, TxId) of
+%            true ->
+%                lists:append(Acc, [Record]);
+%            false ->
+%                Acc
+%        end
+%    end, [], Records);
 
-            %lager:info("ConditionCol: ~p", [ConditionCol]),
+%%    ?FUNCTION(FuncName, Args) = Func,
+%%    case builtin_functions:is_function({FuncName, Args}) of
+%%        true ->
+%%            %lager:info("{FuncName, Args}: ~p", [?FUNCTION(FuncName, Args)]),
+%%            %lager:info("Table: ~p", [Table]),
+%%            %% TODO This assumes that a function can only reference one column. Support more in the future.
+%%            TableName = table_utils:table(Table),
+%%            AllCols = table_utils:all_column_names(Table),
+%%
+%%            %lager:info("ConditionCol: ~p", [ConditionCol]),
+%%
+%%            lists:foldl(fun(Record, Acc) ->
+%%                %lager:info("Record: ~p", [Record]),
+%%                ReplaceArgs = replace_columns_in_args(?FUNCTION(FuncName, Args), TableName, AllCols, Record),
+%%
+%%                Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
+%%                %lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
+%%                case Predicate(Result) of
+%%                    true ->
+%%                        lists:append(Acc, [Record]);
+%%                    false ->
+%%                        Acc
+%%                end
+%%            end, [], Records);
+%%        false ->
+%%            ErrorMsg = io_lib:format("Invalid function: ~p", [Func]),
+%%            throw(lists:flatten(ErrorMsg))
+%%    end;
+%function_filtering(Condition, Table, Records, TxId) ->
+%    ?CONDITION(Func, {Op, _}, Value) = Condition,
+%    Predicate = comp_to_predicate(Op, querying_utils:to_atom(Value)),
+%    function_filtering({Func, Predicate}, Table, Records, TxId).
 
-            lists:foldl(fun(Record, Acc) ->
-                %lager:info("Record: ~p", [Record]),
-                %  [{ColPos, ConditionCol}]
-                ReplaceArgs = replace_columns_in_args(?FUNCTION(FuncName, Args), TableName, AllCols, Record),
+%filter_objects({Column, Predicate}, Table, Objects, TxId) ->
+%    case ?is_function(Column) of
+%        true -> function_filtering({Column, Predicate}, Table, Objects, TxId);
+%        false -> filter_objects(Column, Predicate, Objects, TxId, [])
+%    end;
+%filter_objects(Condition, Table, Objects, TxId) ->
+%    ?CONDITION(Column, Comparison, Value) = Condition,
+%    {Op, _} = Comparison,
+%    Predicate = comp_to_predicate(Op, Value),
+%    filter_objects({Column, Predicate}, Table, Objects, TxId).
 
-%%                    lists:foldl(fun({ColPos, ConditionCol}) ->
-%%                    ColValue =
-%%                        case record_utils:get_column(ConditionCol, Record) of
-%%                            undefined ->
-%%                                case table_utils:is_foreign_key(ConditionCol, Table) of
-%%                                    true ->
-%%                                        ShCol = shadow_column_spec(ConditionCol, Table),
-%%                                        table_utils:shadow_column_state(TableName, ShCol, Record, TxId);
-%%                                    _ -> undefined
-%%                                end;
-%%                            ?ATTRIBUTE(_C, _T, V) -> V
-%%                        end,
-%%                    querying_utils:replace(ColPos, ColValue, Args)
-%%                end, Args, FuncCols),
-                %lager:info("ColValue: ~p", [ColValue]),
+%filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
+%    case record_utils:satisfies_predicate(Column, Predicate, Object) of
+%        true -> filter_objects(Column, Predicate, Objs, TxId, lists:append(Acc, [Object]));
+%        false -> filter_objects(Column, Predicate, Objs, TxId, Acc)
+%    end;
 
-                %ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
-                Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
-                %lager:info("exec({~p, ~p}) = ~p", [FuncName, ReplaceArgs, Result]),
-                case Predicate(Result) of
-                    true ->
-                        lists:append(Acc, [Record]);
-                    false ->
-                        Acc
-                end
-            end, [], Records);
-        false ->
-            ErrorMsg = io_lib:format("Invalid function: ~p", [Func]),
-            throw(lists:flatten(ErrorMsg))
-    end;
-function_filtering(Condition, Table, Records, TxId) ->
-    ?CONDITION(Func, {Op, _}, Value) = Condition,
-    Predicate = comp_to_predicate(Op, querying_utils:to_atom(Value)),
-    function_filtering({Func, Predicate}, Table, Records, TxId).
-
-filter_objects({Column, Predicate}, Table, Objects, TxId) ->
-    case is_func(Column) of
-        true -> function_filtering({Column, Predicate}, Table, Objects, TxId);
-        false -> filter_objects(Column, Predicate, Objects, TxId, [])
-    end;
-filter_objects(Condition, Table, Objects, TxId) ->
-    ?CONDITION(Column, Comparison, Value) = Condition,
-    {Op, _} = Comparison,
-    Predicate = comp_to_predicate(Op, Value),
-    filter_objects({Column, Predicate}, Table, Objects, TxId).
-
-filter_objects(Column, Predicate, [Object | Objs], TxId, Acc) when is_list(Object) ->
-    Find = querying_utils:first_occurrence(
-        fun(?ATTRIBUTE(ColName, CRDT, Val)) ->
-            ConvVal = crdt_utils:convert_value(CRDT, Val),
-            Column == ColName andalso Predicate(ConvVal)
-        end, Object),
-
-    case Find of
-        undefined -> filter_objects(Column, Predicate, Objs, TxId, Acc);
-        _Else -> filter_objects(Column, Predicate, Objs, TxId, lists:append(Acc, [Object]))
-    end;
-filter_objects(_Column, _Predicate, [], _TxId, Acc) ->
-    Acc.
+%%    Find = querying_utils:first_occurrence(
+%%        fun(?ATTRIBUTE(ColName, CRDT, Val)) ->
+%%            ConvVal = crdt_utils:convert_value(CRDT, Val),
+%%            Column == ColName andalso Predicate(ConvVal)
+%%        end, Object),
+%%
+%%    case Find of
+%%        undefined -> filter_objects(Column, Predicate, Objs, TxId, Acc);
+%%        _Else -> filter_objects(Column, Predicate, Objs, TxId, lists:append(Acc, [Object]))
+%%    end;
+%filter_objects(_Column, _Predicate, [], _TxId, Acc) ->
+%    Acc.
 
 filter_keys(_Predicate, []) -> [];
 filter_keys(Predicate, Keys) when is_list(Keys) ->
     lists:filter(Predicate, Keys).
 
-comp_to_predicate(Comparator, Value) ->
-    case Comparator of
-        equality -> fun(Elem) -> Elem == Value end;
-        notequality -> fun(Elem) -> Elem /= Value end;
-        greater -> fun(Elem) -> Elem > Value end;
-        greatereq -> fun(Elem) -> Elem >= Value end;
-        lesser -> fun(Elem) -> Elem < Value end;
-        lessereq -> fun(Elem) -> Elem =< Value end
-    end.
+
 
 %% TODO support this search to comprise indexes with multiple attributes
 find_index_by_attribute(_Attribute, []) -> [];
@@ -407,42 +422,33 @@ read_records(PKey, TableName, TxId) ->
 read_records(Key, TxId) ->
     record_utils:record_data(Key, TxId).
 
-replace_columns_in_args(?FUNCTION(FuncName, Args), TName, TCols, Record) ->
-    replace_columns_in_args(FuncName, Args, TName, TCols, Record, []).
-
-replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) when is_list(Arg) ->
-    NewArg = replace_columns_in_args(?FUNCTION(FName, Arg), TName, TCols, Record),
-    replace_columns_in_args(FName, Args, TName, TCols, Record, lists:append(AccArgs, [NewArg]));
-replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) ->
-    NewArg = case is_column(Arg) of
-                 true ->
-                     ?COLUMN(ColName) = Arg,
-                     case lists:member(ColName, TCols) of
-                         true ->
-                             ?ATTRIBUTE(_C, _T, ColValue) = record_utils:get_column(ColName, Record),
-                             lists:append(AccArgs, [ColValue]);
-                         false ->
-                             ErrorMsg =
-                                 io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FName, TName]),
-                             throw(lists:flatten(ErrorMsg))
-                     end;
-                 false ->
-                     lists:append(AccArgs, [Arg])
-             end,
-    replace_columns_in_args(FName, Args, TName, TCols, Record, NewArg);
-replace_columns_in_args(_FName, [], _TName, _TCols, _Record, Acc) ->
-    Acc.
-
-is_disjunction(?DISJUNCTION(_)) ->
-    %querying_utils:is_list_of_lists(Query).
-    true;
-is_disjunction(_) -> false.
-
-is_func(?FUNCTION(_Name, _Params)) -> true;
-is_func(_) -> false.
-
-is_column(?COLUMN(_Name)) -> true;
-is_column(_) -> false.
+%%replace_columns_in_args(?FUNCTION(FuncName, Args), TName, TCols, Record) ->
+%%    replace_columns_in_args(FuncName, Args, TName, TCols, Record, []).
+%%
+%%replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) when is_list(Arg) ->
+%%    NewArg = replace_columns_in_args(?FUNCTION(FName, Arg), TName, TCols, Record),
+%%    replace_columns_in_args(FName, Args, TName, TCols, Record, lists:append(AccArgs, [NewArg]));
+%%replace_columns_in_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) ->
+%%    NewArg =
+%%        case ?is_column(Arg) of
+%%             true ->
+%%                 ?COLUMN(ColName) = Arg,
+%%                 case lists:member(ColName, TCols) of
+%%                     true ->
+%%                         ?ATTRIBUTE(_C, _T, ColValue) =
+%%                             record_utils:get_column(ColName, Record),
+%%                         lists:append(AccArgs, [ColValue]);
+%%                     false ->
+%%                         ErrorMsg =
+%%                             io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FName, TName]),
+%%                         throw(lists:flatten(ErrorMsg))
+%%                 end;
+%%             false ->
+%%                 lists:append(AccArgs, [Arg])
+%%         end,
+%%    replace_columns_in_args(FName, Args, TName, TCols, Record, NewArg);
+%%replace_columns_in_args(_FName, [], _TName, _TCols, _Record, Acc) ->
+%%    Acc.
 
 range_type({{{greatereq, _Val}, {lessereq, _Val}}, _}) -> equality;
 range_type({{{nil, infinity}, {nil, infinity}}, Excluded}) when length(Excluded) > 0 -> notequality;
@@ -485,11 +491,12 @@ read_pk_predicate(Range) ->
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:table(Table),
     dict:fold(fun(Column, _Range, {RemainAcc, IdxAcc}) ->
-        case is_func(Column) of
+        case ?is_function(Column) of
             true -> {lists:append(RemainAcc, [Column]), IdxAcc};
             false ->
                 case table_utils:is_primary_key(Column, Table) of
-                    true -> {RemainAcc, lists:append(IdxAcc, [{primary, TableName}])};
+                    true ->
+                        {RemainAcc, lists:append(IdxAcc, [{primary, TableName}])};
                     false ->
                         SIndexes = table_utils:indexes(Table),
                         case find_index_by_attribute(Column, SIndexes) of
@@ -542,6 +549,16 @@ send_range({Bound, Val}) -> {Bound, Val}.
 %%====================================================================
 
 -ifdef(TEST).
+
+comp_to_predicate(Comparator, Value) ->
+    case Comparator of
+        equality -> fun(Elem) -> Elem == Value end;
+        notequality -> fun(Elem) -> Elem /= Value end;
+        greater -> fun(Elem) -> Elem > Value end;
+        greatereq -> fun(Elem) -> Elem >= Value end;
+        lesser -> fun(Elem) -> Elem < Value end;
+        lessereq -> fun(Elem) -> Elem =< Value end
+    end.
 
 comparison_convert_test() ->
     ValueList = [0, 1, 2, 3, 4],

@@ -52,6 +52,15 @@
 -define(OTHER_UPD_TYPE, other).
 
 %% Query definitions
+-define(FUNCTION(Name, Params), {func, Name, Params}).
+-define(is_function(Func), case Func of ?FUNCTION(_, _) -> true; _ -> false end).
+
+-define(COLUMN(Name), {col, Name}).
+-define(is_column(Col), case Col of ?COLUMN(_) -> true; _ -> false end).
+
+-define(DISJUNCTION(Conditions), {disjunction, Conditions}).
+-define(is_disjunction(Disj), case Disj of ?DISJUNCTION(_) -> true; _ -> false end).
+
 -define(CONDITION(Column, Comparator, Value), {Column, Comparator, Value}).
 -define(WILDCARD, {wildcard, ignore}).
 -define(OBJECT_UPDATE(Key, Type, Bucket, Op, Param), {{Key, Type, Bucket}, Op, Param}).

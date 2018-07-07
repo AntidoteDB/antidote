@@ -40,7 +40,8 @@
 -define(REMOVE_WINS, remove).
 
 %% API
--export([exec/2, find_last/3, assert_visibility/4, is_function/1]).
+-export([exec/2, is_function/1, replace_args/4]).
+-export([find_last/3, assert_visibility/4]).
 
 %% This function receives a function name and its parameters, and computes
 %% the result of applying the parameters to the function.
@@ -101,32 +102,37 @@ assert_visibility({Key, Version}, TableName, TxId) ->
 
 is_function({FuncName, Args}) ->
     case validate_func(FuncName, Args) of
-        {_Func, _Arity} -> %io:format("is_function: true~n"),
-            true;
-        _ -> %io:format("is_function: false~n"),
-            false
+        {_Func, _Arity} -> true;
+        _ -> false
     end.
 
-%% Parses a string that denotes the header of a function, on the form:
-%% function(param1, param2, ... , paramN)
-parse_function(Function) when is_atom(Function) ->
-    FuncString = atom_to_list(Function),
-    parse_function(FuncString);
-parse_function(Function) when is_list(Function) ->
-    try
-        FParPos = string:str(Function, "("),
-        LParPos = string:rstr(Function, ")"),
-        FuncName = list_to_atom(string:sub_string(Function, 1, FParPos - 1)),
-        Args = string:tokens(string:sub_string(Function, FParPos + 1, LParPos - 1), " ,"),
-        validate_func(FuncName, Args)
-    of
-        {F, P} -> {F, P};
-        false -> throw(lists:flatten(?MALFORMED_FUNC(Function)))
-    catch
-        Exception ->
-            ErrorMsg = io_lib:format("An error ocurred when parsing a function: ~p", [Exception]),
-            lager:error(lists:flatten(ErrorMsg))
-    end.
+replace_args({FuncName, Args}, TName, TCols, Record) ->
+    replace_args(FuncName, Args, TName, TCols, Record, []).
+
+replace_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) when is_list(Arg) ->
+    NewArg = replace_args({FName, Arg}, TName, TCols, Record),
+    replace_args(FName, Args, TName, TCols, Record, lists:append(AccArgs, [NewArg]));
+replace_args(FName, [Arg | Args], TName, TCols, Record, AccArgs) ->
+    NewArg =
+        case ?is_column(Arg) of
+            true ->
+                ?COLUMN(ColName) = Arg,
+                case lists:member(ColName, TCols) of
+                    true ->
+                        ?ATTRIBUTE(_C, _T, ColValue) =
+                            record_utils:get_column(ColName, Record),
+                        lists:append(AccArgs, [ColValue]);
+                    false ->
+                        ErrorMsg =
+                            io_lib:format("Column ~p in function ~p is invalid for table ~p", [ColName, FName, TName]),
+                        throw(lists:flatten(ErrorMsg))
+                end;
+            false ->
+                lists:append(AccArgs, [Arg])
+        end,
+    replace_args(FName, Args, TName, TCols, Record, NewArg);
+replace_args(_FName, [], _TName, _TCols, _Record, Acc) ->
+    Acc.
 
 %% ===================================================================
 %% Internal functions
@@ -187,6 +193,28 @@ validate_func(FunctionName, Args) when is_atom(FunctionName) andalso is_list(Arg
     end;
 validate_func(FunctionName, Args) ->
     validate_func(querying_utils:to_atom(FunctionName), Args).
+
+
+%% Parses a string that denotes the header of a function, on the form:
+%% function(param1, param2, ... , paramN)
+parse_function(Function) when is_atom(Function) ->
+    FuncString = atom_to_list(Function),
+    parse_function(FuncString);
+parse_function(Function) when is_list(Function) ->
+    try
+        FParPos = string:str(Function, "("),
+        LParPos = string:rstr(Function, ")"),
+        FuncName = list_to_atom(string:sub_string(Function, 1, FParPos - 1)),
+        Args = string:tokens(string:sub_string(Function, FParPos + 1, LParPos - 1), " ,"),
+        validate_func(FuncName, Args)
+    of
+        {F, P} -> {F, P};
+        false -> throw(lists:flatten(?MALFORMED_FUNC(Function)))
+    catch
+        Exception ->
+            ErrorMsg = io_lib:format("An error ocurred when parsing a function: ~p", [Exception]),
+            lager:error(lists:flatten(ErrorMsg))
+    end.
 
 -ifdef(TEST).
 

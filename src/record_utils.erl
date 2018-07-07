@@ -29,10 +29,12 @@
 
 %% API
 -export([record_data/2,
-         record_data/3,
-         get_column/2,
-         lookup_value/2,
-         delete_record/2]).
+    record_data/3,
+    get_column/2,
+    lookup_value/2,
+    delete_record/2,
+    satisfies_function/4,
+    satisfies_predicate/3]).
 
 record_data(Keys, TxId) when is_list(Keys) ->
     case querying_utils:read_keys(value, Keys, TxId) of
@@ -81,3 +83,28 @@ delete_record(ObjKey, TxId) ->
     Update = querying_utils:create_crdt_update(ObjKey, update, MapOp),
     ok = querying_utils:write_keys(Update, TxId),
     false.
+
+satisfies_function({Func, Predicate}, Table, Record, TxId) ->
+    ?FUNCTION(FuncName, Args) = Func,
+    TableName = table_utils:table(Table),
+    case builtin_functions:is_function({FuncName, Args}) of
+        true ->
+            TableName = table_utils:table(Table),
+            AllCols = table_utils:all_column_names(Table),
+
+            ReplaceArgs = builtin_functions:replace_args({FuncName, Args}, TableName, AllCols, Record),
+            Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
+            Predicate(Result);
+        false ->
+            ErrorMsg = io_lib:format("Invalid function: ~p", [Func]),
+            throw(lists:flatten(ErrorMsg))
+    end.
+
+satisfies_predicate(Column, Predicate, Record) when is_list(Record) ->
+    Find = querying_utils:first_occurrence(
+        fun(?ATTRIBUTE(ColName, CRDT, Val)) ->
+            ConvVal = crdt_utils:convert_value(CRDT, Val),
+            Column == ColName andalso Predicate(ConvVal)
+        end, Record),
+
+    Find =/= undefined.

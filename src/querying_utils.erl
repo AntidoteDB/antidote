@@ -42,14 +42,10 @@
 
 %% API
 -export([build_keys/3,
-    read_keys/3,
-    read_keys/2,
-    read_function/3,
-    read_function/2,
-    write_keys/2,
-    write_keys/1,
-    start_transaction/0,
-    commit_transaction/1,
+    read_keys/3, read_keys/2,
+    read_function/3, read_function/2,
+    write_keys/2, write_keys/1,
+    start_transaction/0, commit_transaction/1,
     to_atom/1,
     to_list/1,
     remove_duplicates/1,
