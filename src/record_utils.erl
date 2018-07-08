@@ -20,7 +20,8 @@
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
-%%% @doc
+%%% @doc An Antidote module that contains operations that concern
+%%%      the (AQL's representation of) records.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -76,7 +77,6 @@ lookup_value(ColumnName, Record) ->
     end.
 
 delete_record(ObjKey, TxId) ->
-    %lager:info("Deleting record with key ~p", [ObjKey]),
     StateKey = {?STATE_COL, ?STATE_COL_DT},
     StateOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, 'd'),
     MapOp = {StateKey, StateOp},
