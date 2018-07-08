@@ -163,7 +163,10 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                                 lists:member(Column, Remain)
                             end, RangeQueries),
 
-                            iterate_ranges(RemainRanges, Table, PreparedObjs, TxId)
+                            case dict:is_empty(RemainRanges) of
+                                true -> PreparedObjs;
+                                false -> iterate_ranges(RemainRanges, Table, PreparedObjs, TxId)
+                            end
                     end;
                 CurrentData ->
                     iterate_ranges(RangeQueries, Table, CurrentData, TxId)
@@ -186,11 +189,11 @@ iterate_ranges(RangeQueries, Table, Data, TxId) ->
         lists:append(FunList, [Fun])
     end, [], RangeQueries),
 
-    lists:foldl(fun(Record, Acc) ->
-        ExecPreds = lists:foldl(fun(F, Acc) -> Acc andalso F(Record) end, true, Predicates),
+    lists:foldl(fun(Record, ObjAcc) ->
+        ExecPreds = lists:foldl(fun(F, FunRes) -> FunRes andalso F(Record) end, true, Predicates),
         case ExecPreds of
-            true -> lists:append(Acc, [Record]);
-            false -> Acc
+            true -> lists:append(ObjAcc, [Record]);
+            false -> ObjAcc
         end
     end, [], Data).
 
@@ -365,19 +368,27 @@ interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -
                   equality ->
                       {{{_, Val}, {_, Val}}, _} = GetRange,
                       Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
-                      [Res];
+                      case Res of
+                          {error, _} -> [];
+                          _Else -> [Res]
+                      end;
                   notequality ->
                       {_, Excluded} = GetRange,
-                      InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
                       Aux = indexing:read_index(secondary, {TName, Name}, TxId),
-                      lists:filter(fun({IdxVal, _Set}) -> InequalityPred(IdxVal) end, Aux);
+
+                      lists:filter(fun({IdxVal, _Set}) ->
+                          %% inequality predicate
+                          not lists:member(IdxVal, Excluded)
+                      end, Aux);
                   range ->
                       {{LeftBound, RightBound}, Excluded} = GetRange,
                       Index = indexing:read_index_function(secondary,
                           {TName, Name}, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
 
-                      InequalityPred = fun(V) -> not lists:member(V, Excluded) end,
-                      lists:filter(fun({IdxCol, _PKs}) -> InequalityPred(IdxCol) end, Index)
+                      lists:filter(fun({IdxCol, _PKs}) ->
+                          %% inequality predicate
+                          not lists:member(IdxCol, Excluded)
+                      end, Index)
               end,
 
     lists:foldl(fun({_IdxCol, PKs}, Set) ->
