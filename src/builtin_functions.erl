@@ -41,7 +41,7 @@
 
 %% API
 -export([exec/2, is_function/1, replace_args/4]).
--export([find_last/3, assert_visibility/4]).
+-export([find_last/3, assert_visibility/5]).
 
 %% This function receives a function name and its parameters, and computes
 %% the result of applying the parameters to the function.
@@ -62,9 +62,15 @@ find_last(Values, List, _TxId) when is_list(Values) andalso is_list(List) ->
     find_last0(First, Tail, List);
 find_last(Value, _List, _TxId) -> Value.
 
-assert_visibility(State, Rule, Versions, TxId) ->
-    find_last(State, Rule, ignore) =/= d andalso
-        check_versions(Versions, TxId).
+assert_visibility(State, Rule, Versions, SourceTable, TxId) ->
+    Policy = table_utils:policy(SourceTable),
+    ExplicitState = find_last(State, Rule, ignore) =/= d,
+    case table_crps:dep_level(Policy) of
+        ?REMOVE_WINS ->
+            ExplicitState andalso check_versions(Versions, TxId);
+        _Other ->
+            ExplicitState
+    end.
 
 check_versions([[Version, TName] | Versions], TxId) ->
     assert_visibility(Version, TName, TxId) andalso
@@ -92,9 +98,10 @@ assert_visibility({Key, Version}, TableName, TxId) ->
                     is_visible(RefData, Table, TxId);
             _ ->
                 %is_visible(RefData, Table, TxId)
-                RefRule = table_crps:get_rule(Policy),
-                RefState = record_utils:lookup_value({?STATE_COL, ?STATE_COL_DT}, RefData),
-                find_last(RefState, RefRule, ignore) =/= d
+                %RefRule = table_crps:get_rule(Policy),
+                %RefState = record_utils:lookup_value({?STATE_COL, ?STATE_COL_DT}, RefData),
+                %find_last(RefState, RefRule, ignore) =/= d
+                true
         end,
 
     %lager:info("{~p, ~p}: ~p", [Key, Version, FinalRes]),

@@ -87,18 +87,17 @@ delete_record(ObjKey, TxId) ->
 satisfies_function({Func, Predicate}, Table, Record, TxId) ->
     ?FUNCTION(FuncName, Args) = Func,
     TableName = table_utils:table(Table),
-    case builtin_functions:is_function({FuncName, Args}) of
-        true ->
-            TableName = table_utils:table(Table),
-            AllCols = table_utils:all_column_names(Table),
+    AllCols = table_utils:all_column_names(Table),
 
-            ReplaceArgs = builtin_functions:replace_args({FuncName, Args}, TableName, AllCols, Record),
-            Result = builtin_functions:exec({FuncName, ReplaceArgs}, TxId),
-            Predicate(Result);
-        false ->
-            ErrorMsg = io_lib:format("Invalid function: ~p", [Func]),
-            throw(lists:flatten(ErrorMsg))
-    end.
+    ReplaceArgs = builtin_functions:replace_args({FuncName, Args}, TableName, AllCols, Record),
+    AppendTable = case FuncName of
+                      assert_visibility ->
+                          lists:append([ReplaceArgs, [Table]]);
+                      _ ->
+                          ReplaceArgs
+                  end,
+    Result = builtin_functions:exec({FuncName, AppendTable}, TxId),
+    Predicate(Result).
 
 satisfies_predicate(Column, Predicate, Record) when is_list(Record) ->
     Find = querying_utils:first_occurrence(
