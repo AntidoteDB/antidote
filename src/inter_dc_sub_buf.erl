@@ -67,11 +67,16 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
         State
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
+
+
+
+
+
+% old stuff when requesting out-of-order packages instead of relying on the at-leat-once guarantee of RabbitMQ
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   process_queue(push(Txn, State));
 
-% old stuff when requesting out-of-order packages instead of relying on the at-leat-once guarantee of RabbitMQ
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
   ok = lists:foreach(fun deliver/1, Txns),
   NewLast = case Queue of
@@ -103,30 +108,8 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction seems to come after an unknown transaction, ask the remote origin log
         gt ->
+          lager:info("Received out-of-order message: New last ~p, old last ~p from DC ~p", [TxnLast, Last, Txn#interdc_txn.dcid]),
           State#inter_dc_sub_buf{state_name = buffering};
-        % case EnableLogging of
-        %   true ->
-        %     lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-        %           [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
-        %     try
-        %       case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
-        %         ok ->
-        %           State#inter_dc_sub_buf{state_name = buffering};
-        %         _  ->
-        %           lager:warning("Failed to send log query to DC, will retry on next ping message"),
-        %           State#inter_dc_sub_buf{state_name = normal}
-        %       end
-        %     catch
-        %       _:_ ->
-        %           lager:warning("Failed to send log query to DC, will retry on next ping message"),
-        %           State#inter_dc_sub_buf{state_name = normal}
-        %     end;
-        %   false -> %% we deliver the transaction as we can't ask anything to the remote log
-        %                  %% as logging to disk is disabled.
-        %             deliver(Txn),
-        %             Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-        %             process_queue(State#inter_dc_sub_buf{queue = Rest, last_observed_opid = Max})
-        % end;
 
       %% If the transaction has an old value, drop it.
         lt ->
