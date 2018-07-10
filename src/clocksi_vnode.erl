@@ -26,6 +26,7 @@
 -export([start_vnode/1,
     read_data_item/5,
     async_read_data_item/4,
+    async_read_data_item/6,
     get_cache_name/2,
     send_min_prepared/1,
     get_active_txns_key/3,
@@ -52,7 +53,7 @@
     handle_coverage/4,
     handle_exit/3,
     handle_overload_command/3,
-    handle_overload_info/2]).
+    handle_overload_info/2, read_data_item/6]).
 
 
 -ignore_xref([start_vnode/1]).
@@ -97,8 +98,22 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
             {error, Reason}
     end.
 
+read_data_item(Node, TxId, Key, Type, Operation, Updates) ->
+    case clocksi_readitem_server:read_data_item(Node, Key, Type, Operation, Updates, TxId, []) of
+        {ok, Snapshot, Value} ->
+            %%Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            %%Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            {ok, Snapshot, Value};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 async_read_data_item(Node, TxId, Key, Type) ->
     clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
+
+async_read_data_item(Node, TxId, Key, Type, Operation, Updates) ->
+    clocksi_readitem_server:async_read_data_item(
+        Node, Key, Type, Operation, Updates, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node

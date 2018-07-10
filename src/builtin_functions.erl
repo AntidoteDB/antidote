@@ -49,7 +49,7 @@
 %% calls the function with its arguments.
 exec({Function, Args}, TxId) ->
     case validate_func(Function, Args) of
-        {_F, _A} -> apply(?MODULE, Function, lists:append(Args, [TxId]));
+        {_F, _A} -> apply_fun(ignore, Function, lists:append(Args, [TxId]));
         false -> throw(lists:flatten(?MALFORMED_FUNC(Function)))
     end;
 exec(Function, TxId) ->
@@ -201,6 +201,12 @@ validate_func(FunctionName, Args) when is_atom(FunctionName) andalso is_list(Arg
 validate_func(FunctionName, Args) ->
     validate_func(querying_utils:to_atom(FunctionName), Args).
 
+apply_fun(_, find_last, [Values, List, TxId]) ->
+    find_last(Values, List, TxId);
+apply_fun(_, assert_visibility, [State, Rule, Vrs, Table, TxId]) ->
+    assert_visibility(State, Rule, Vrs, Table, TxId);
+apply_fun(_, _, _) ->
+    ok.
 
 %% Parses a string that denotes the header of a function, on the form:
 %% function(param1, param2, ... , paramN)

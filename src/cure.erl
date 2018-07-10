@@ -79,7 +79,9 @@ get_objects(Objects, TxId) ->
 
 -spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
 obtain_objects(Objects, TxId, StateOrValue) ->
+    %lager:info("Objects: ~p", [Objects]),
     FormattedObjects = format_read_params(Objects),
+    %lager:info("FormattedObjects: ~p", [FormattedObjects]),
     case gen_statem:call(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
         {ok, Res} ->
             {ok, transform_reads(Res, StateOrValue, Objects)};
@@ -175,14 +177,29 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
 
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
-            object_state -> States;
-            object_value -> lists:map(fun({State, ReadObj}) ->
-                                          case ReadObj of
-                                              {{_K, Type, _B}, Op, Args} -> Type:value({Op, Args}, State);
-                                              {_Key, Type, _Bucket} -> Type:value(State)
-                                          end
-                                      end,
-                                      lists:zip(States, Objects))
+            object_state ->
+                lists:map(fun(ReadObj) ->
+                    case ReadObj of
+                        {{K, _T, B}, {Op, _Args}} ->
+                            proplists:get_value({{K, B}, Op}, States);
+                        %Type:value({Op, Args}, State);
+                        {K, _T, B} ->
+                            proplists:get_value({{K, B}, state}, States)
+                    end
+                end,
+                Objects);
+            object_value ->
+                lists:map(fun(ReadObj) ->
+                    case ReadObj of
+                        {{K, _T, B}, {Op, _Args}} ->
+                            proplists:get_value({{K, B}, Op}, States);
+                        %Type:value({Op, Args}, State);
+                        {K, Type, B} ->
+                            State = proplists:get_value({{K, B}, state}, States),
+                            Type:value(State)
+                    end
+                end,
+                Objects)
     end.
 
 
@@ -252,11 +269,20 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
 
 format_read_params(ReadObjects) ->
     lists:map(fun(ReadObj) ->
-                      {Key, Type, Bucket} = case ReadObj of
-                                                {{_K, _T, _B} = BoundObject, _Op, _Args} -> BoundObject;
-                                                {K, T, B} -> {K, T, B}
-                                            end,
-                      {{Key, Bucket}, Type}
+        %lager:info("ReadObjs: ~p", [ReadObj]),
+                      {Key, Type, Bucket, Function} =
+                          case ReadObj of
+                              {{K, T, B}, {_Op, _Args} = Fun} ->
+                                  {K, T, B, Fun};
+                              {K, T, B} ->
+                                  {K, T, B, undefined}
+                          end,
+                      case Function of
+                          undefined ->
+                              {{Key, Bucket}, Type};
+                          _Else ->
+                              {{Key, Bucket}, Type, Function}
+                      end
               end, ReadObjects).
 
 format_update_params(Updates) ->

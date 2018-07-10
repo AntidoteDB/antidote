@@ -206,7 +206,7 @@ type_check_update({{_K, Type, _bucket}, Op, Param}) ->
     antidote_crdt:is_type(Type) andalso
         Type:is_operation({Op, Param}).
 
-type_check_read({{_K, _T, _B} = BoundObject, _Op, _Args}) ->
+type_check_read({{_K, _T, _B} = BoundObject, {_Op, _Args}}) ->
     %% TODO: Check Op is valid. It requires each CRDT to export its read operations.
     type_check_read(BoundObject);
 type_check_read({_K, Type, _Bucket}) ->

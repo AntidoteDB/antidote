@@ -47,6 +47,7 @@
 -export([start_vnode/1,
          check_tables_ready/0,
          read/6,
+         read/8,
          store_ss/3,
          update/2]).
 
@@ -91,6 +92,13 @@ read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
 
     State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
     internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State).
+
+read(Key, Type, Op, Updates, SnapshotTime, TxId, PropertyList, Partition) ->
+    OpsCache = get_cache_name(Partition, ops_cache),
+    SnapshotCache = get_cache_name(Partition, snapshot_cache),
+
+    State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
+    internal_read(Key, Type, Op, Updates, SnapshotTime, TxId, PropertyList, false, State).
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
@@ -365,6 +373,28 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
 
     %% Now apply the operations to the snapshot, and return a materialized value
     materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp).
+
+internal_read(Key, Type, Operation, Updates, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
+    SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
+
+    %% Now apply the operations to the snapshot, and return a materialized value
+    {ok, Snapshot} = materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp),
+    Updates2 = lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
+        case KeyPrime == Key of
+            true ->
+                [Op | Acc];
+            false ->
+                Acc
+        end
+    end, [], Updates),
+    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+    case Type:is_operation(Operation) of
+        true ->
+            {ok, Snapshot2, Type:value(Operation, Snapshot2)};
+        false ->
+            {error, {function_not_supported, Operation}}
+    end.
+
 
 %% @doc Get the most recent snapshot from the cache (smaller than the given commit time) for a given key.
 %%

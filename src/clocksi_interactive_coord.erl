@@ -541,17 +541,36 @@ receive_aborted(info, {_EventType, EventValue}, State) ->
 %%%== receive_read_objects_result
 
 %% @doc After asynchronously reading a batch of keys, collect the responses here
-receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #coord_state{
+receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
     num_to_read = NumToRead,
     return_accumulator = ReadKeys,
     internal_read_set = ReadSet
 }) ->
     %% TODO: type is hard-coded..
-    UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
 
-    %% Swap keys with their appropriate read values
-    ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
-    NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
+    {Key, Type, Snapshot, Operation, Value} =
+        case Response of
+            {K, T, F, S, V} -> {K, T, S, F, V};
+            {K, T, S} -> {K, T, S, undefined, undefined}
+        end,
+
+    %lager:info("{Key, Type, Snapshot, Operation, Value}: ~p", [{Key, Type, Snapshot, Operation, Value}]),
+
+    {ReadValues, NewReadSet} =
+        case Operation of
+            undefined ->
+                UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+                %% Swap keys with their appropriate read values
+                {replace_first(ReadKeys, Key, {{Key, state}, UpdatedSnapshot}),
+                    orddict:store(Key, UpdatedSnapshot, ReadSet)};
+            Operation ->
+                %{replace_last(ReadKeys, Key, {value, Value}),
+                %    orddict:store(Key, Snapshot, ReadSet)}
+                {replace_first(ReadKeys, Key, {{Key, Operation}, Value}),
+                    orddict:store(Key, Snapshot, ReadSet)}
+        end,
+
+    %lager:info("{ReadValues, NewReadSet}: ~p", [{ReadValues, NewReadSet}]),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of
@@ -789,11 +808,62 @@ execute_command(read, {Key, Type}, Sender, State = #coord_state{
     end;
 
 %% @doc Read a batch of objects, asynchronous
-execute_command(read_objects, Objects, Sender, State = #coord_state{transaction=Transaction}) ->
-    ExecuteReads = fun({Key, Type}, AccState) ->
+execute_command(read_objects, Objects, Sender, State =
+    #coord_state{transaction=Transaction, client_ops = ClientOps, internal_read_set = ReadSet}) ->
+
+    %lager:info(">> read_objects"),
+    ExecuteReads = fun(Object, AccState) ->
+        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
+        case Object of
+            {Key, Type, Function} ->
+                Partition = ?LOG_UTIL:get_key_partition(Key),
+                ok = clocksi_object_function:async_execute_object_function(
+                    {fsm, self()}, Transaction, Partition, Key, Type, Function, ClientOps, ReadSet),
+                %lager:info("{Snapshot, Value}: ~p", [{Snapshot, Value}]),
+                ReadKeys = AccState#coord_state.return_accumulator,
+                %gen_statem:cast(self(),
+                %    {ok, {Key, Type, Snapshot, Value}}),
+                AccState#coord_state{return_accumulator=[Key | ReadKeys]};
+            {Key, Type} ->
+                Partition = ?LOG_UTIL:get_key_partition(Key),
+                ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+                ReadKeys = AccState#coord_state.return_accumulator,
+                AccState#coord_state{return_accumulator=[Key | ReadKeys]}
+        end
+
+        %Partition = ?LOG_UTIL:get_key_partition(Key),
+        %ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+        %ReadKeys = AccState#coord_state.return_accumulator,
+        %AccState#coord_state{return_accumulator=[Key | ReadKeys]}
+                   end,
+
+    NewCoordState = lists:foldl(
+        ExecuteReads,
+        State#coord_state{num_to_read = length(Objects), return_accumulator=[]},
+        Objects
+    ),
+
+    %case length(ObjsRead) == Objects of
+    %    true ->
+    %        {next_state, execute_op, NewCoordState#coord_state{num_to_read = 0, internal_read_set = NewReadSet},
+    %            [{reply, NewCoordState#coord_state.from, {ok, ObjsRead}}]}
+    %    false ->
+            {receive_read_objects_result, NewCoordState#coord_state{from=Sender}};
+    %end;
+
+execute_command(read_functions, Objects, Sender, State =
+    #coord_state{
+        transaction=Transaction,
+        client_ops = ClientOps,
+        internal_read_set = ReadSet}) ->
+
+    ExecuteReads = fun({Key, Type, Function}, AccState) ->
         ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
-        ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+
+        clocksi_object_function:sync_execute_object_function(Transaction, Partition, Key, Type, Function, ClientOps, ReadSet),
+
+        %ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type, Function),
         ReadKeys = AccState#coord_state.return_accumulator,
         AccState#coord_state{return_accumulator=[Key | ReadKeys]}
                    end,
@@ -999,6 +1069,9 @@ replace_first([Key|Rest], Key, NewKey) ->
 replace_first([NotMyKey|Rest], Key, NewKey) ->
     [NotMyKey|replace_first(Rest, Key, NewKey)].
 
+%replace_last(List, Key, NewKey) ->
+%    Res = replace_first(lists:reverse(List), Key, NewKey),
+%    lists:reverse(Res).
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
@@ -1028,7 +1101,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
     {Key, Type, Update} = Op,
 
     %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, {Transaction, InternalReadSet}) of
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, {Transaction, InternalReadSet, ClientOps}) of
         {error, Reason} ->
             lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};

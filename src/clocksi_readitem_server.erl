@@ -33,21 +33,21 @@
 
 %% Callbacks
 -export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         code_change/3,
-         handle_event/3,
-         check_servers_ready/0,
-         handle_info/2,
-         handle_sync_event/4,
-         terminate/2]).
+    handle_call/3,
+    handle_cast/2,
+    code_change/3,
+    handle_event/3,
+    check_servers_ready/0,
+    handle_info/2,
+    handle_sync_event/4,
+    terminate/2]).
 
 %% States
 -export([read_data_item/5,
-     async_read_data_item/6,
-     check_partition_ready/3,
-     start_read_servers/2,
-     stop_read_servers/2]).
+    async_read_data_item/6, async_read_data_item/8,
+    check_partition_ready/3,
+    start_read_servers/2,
+    stop_read_servers/2, read_data_item/7]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -95,10 +95,25 @@ read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
         read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList)
     end.
 
+read_data_item({Partition, Node}, Key, Type, Op, Updates, Transaction, PropertyList) ->
+    try
+        gen_server:call({global, generate_random_server_name(Node, Partition)},
+            {perform_read, Key, Type, Op, Updates, Transaction, PropertyList}, infinity)
+    catch
+        _:Reason ->
+            lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
+            check_server_ready([{Partition, Node}]),
+            read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList)
+    end.
+
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, Coordinator) ->
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
             {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}).
+
+async_read_data_item({Partition, Node}, Key, Type, Operation, Updates, Transaction, PropertyList, Coordinator) ->
+    gen_server:cast({global, generate_random_server_name(Node, Partition)},
+            {perform_read_cast, Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList}).
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -196,11 +211,19 @@ handle_call({perform_read, Key, Type, Transaction, PropertyList}, Coordinator, S
     ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0};
 
+handle_call({perform_read, Key, Type, Op, Updates, Transaction, PropertyList}, Coordinator, SD0) ->
+    ok = perform_read_internal(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList, SD0),
+    {noreply, SD0};
+
 handle_call({go_down}, _Sender, SD0) ->
     {stop, shutdown, ok, SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
     ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+    {noreply, SD0};
+
+handle_cast({perform_read_cast, Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, SD0),
     {noreply, SD0}.
 
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
@@ -216,6 +239,32 @@ perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
         ok;
     ready ->
         return(Coordinator, Key, Type, Transaction, PropertyList, Partition)
+    end.
+
+%%perform_read_internal(Coordinator, Key, Type, Function, Transaction, PropertyList,
+%%    _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
+%%    TxId = Transaction#transaction.txn_id,
+%%    TxLocalStartTime = TxId#tx_id.local_start_time,
+%%    case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
+%%        {not_ready, Time} ->
+%%            %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+%%            _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Function, Transaction, PropertyList}),
+%%            ok;
+%%        ready ->
+%%            return(Coordinator, Key, Type, Function, Transaction, PropertyList, Partition)
+%%    end.
+
+perform_read_internal(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList,
+    _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
+    TxId = Transaction#transaction.txn_id,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
+    case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
+        {not_ready, Time} ->
+            %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+            _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Op, Updates, Transaction, PropertyList}),
+            ok;
+        ready ->
+            return(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList, Partition)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -267,6 +316,50 @@ return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
                     gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
+            end;
+        {error, Reason} ->
+            case Coordinator of
+                {fsm, Sender} -> %% Return Type and Value directly here.
+                    gen_statem:cast(Sender, {error, Reason});
+                _ ->
+                    _Ignore=gen_server:reply(Coordinator, {error, Reason})
+            end
+    end,
+    ok.
+
+%%return(Coordinator, Key, Type, Function, Transaction, PropertyList, Partition) ->
+%%    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+%%    TxId = Transaction#transaction.txn_id,
+%%    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition) of
+%%        {ok, Snapshot} ->
+%%            Value = Type:value(Function, Snapshot),
+%%            case Coordinator of
+%%                {fsm, Sender} -> %% Return Type and Value directly here.
+%%                    gen_statem:cast(Sender, {ok, {Key, Type, Value}});
+%%                _ ->
+%%                    _Ignore=gen_server:reply(Coordinator, {ok, Value})
+%%            end;
+%%        {error, Reason} ->
+%%            case Coordinator of
+%%                {fsm, Sender} -> %% Return Type and Value directly here.
+%%                    gen_statem:cast(Sender, {error, Reason});
+%%                _ ->
+%%                    _Ignore=gen_server:reply(Coordinator, {error, Reason})
+%%            end
+%%    end,
+%%    ok.
+
+return(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, Partition) ->
+    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    TxId = Transaction#transaction.txn_id,
+    case materializer_vnode:read(Key, Type, Operation, Updates, VecSnapshotTime, TxId, PropertyList, Partition) of
+        {ok, Snapshot, Value} ->
+            case Coordinator of
+                {fsm, Sender} -> %% Return Type and Value directly here.
+                    {Op, _Args} = Operation,
+                    gen_statem:cast(Sender, {ok, {Key, Type, Op, Snapshot, Value}});
+                _ ->
+                    _Ignore=gen_server:reply(Coordinator, {ok, Snapshot, Value})
             end;
         {error, Reason} ->
             case Coordinator of

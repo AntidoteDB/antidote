@@ -20,17 +20,20 @@
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
-%%% @doc An limited sized, object caching for object snapshots that
+%%% @doc A limited sized, object caching for object snapshots that
 %%%      must persist in memory for faster accesses.
 %%%      The building structure for caching objects is the Cache
 %%%      dependency (https://github.com/fogfish/cache).
+%%%      The current settings for this cache are:
+%%%        - type: set
+%%%        - policy: lru
+%%%        - ttl: 120
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(metadata_caching).
 
 -define(CACHE, antidote_cache).
-%-define(CACHE_CONF, [{type, set}, {policy, lru}, {ttl, 120}]).
 -define(KEY_NOT_FOUND, {error, key_not_found}).
 
 %% API

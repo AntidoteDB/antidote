@@ -35,6 +35,8 @@
 -define(LOG_UTIL, log_utilities).
 -endif.
 
+-include("antidote.hrl").
+
 -define(CRDT_INDEX, antidote_crdt_index).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
@@ -74,6 +76,7 @@ build_keys([], [], _Bucket, Acc) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%     Read Values or States    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 read_keys(_StateOrValue, [], _TxId) -> [[]];
 read_keys(StateOrValue, ObjKeys, ignore) ->
     read_keys(StateOrValue, ObjKeys);
@@ -90,16 +93,36 @@ read_keys(StateOrValue, ObjKey) ->
 
 %% Applying a function on a set of keys implies returning the values
 %% of the CRDTs mapped by those keys.
+%-spec read_function(bound_object() | [bound_object()], {atom(), [term()]}, txid() | {txid(), [term()], [term()]}) ->
+%    term() | {error, reason()} | [term() | {error, reason()}].
 read_function([], _Func, _TxId) -> [[]];
 read_function(ObjKeys, Function, ignore) ->
     read_function(ObjKeys, Function);
-read_function(ObjKeys, {Function, Args}, TxId) when is_list(ObjKeys) ->
-    %% TODO read objects from Cure or Materializer?
-    Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
+
+read_function(ObjKeys, {Function, Args}, TxId)
+    when is_list(ObjKeys) andalso is_record(TxId, tx_id) ->
+
+    Reads = lists:map(fun(Key) -> {Key, {Function, Args}} end, ObjKeys),
     read_crdts(value, Reads, TxId);
+read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, WriteSet})
+    when is_list(ObjKeys) andalso is_record(TxId, transaction)  ->
+
+    lists:map(fun({Key, Type, Bucket}) ->
+        Partition = ?LOG_UTIL:get_key_partition({Key, Bucket}),
+
+        case clocksi_object_function:sync_execute_object_function(
+            TxId, Partition, Key, Type, {Function, Args}, WriteSet, ReadSet) of
+            {ok, {Key, Type, _, _, Value}} ->
+                Value;
+            {error, Reason} ->
+                {error, Reason}
+        end
+    end, ObjKeys);
 read_function(ObjKey, Range, TxId) ->
     read_function([ObjKey], Range, TxId).
 
+%-spec read_function(bound_object() | [bound_object()], {atom(), [term()]}) ->
+%    term() | {error, reason()} | [term() | {error, reason()}].
 read_function([], _Func) -> [[]];
 read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
@@ -178,18 +201,20 @@ first_occurrence(_Predicate, []) -> undefined.
 %% ====================================================================
 
 %% TODO read objects from Cure or Materializer?
-read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet} = Transaction)
-    when is_list(ObjKeys) andalso tuple_size(TxId) > 3 ->
+read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet, _WriteSet} = Transaction)
+    when is_list(ObjKeys) andalso is_record(TxId, transaction) ->
     {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
     Objs;
-read_crdts(StateOrValue, ObjKey, {TxId, _ReadSet} = Transaction)
-    when tuple_size(TxId) > 3 ->
+read_crdts(StateOrValue, ObjKey, {TxId, _ReadSet, _WriteSet} = Transaction)
+    when is_record(TxId, transaction) ->
     read_crdts(StateOrValue, [ObjKey], Transaction);
 
-read_crdts(value, ObjKeys, TxId) when is_list(ObjKeys) ->
+read_crdts(value, ObjKeys, TxId)
+    when is_list(ObjKeys) andalso is_record(TxId, tx_id) ->
     {ok, Objs} = cure:read_objects(ObjKeys, TxId),
     Objs;
-read_crdts(state, ObjKeys, TxId) when is_list(ObjKeys) ->
+read_crdts(state, ObjKeys, TxId)
+    when is_list(ObjKeys) andalso is_record(TxId, tx_id) ->
     {ok, Objs} = cure:get_objects(ObjKeys, TxId),
     Objs;
 read_crdts(StateOrValue, ObjKey, TxId) ->
@@ -214,12 +239,12 @@ read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
     end, ObjKeys),
     {ok, ReadObjects}.
 
-read_data_item({Key, Type, Bucket}, {Transaction, ReadSet}) ->
+read_data_item({Key, Type, Bucket}, {Transaction, ReadSet, WriteSet}) ->
     SendKey = {Key, Bucket},
     case orddict:find(SendKey, ReadSet) of
         error ->
             Partition = ?LOG_UTIL:get_key_partition(SendKey),
-            {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, []),
+            {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
             {ok, Snapshot};
         {ok, State} ->
             {ok, State}
