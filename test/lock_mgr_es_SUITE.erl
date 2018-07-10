@@ -105,7 +105,7 @@ simple_transaction_tests_with_locks(Config) ->
     Node = hd(hd(proplists:get_value(nodes, Config))),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
-    Keys = [lock1, lock2, lock3, lock4],
+    Keys = [es_lock1, es_lock2, es_lock3, es_lock4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
                                 {Key, Type, Bucket}
@@ -134,7 +134,7 @@ simple_transaction_tests_with_locks(Config) ->
 locks_in_sequence_check(Config) ->
     %
     Node = hd(hd(proplists:get_value(nodes, Config))),
-    Keys = [lock5, lock6, lock7, lock8],
+    Keys = [es_lock5, es_lock6, es_lock7, es_lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node, lock_mgr_es, local_locks_info, []),
     {_,{using,[],Used_Keys}} = lists:keyfind(TxId,1,Lock_Info1),
@@ -174,7 +174,7 @@ locks_required_by_another_transaction(Config) ->
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
     Node4 = hd(hd(tl(tl(Nodes)))),
-    Keys = [lock14, lock13, lock12, lock11],
+    Keys = [es_lock14, es_lock13, es_lock12, es_lock11],
     {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
     {_,{using,[],Used_Keys}} = lists:keyfind(TxId,1,Lock_Info1),
@@ -200,7 +200,7 @@ lock_acquisition_test(Config) ->
     %
     Nodes = proplists:get_value(nodes, Config),
     Node1 = hd(hd(Nodes)),
-    Keys = [lock21, lock22, lock23, lock24],
+    Keys = [es_lock21, es_lock22, es_lock23, es_lock24],
     
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
@@ -237,7 +237,7 @@ get_lock_owned_by_other_dc_1(Config) ->
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
     Node4 = hd(hd(tl(tl(Nodes)))),
-    Keys = [lock31, lock32, lock33, lock34],
+    Keys = [es_lock31, es_lock32, es_lock33, es_lock34],
     
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
@@ -248,18 +248,18 @@ get_lock_owned_by_other_dc_1(Config) ->
     Lock_Info1_2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
     false = lists:keyfind(TxId1,1,Lock_Info1_2),
     
-    {ok, TxId2} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,[lock31]}]]),
+    {ok, TxId2} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,[es_lock31]}]]),
     Lock_Info2 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
     {_,{using,[],Used_Keys2}} = lists:keyfind(TxId2,1,Lock_Info2),
     ?assertEqual(1,length(Used_Keys2)),
-    ?assertEqual([],[lock31]--Used_Keys2),
+    ?assertEqual([],[es_lock31]--Used_Keys2),
     {ok, _Clock2} = rpc:call(Node3, antidote, commit_transaction, [TxId2]),
     
-    {ok, TxId3} = rpc:call(Node4, antidote, start_transaction, [ignore, [{exclusive_locks,[lock32,lock33,lock34]}]]),
+    {ok, TxId3} = rpc:call(Node4, antidote, start_transaction, [ignore, [{exclusive_locks,[es_lock32,es_lock33,es_lock34]}]]),
     Lock_Info3 = rpc:call(Node4, lock_mgr_es, local_locks_info, []),
     {_,{using,[],Used_Keys3}} = lists:keyfind(TxId3,1,Lock_Info3),
     ?assertEqual(3,length(Used_Keys3)),
-    ?assertEqual([],[lock32,lock33,lock34]--Used_Keys3),
+    ?assertEqual([],[es_lock32,es_lock33,es_lock34]--Used_Keys3),
     {ok, _Clock3} = rpc:call(Node4, antidote, commit_transaction, [TxId3]),
     ok.
 %% Test if sequential lock acquisition works as intendet
@@ -269,7 +269,7 @@ get_lock_owned_by_other_dc_2(Config) ->
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
     Node4 = hd(hd(tl(tl(Nodes)))),
-    Keys = [lock41, lock42, lock43, lock44],
+    Keys = [es_lock41, es_lock42, es_lock43, es_lock44],
     Lock_request_order = [Node3,Node1,Node1,Node3,Node4,Node3,Node4,Node1],
     helper_do_lock_requests(Lock_request_order, Keys).
 %% Helper function for get_lock_owned_by_other_dc_2
@@ -295,7 +295,7 @@ multi_value_register_test(Config) ->
     Node1 = hd(hd(Nodes)),
     Node3 = hd(hd(tl(Nodes))),
     Node4 = hd(hd(tl(tl(Nodes)))),
-    Key = multi_value_register,
+    Key = es_multi_value_register,
     Bound_object = {Key, antidote_crdt_register_mv, antidote_bucket},
     Updates_List=[{[[]],Node1,<<"n1">>},{<<"n1">>,Node3,<<"x2">>},{<<"x2">>,Node3,<<"x3">>},{<<"x3">>,Node4,<<"y4">>},{<<"y4">>,Node1,<<"n5">>}
                     ,{<<"n5">>,Node1,<<"n6">>},{<<"n6">>,Node4,<<"y7">>},{<<"y7">>,Node1,<<"n8">>},{<<"n8">>,Node3,<<"x9">>},{<<"x9">>,Node4,<<"y10">>}],
@@ -342,36 +342,41 @@ asynchronous_test_1(Config) ->
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
-    Keys = [asynchronous_test_key_1],
-    Object = {asynchronous_test_key_1, antidote_crdt_counter_pn, antidote_bucket},
+    Keys = [es_asynchronous_test_key_1],
+    Object = {es_asynchronous_test_key_1, antidote_crdt_counter_pn, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node1,Keys,Object,100,[],self(),30,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node2,Keys,Object,100,[],self(),30,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node3,Keys,Object,100,[],self(),30,3]),
-    Clocks_Locks = [],
     receive
-        {done,Node1,1,Clocks1} ->
-            Clocks_Locks_1=[{Node1,Clocks1}|Clocks_Locks]
-    end,
-    receive
-        {done,Node2,2,Clocks2} ->
-            Clocks_Locks_2=[{Node2,Clocks2}|Clocks_Locks_1]
-    end,
-    receive
-        {done,Node3,3,Clocks3} ->
-            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
-    end,
-    {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
-    {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    ?assertEqual(300,Res1),
-    {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res2]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
-    {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
-    ?assertEqual(300,Res2),
-    {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
-    {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
-    ?assertEqual(300,Res3).
+        {done,Node1,1,_Clocks1} ->
+
+            receive
+                {done,Node2,2,_Clocks2} ->
+
+                    receive
+                            {done,Node3,3,_Clocks3} ->
+
+                                {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
+                                {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+                                ?assertEqual(300,Res1),
+                                {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res2]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
+                                {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
+                                ?assertEqual(300,Res2),
+                                {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
+                                {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
+                                ?assertEqual(300,Res3)
+                        after 10000 -> error
+                        end
+            after 10000 -> error
+            end
+    after 10000 -> error
+    end.
+    
+    
+
 
 
 %% Let 3 processes asynchronously increment the same counter 100times while using a lock to restrict the access.
@@ -382,36 +387,39 @@ asynchronous_test_2(Config) ->
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
-    Keys = [asynchronous_test_key_2],
-    Object = {asynchronous_test_key_2, antidote_crdt_counter_pn, antidote_bucket},
+    Keys = [es_asynchronous_test_key_2],
+    Object = {es_asynchronous_test_key_2, antidote_crdt_counter_pn, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node1,Keys,Object,100,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node2,Keys,Object,100,[],self(),0,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node3,Keys,Object,100,[],self(),0,3]),
-    Clocks_Locks = [],
     receive
-        {done,Node1,1,Clocks1} ->
-            Clocks_Locks_1=[{Node1,Clocks1}|Clocks_Locks]
-    end,
-    receive
-        {done,Node2,2,Clocks2} ->
-            Clocks_Locks_2=[{Node2,Clocks2}|Clocks_Locks_1]
-    end,
-    receive
-        {done,Node3,3,Clocks3} ->
-            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
-    end,
-    {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
-    {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    ?assertEqual(300,Res1),
-    {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res2]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
-    {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
-    ?assertEqual(300,Res2),
-    {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
-    {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
-    ?assertEqual(300,Res3).
+        {done,Node1,1,_Clocks1} ->
+
+            receive
+                {done,Node2,2,_Clocks2} ->
+
+                    receive
+                            {done,Node3,3,_Clocks3} ->
+
+                                {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res1]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
+                                {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+                                ?assertEqual(300,Res1),
+                                {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res2]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
+                                {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
+                                ?assertEqual(300,Res2),
+                                {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
+                                {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
+                                ?assertEqual(300,Res3)
+                        after 10000 -> error
+                        end
+            after 10000 -> error
+            end
+    after 10000 -> error
+    end.
+
 asynchronous_test_helper(Node,_,_,0,Clocks,Caller,_,Id)->
     Caller ! {done,Node,Id,Clocks};
     
@@ -436,36 +444,40 @@ asynchronous_test_3(Config) ->
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
-    Keys = [asynchronous_test_key_3],
-    Object = {asynchronous_test_key_3, antidote_crdt_register_mv, antidote_bucket},
+    Keys = [es_asynchronous_test_key_3],
+    Object = {es_asynchronous_test_key_3, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys,Object,100,[],self(),30,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys,Object,100,[],self(),30,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys,Object,100,[],self(),30,3]),
-    Clocks_Locks = [],
     receive
-        {done,Node1,1,Clocks1} ->
-            Clocks_Locks_1=[{Node1,Clocks1}|Clocks_Locks]
-    end,
-    receive
-        {done,Node2,2,Clocks2} ->
-            Clocks_Locks_2=[{Node2,Clocks2}|Clocks_Locks_1]
-    end,
-    receive
-        {done,Node3,3,Clocks3} ->
-            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
-    end,
-    {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
-    {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    ?assertEqual(300,Res1),
-    {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res2]|[]]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
-    {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
-    ?assertEqual(300,Res2),
-    {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res3]|[]]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
-    {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
-    ?assertEqual(300,Res3).
+        {done,Node1,1,_Clocks1} ->
+
+            receive
+                {done,Node2,2,_Clocks2} ->
+
+                    receive
+                            {done,Node3,3,_Clocks3} ->
+
+                                {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
+                                {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+                                ?assertEqual(300,Res1),
+                                {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res2]|[]]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
+                                {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
+                                ?assertEqual(300,Res2),
+                                {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res3]|[]]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
+                                {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
+                                ?assertEqual(300,Res3)
+
+                        after 30000 -> error
+                        end
+            after 30000 -> error
+            end
+    after 30000 -> error
+    end.
+
 
 
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
@@ -476,36 +488,39 @@ asynchronous_test_4(Config) ->
     Node1 = hd(hd(Nodes)),
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
-    Keys = [asynchronous_test_key_4],
-    Object = {asynchronous_test_key_4, antidote_crdt_register_mv, antidote_bucket},
+    Keys = [es_asynchronous_test_key_4],
+    Object = {es_asynchronous_test_key_4, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys,Object,100,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys,Object,100,[],self(),0,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys,Object,100,[],self(),0,3]),
-    Clocks_Locks = [],
     receive
-        {done,Node1,1,Clocks1} ->
-            Clocks_Locks_1=[{Node1,Clocks1}|Clocks_Locks]
-    end,
-    receive
-        {done,Node2,2,Clocks2} ->
-            Clocks_Locks_2=[{Node2,Clocks2}|Clocks_Locks_1]
-    end,
-    receive
-        {done,Node3,3,Clocks3} ->
-            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
-    end,
-    {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
-    {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    ?assertEqual(300,Res1),
-    {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res2]|[]]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
-    {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
-    ?assertEqual(300,Res2),
-    {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, [[Res3]|[]]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
-    {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
-    ?assertEqual(300,Res3).
+        {done,Node1,1,_Clocks1} ->
+
+            receive
+                {done,Node2,2,_Clocks2} ->
+
+                    receive
+                            {done,Node3,3,_Clocks3} ->
+
+                                {ok,TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res1]|[]]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId1]),
+                                {ok, _} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
+                                ?assertEqual(300,Res1),
+                                {ok,TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res2]|[]]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId2]),
+                                {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
+                                ?assertEqual(300,Res2),
+                                {ok,TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+                                {ok, [[Res3]|[]]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
+                                {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
+                                ?assertEqual(300,Res3)
+                        after 30000 -> error
+                        end
+            after 30000 -> error
+            end
+    after 30000 -> error
+    end.
+
 
 
 asynchronous_test_helper2(Node,_,_,0,Clocks,Caller,_,Id)->
@@ -537,26 +552,26 @@ asynchronous_test_5(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = [asynchronous_test_key_5],
-    Object1 = {asynchronous_test_key_5, antidote_crdt_register_mv, antidote_bucket},
+    Keys1 = [es_asynchronous_test_key_5],
+    Object1 = {es_asynchronous_test_key_5, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,100,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,100,[],self(),0,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys1,Object1,100,[],self(),0,3]),
     % asynchronous_test_3
-    Keys2 = [asynchronous_test_key_6],
-    Object2 = {asynchronous_test_key_6, antidote_crdt_register_mv, antidote_bucket},
+    Keys2 = [es_asynchronous_test_key_6],
+    Object2 = {es_asynchronous_test_key_6, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys2,Object2,100,[],self(),30,4]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys2,Object2,100,[],self(),30,5]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys2,Object2,100,[],self(),30,6]),
     % asynchronous_test_2
-    Keys3 = [asynchronous_test_key_7],
-    Object3 = {asynchronous_test_key_7, antidote_crdt_counter_pn, antidote_bucket},
+    Keys3 = [es_asynchronous_test_key_7],
+    Object3 = {es_asynchronous_test_key_7, antidote_crdt_counter_pn, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node1,Keys3,Object3,100,[],self(),0,7]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node2,Keys3,Object3,100,[],self(),0,8]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node3,Keys3,Object3,100,[],self(),0,9]),
     % asynchronous_test_1
-    Keys4 = [asynchronous_test_key_8],
-    Object4 = {asynchronous_test_key_8, antidote_crdt_counter_pn, antidote_bucket},
+    Keys4 = [es_asynchronous_test_key_8],
+    Object4 = {es_asynchronous_test_key_8, antidote_crdt_counter_pn, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node1,Keys4,Object4,100,[],self(),30,10]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node2,Keys4,Object4,100,[],self(),30,11]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper,[Node3,Keys4,Object4,100,[],self(),30,12]),
@@ -583,19 +598,25 @@ asynchronous_test_5(Config) ->
 
 
 helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},_Info) ->
-    Clocks_Locks = [],
     receive
         {done,Node1,Id1,Clocks1} ->
-            Clocks_Locks_1=[{Node1,Clocks1}|Clocks_Locks]
-    end,
-    receive
-        {done,Node2,Id2,Clocks2} ->
-            Clocks_Locks_2=[{Node2,Clocks2}|Clocks_Locks_1]
-    end,
-    receive
-        {done,Node3,Id3,Clocks3} ->
-            _Clocks_Locks_3=[{Node3,Clocks3}|Clocks_Locks_2]
+            A={Node1,Clocks1},
+            receive
+                {done,Node2,Id2,Clocks2} ->
+                    B={Node2,Clocks2},
+                    receive
+                        {done,Node3,Id3,Clocks3} ->
+                            C={Node3,Clocks3},
+                            {A,B,C}
+                    after 30000 -> error
+                    end
+            after 30000 -> error
+            end
+    after 30000 -> error
     end.
+    
+
+    
 
 
 
@@ -627,8 +648,8 @@ a_lot_of_locks_per_transaction_1(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(100,"erwwqd"),
-    Object1 = {a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
+    Keys1 = generate_lock_helper(100,"eghjrwwqd"),
+    Object1 = {es_a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,10,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,10,[],self(),0,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys1,Object1,10,[],self(),0,3]),
@@ -645,8 +666,8 @@ a_lot_of_locks_per_transaction_2(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(500,"asdf"),
-    Object1 = {a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
+    Keys1 = generate_lock_helper(500,"asiuiopdf"),
+    Object1 = {es_a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,20,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,20,[],self(),0,2]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node3,Keys1,Object1,20,[],self(),0,3]),
@@ -678,7 +699,7 @@ cluster_failure_test_1(Config) ->
         {ok, false} ->
             pass;
         _ ->
-            Keys = [cluster_failure_test_1_key],
+            Keys = [<<"es_cluster_failure_test_1_key">>],
             {ok,_TxId1} = helper_start_transaction(Keys, Node3, 10),
             %% Kill a node
             ct:print("Killing node ~w", [Node3]),
@@ -705,7 +726,7 @@ cluster_failure_test_2(Config) ->
         {ok, false} ->
             pass;
         _ ->
-            Keys = [cluster_failure_test_2_key],
+            Keys = [<<"es_cluster_failure_test_2_key">>],
             {ok,_TxId1} = helper_start_transaction(Keys, Node3, 10),
             %% Kill a node
             ct:print("Killing node ~w", [Node3]),
@@ -724,7 +745,7 @@ cluster_failure_test_2(Config) ->
             {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
     end.
 helper_start_transaction(Locks,_Node,0) ->
-    {error,"Could not aquire : "++to_string_helper(Locks)};
+    {error,"Could not aquire Locks"};
 helper_start_transaction(Locks,Node,Tries) ->
     case rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Locks}]]) of
         {ok,TxId}->

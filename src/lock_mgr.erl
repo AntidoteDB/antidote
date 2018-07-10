@@ -663,6 +663,7 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
 
 
 terminate(_Reason, _State) ->
+    dets:close(?DETS_FILE_NAME),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
