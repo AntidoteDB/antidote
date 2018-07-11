@@ -27,22 +27,27 @@
 -module(clocksi_object_function).
 
 %% API
--export([async_execute_object_function/8, sync_execute_object_function/7]).
+-export([async_execute_object_function/8,
+         async_execute_object_function/9,
+         sync_execute_object_function/7]).
 
-async_execute_object_function(Sender, Transaction, IndexNode, Key, Type, ReadFun, WriteSet, InternalReadSet) ->
-    case orddict:find(Key, InternalReadSet) of
+async_execute_object_function(Sender, Transaction, IndexNode, Key, Type, ReadFun, WriteSet, ReadSet) ->
+    async_execute_object_function(Sender, Transaction, IndexNode, 0, Key, Type, ReadFun, WriteSet, ReadSet).
+
+async_execute_object_function(Sender, Transaction, IndexNode, ReqNum, Key, Type, ReadFun, WriteSet, ReadSet) ->
+    case orddict:find(Key, ReadSet) of
         {ok, Snapshot} ->
             {fsm, Sender0} = Sender,
             case Type:is_operation(ReadFun) of
                 true ->
                     {Op, _Args} = ReadFun,
                     Value = Type:value(ReadFun, Snapshot),
-                    gen_statem:cast(Sender0, {ok, {Key, Type, Op, Snapshot, Value}});
+                    gen_statem:cast(Sender0, {ok, {ReqNum, Key, Type, Op, Snapshot, Value}});
                 false ->
                     gen_statem:cast(Sender0, {error, {function_not_supported, ReadFun}})
             end;
         error ->
-            ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type, ReadFun, WriteSet)
+            ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, ReqNum, Key, Type, ReadFun, WriteSet)
     end,
     ok.
 

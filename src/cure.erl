@@ -175,29 +175,30 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
 
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
-            object_state ->
-                lists:map(fun(ReadObj) ->
-                    case ReadObj of
-                        {{K, _T, B}, {Op, _Args}} ->
-                            proplists:get_value({{K, B}, Op}, States);
-                        %Type:value({Op, Args}, State);
-                        {K, _T, B} ->
-                            proplists:get_value({{K, B}, state}, States)
-                    end
-                end,
-                Objects);
-            object_value ->
-                lists:map(fun(ReadObj) ->
-                    case ReadObj of
-                        {{K, _T, B}, {Op, _Args}} ->
-                            proplists:get_value({{K, B}, Op}, States);
-                        %Type:value({Op, Args}, State);
-                        {K, Type, B} ->
-                            State = proplists:get_value({{K, B}, state}, States),
-                            Type:value(State)
-                    end
-                end,
-                Objects)
+        object_state ->
+            {_, Result} = lists:foldl(fun(ReadObj, {Num, Acc}) ->
+                case ReadObj of
+                    {{K, _T, B}, {_Op, _Args}} ->
+                        {value, Value} = proplists:get_value({Num, {K, B}}, States),
+                        {Num + 1, lists:append(Acc, [Value])};
+                    {K, _T, B} ->
+                        {state, Snapshot} = proplists:get_value({Num, {K, B}}, States),
+                        {Num + 1, lists:append(Acc, [Snapshot])}
+                end
+            end, {0, []}, Objects),
+            Result;
+        object_value ->
+            {_, Result} = lists:foldl(fun(ReadObj, {Num, Acc}) ->
+                case ReadObj of
+                    {{K, _T, B}, {_Op, _Args}} ->
+                        {value, Value} = proplists:get_value({Num, {K, B}}, States),
+                        {Num + 1, lists:append(Acc, [Value])};
+                    {K, Type, B} ->
+                        {state, Snapshot} = proplists:get_value({Num, {K, B}}, States),
+                        {Num + 1, lists:append(Acc, [Type:value(Snapshot)])}
+                end
+            end, {0, []}, Objects),
+            Result
     end.
 
 

@@ -44,7 +44,10 @@
 
 %% States
 -export([read_data_item/5,
-    async_read_data_item/6, async_read_data_item/8,
+    async_read_data_item/6,
+    async_read_data_item/7,
+    async_read_data_item/8,
+    async_read_data_item/9,
     check_partition_ready/3,
     start_read_servers/2,
     stop_read_servers/2, read_data_item/7]).
@@ -108,12 +111,18 @@ read_data_item({Partition, Node}, Key, Type, Op, Updates, Transaction, PropertyL
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, Coordinator) ->
+    async_read_data_item({Partition, Node}, 0, Key, Type, Transaction, PropertyList, Coordinator).
+
+async_read_data_item({Partition, Node}, ReqNum, Key, Type, Transaction, PropertyList, Coordinator) ->
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
-            {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}).
+            {perform_read_cast, Coordinator, ReqNum, Key, Type, Transaction, PropertyList}).
 
 async_read_data_item({Partition, Node}, Key, Type, Operation, Updates, Transaction, PropertyList, Coordinator) ->
+    async_read_data_item({Partition, Node}, 0, Key, Type, Operation, Updates, Transaction, PropertyList, Coordinator).
+
+async_read_data_item({Partition, Node}, ReqNum, Key, Type, Operation, Updates, Transaction, PropertyList, Coordinator) ->
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
-            {perform_read_cast, Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList}).
+            {perform_read_cast, Coordinator, ReqNum, Key, Type, Operation, Updates, Transaction, PropertyList}).
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -218,40 +227,46 @@ handle_call({perform_read, Key, Type, Op, Updates, Transaction, PropertyList}, C
 handle_call({go_down}, _Sender, SD0) ->
     {stop, shutdown, ok, SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
-    ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+handle_cast({perform_read_cast, Coordinator, ReqNum, Key, Type, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator, ReqNum, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0};
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList}, SD0) ->
-    ok = perform_read_internal(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, SD0),
+handle_cast({perform_read_cast, Coordinator, ReqNum, Key, Type, Operation, Updates, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator, ReqNum, Key, Type, Operation, Updates, Transaction, PropertyList, SD0),
     {noreply, SD0}.
 
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
                    ok.
-perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
+perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0) ->
+    perform_read_internal(Coordinator, 0, Key, Type, Transaction, PropertyList, SD0).
+
+perform_read_internal(Coordinator, ReqNum, Key, Type, Transaction, PropertyList,
               _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
     {not_ready, Time} ->
         %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-        _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}),
+        _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, ReqNum, Key, Type, Transaction, PropertyList}),
         ok;
     ready ->
-        return(Coordinator, Key, Type, Transaction, PropertyList, Partition)
+        return(Coordinator, ReqNum, Key, Type, Transaction, PropertyList, Partition)
     end.
 
-perform_read_internal(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList,
+perform_read_internal(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList, SD0) ->
+    perform_read_internal(Coordinator, 0, Key, Type, Op, Updates, Transaction, PropertyList, SD0).
+
+perform_read_internal(Coordinator, ReqNum, Key, Type, Op, Updates, Transaction, PropertyList,
     _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
         {not_ready, Time} ->
             %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-            _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Op, Updates, Transaction, PropertyList}),
+            _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, ReqNum, Key, Type, Op, Updates, Transaction, PropertyList}),
             ok;
         ready ->
-            return(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList, Partition)
+            return(Coordinator, ReqNum, Key, Type, Op, Updates, Transaction, PropertyList, Partition)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -292,15 +307,15 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm, pid()} | {pid(), term()}, key(), type(), #transaction{}, read_property_list(), partition_id()) -> ok.
-return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
+-spec return({fsm, pid()} | {pid(), term()}, number(), key(), type(), #transaction{}, read_property_list(), partition_id()) -> ok.
+return(Coordinator, ReqNum, Key, Type, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}});
+                    gen_statem:cast(Sender, {ok, {ReqNum, Key, Type, Snapshot}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
             end;
@@ -314,7 +329,7 @@ return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
     end,
     ok.
 
-return(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, Partition) ->
+return(Coordinator, ReqNum, Key, Type, Operation, Updates, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, Operation, Updates, VecSnapshotTime, TxId, PropertyList, Partition) of
@@ -322,7 +337,7 @@ return(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, Pa
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
                     {Op, _Args} = Operation,
-                    gen_statem:cast(Sender, {ok, {Key, Type, Op, Snapshot, Value}});
+                    gen_statem:cast(Sender, {ok, {ReqNum, Key, Type, Op, Snapshot, Value}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot, Value})
             end;
@@ -336,8 +351,8 @@ return(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, Pa
     end,
     ok.
 
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
-    ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+handle_info({perform_read_cast, Coordinator, ReqNum, Key, Type, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator, ReqNum, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0};
 
 handle_info(_Info, StateData) ->

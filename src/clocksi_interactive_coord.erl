@@ -548,10 +548,10 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
 }) ->
     %% TODO: type is hard-coded..
 
-    {Key, Type, Snapshot, Operation, Value} =
+    {ReqNum, Key, Type, Snapshot, Operation, Value} =
         case Response of
-            {K, T, F, S, V} -> {K, T, S, F, V};
-            {K, T, S} -> {K, T, S, undefined, undefined}
+            {N, K, T, F, S, V} -> {N, K, T, S, F, V};
+            {N, K, T, S} -> {N, K, T, S, undefined, undefined}
         end,
 
     {ReadValues, NewReadSet} =
@@ -559,12 +559,12 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
             undefined ->
                 UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
                 %% Swap keys with their appropriate read values
-                {replace_first(ReadKeys, Key, {{Key, state}, UpdatedSnapshot}),
+                {replace_first(ReadKeys, Key, {{ReqNum, Key}, {state, UpdatedSnapshot}}),
                     orddict:store(Key, UpdatedSnapshot, ReadSet)};
             Operation ->
                 %{replace_last(ReadKeys, Key, {value, Value}),
                 %    orddict:store(Key, Snapshot, ReadSet)}
-                {replace_first(ReadKeys, Key, {{Key, Operation}, Value}),
+                {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, Value}}),
                     orddict:store(Key, Snapshot, ReadSet)}
         end,
 
@@ -807,7 +807,7 @@ execute_command(read, {Key, Type}, Sender, State = #coord_state{
 execute_command(read_objects, Objects, Sender, State =
     #coord_state{transaction=Transaction, updated_partitions = UpdatedPartitions, internal_read_set = ReadSet}) ->
 
-    ExecuteReads = fun(Object, AccState) ->
+    ExecuteReads = fun(Object, {ReqNum, AccState}) ->
         ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         case Object of
             {Key, Type, Function} ->
@@ -818,20 +818,20 @@ execute_command(read_objects, Objects, Sender, State =
                            end,
 
                 ok = clocksi_object_function:async_execute_object_function(
-                    {fsm, self()}, Transaction, Partition, Key, Type, Function, WriteSet, ReadSet),
+                    {fsm, self()}, Transaction, Partition, ReqNum, Key, Type, Function, WriteSet, ReadSet),
                 ReadKeys = AccState#coord_state.return_accumulator,
-                AccState#coord_state{return_accumulator=[Key | ReadKeys]};
+                {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}};
             {Key, Type} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
-                ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+                ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type),
                 ReadKeys = AccState#coord_state.return_accumulator,
-                AccState#coord_state{return_accumulator=[Key | ReadKeys]}
+                {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}}
         end
     end,
 
-    NewCoordState = lists:foldl(
+    {_, NewCoordState} = lists:foldl(
         ExecuteReads,
-        State#coord_state{num_to_read = length(Objects), return_accumulator=[]},
+        {0, State#coord_state{num_to_read = length(Objects), return_accumulator=[]}},
         Objects
     ),
 
