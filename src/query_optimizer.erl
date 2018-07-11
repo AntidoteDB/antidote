@@ -42,6 +42,7 @@
 
 %% TODO support more than one table per filter, for supporting join queries
 query_filter(Filter, TxId) when is_list(Filter) ->
+    %lager:info("==> Received query: ~p", [Filter]),
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
     TCols = table_utils:column_names(Table),
@@ -49,6 +50,7 @@ query_filter(Filter, TxId) when is_list(Filter) ->
 
     case validate_projection(Projection, TCols) of
         {error, Msg} ->
+            %lager:info("==> An error occurred: ~p", [Msg]),
             {error, Msg};
         {ok, ProjectionCols} ->
             Conditions = conditions(Filter),
@@ -57,7 +59,8 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                 case Conditions of
                     [] ->
                         Index = indexing:read_index(primary, TableName, TxId),
-                        Records = read_records(Index, TableName, TxId),
+                        Keys = lists:map(fun({EntryKey, _EntrySet}) -> EntryKey end, Index),
+                        Records = read_records(Keys, TableName, TxId),
                         prepare_records(table_utils:column_names(Table), Table, Records);
                     _Else ->
                         apply_filter(Conditions, Table, TxId)
@@ -68,7 +71,9 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                     true -> FilteredResult
                 end,
 
-            {ok, apply_projection(ProjectionCols, ResultToList)}
+            ApplyProjection = apply_projection(ProjectionCols, ResultToList),
+            %lager:info("==> Final result: ~p", [ApplyProjection]),
+            {ok, ApplyProjection}
     end.
 
 get_partial_object(Key, Type, Bucket, Filter, TxId) ->
@@ -175,7 +180,8 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
 
 iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:table(Table),
-    Keys = indexing:read_index(primary, TableName, TxId),
+    Index = indexing:read_index(primary, TableName, TxId),
+    Keys = lists:map(fun({_EntryKey, EntrySet}) -> [Key] = EntrySet, Key end, Index),
     Data = read_records(Keys, TxId),
     PreparedData = prepare_records(table_utils:column_names(Table), Table, Data),
     iterate_ranges(RangeQueries, Table, PreparedData, TxId).
@@ -206,10 +212,6 @@ satisfies_predicate({Column, Predicate}, Table, Record, TxId) ->
         false ->
             record_utils:satisfies_predicate(Column, Predicate, Record)
     end.
-
-filter_keys(_Predicate, []) -> [];
-filter_keys(Predicate, Keys) when is_list(Keys) ->
-    lists:filter(Predicate, Keys).
 
 %% TODO support this search to comprise indexes with multiple attributes
 find_index_by_attribute(_Attribute, []) -> [];
@@ -293,8 +295,13 @@ prepare_records0(BCounterCols, [Record | Records], Acc) ->
     prepare_records0(BCounterCols, Records, NewObjsAcc);
 prepare_records0(_, [], Acc) -> Acc.
 
+read_records(Keys, TableName, TxId) when is_list(Keys) ->
+    record_utils:record_data(Keys, TableName, TxId);
 read_records(PKey, TableName, TxId) ->
     record_utils:record_data(PKey, TableName, TxId).
+
+read_records(Keys, TxId) when is_list(Keys) ->
+    record_utils:record_data(Keys, TxId);
 read_records(Key, TxId) ->
     record_utils:record_data(Key, TxId).
 
@@ -316,24 +323,24 @@ read_predicate(Range) ->
             fun(V) -> Pred1(V) andalso Pred2(V) end
     end.
 
-read_predicate_pk(Range) ->
-    case range_queries:to_predicate(Range) of
-        {{{_, LPred}, infinity}, Inequality} ->
-            fun({V, _, _}) -> LPred(V) andalso Inequality(V) end;
-        {{infinity, {_, RPred}}, Inequality} ->
-            fun({V, _, _}) -> RPred(V) andalso Inequality(V) end;
-        {{{_, LPred}, {_, RPred}}, Inequality} ->
-            fun({V, _, _}) -> LPred(V) andalso RPred(V) andalso Inequality(V) end;
-        {ignore, Pred} when is_function(Pred) ->
-            fun({V, _, _}) -> Pred(V) end;
-        {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
-            fun({V, _, _}) -> Pred1(V) andalso Pred2(V) end
-    end.
-
-read_pk_predicate(Range) ->
-    {{{LB, Val1}, {RB, Val2}}, Excluded} = Range,
-    NewRange = {{LB, querying_utils:to_atom(Val1)}, {RB, querying_utils:to_atom(Val2)}},
-    read_predicate_pk({NewRange, Excluded}).
+%%read_predicate_pk(Range) ->
+%%    case range_queries:to_predicate(Range) of
+%%        {{{_, LPred}, infinity}, Inequality} ->
+%%            fun({V, _, _}) -> LPred(V) andalso Inequality(V) end;
+%%        {{infinity, {_, RPred}}, Inequality} ->
+%%            fun({V, _, _}) -> RPred(V) andalso Inequality(V) end;
+%%        {{{_, LPred}, {_, RPred}}, Inequality} ->
+%%            fun({V, _, _}) -> LPred(V) andalso RPred(V) andalso Inequality(V) end;
+%%        {ignore, Pred} when is_function(Pred) ->
+%%            fun({V, _, _}) -> Pred(V) end;
+%%        {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
+%%            fun({V, _, _}) -> Pred1(V) andalso Pred2(V) end
+%%    end.
+%%
+%%read_pk_predicate(Range) ->
+%%    {{{LB, Val1}, {RB, Val2}}, Excluded} = Range,
+%%    NewRange = {{LB, querying_utils:to_atom(Val1)}, {RB, querying_utils:to_atom(Val2)}},
+%%    read_predicate_pk({NewRange, Excluded}).
 
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:table(Table),
@@ -354,42 +361,29 @@ read_indexes(RangeQueries, Table) ->
         end
     end, {[], []}, RangeQueries).
 
-interpret_index({primary, TableName}, Table, RangeQueries, TxId) ->
-    IdxData = indexing:read_index(primary, TableName, TxId),
-    [PKCol] = table_utils:primary_key_name(Table),
+interpret_index({primary, TName}, Table, RangeQueries, TxId) ->
+    % TODO old code; uncomment to use with an antidote_crdt_set_go type index
+    %IdxData = indexing:read_index(primary, TableName, TxId),
+    %[PKCol] = table_utils:primary_key_name(Table),
 
+    %GetRange = range_queries:lookup_range(PKCol, RangeQueries),
+    %FilterFun = read_pk_predicate(GetRange),
+    %ordsets:from_list(filter_keys(FilterFun, IdxData));
+
+    [PKCol] = table_utils:primary_key_name(Table),
     GetRange = range_queries:lookup_range(PKCol, RangeQueries),
-    FilterFun = read_pk_predicate(GetRange),
-    ordsets:from_list(filter_keys(FilterFun, IdxData));
+
+    IdxData = filter_index(GetRange, primary, TName, TxId),
+
+    lists:foldl(fun({_IdxCol, PKs}, Set) ->
+        %% there's an assumption that the accumulator will never have repeated keys
+        ordsets:union(Set, PKs)
+    end, ordsets:new(), IdxData);
+
 interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -> %% TODO support more columns
     GetRange = range_queries:lookup_range(Col, RangeQueries),
 
-    IdxData = case range_type(GetRange) of
-                  equality ->
-                      {{{_, Val}, {_, Val}}, _} = GetRange,
-                      Res = indexing:read_index_function(secondary, {TName, Name}, {get, Val}, TxId),
-                      case Res of
-                          {error, _} -> [];
-                          _Else -> [Res]
-                      end;
-                  notequality ->
-                      {_, Excluded} = GetRange,
-                      Aux = indexing:read_index(secondary, {TName, Name}, TxId),
-
-                      lists:filter(fun({IdxVal, _Set}) ->
-                          %% inequality predicate
-                          not lists:member(IdxVal, Excluded)
-                      end, Aux);
-                  range ->
-                      {{LeftBound, RightBound}, Excluded} = GetRange,
-                      Index = indexing:read_index_function(secondary,
-                          {TName, Name}, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
-
-                      lists:filter(fun({IdxCol, _PKs}) ->
-                          %% inequality predicate
-                          not lists:member(IdxCol, Excluded)
-                      end, Index)
-              end,
+    IdxData = filter_index(GetRange, secondary, {TName, Name}, TxId),
 
     lists:foldl(fun({_IdxCol, PKs}, Set) ->
         %% there's an assumption that the accumulator will never have repeated keys
@@ -398,6 +392,34 @@ interpret_index({secondary, {Name, TName, [Col]}}, _Table, RangeQueries, TxId) -
 
 send_range({_, infinity}) -> infinity;
 send_range({Bound, Val}) -> {Bound, Val}.
+
+filter_index(Range, IndexType, IndexName, TxId) ->
+    case range_type(Range) of
+        equality ->
+            {{{_, Val}, {_, Val}}, _} = Range,
+            Res = indexing:read_index_function(IndexType, IndexName, {get, Val}, TxId),
+            case Res of
+                {error, _} -> [];
+                _Else -> [Res]
+            end;
+        notequality ->
+            {_, Excluded} = Range,
+            Aux = indexing:read_index(IndexType, IndexName, TxId),
+
+            lists:filter(fun({IdxVal, _Set}) ->
+                %% inequality predicate
+                not lists:member(IdxVal, Excluded)
+            end, Aux);
+        range ->
+            {{LeftBound, RightBound}, Excluded} = Range,
+            Index = indexing:read_index_function(IndexType,
+                IndexName, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
+
+            lists:filter(fun({IdxCol, _PKs}) ->
+                %% inequality predicate
+                not lists:member(IdxCol, Excluded)
+            end, Index)
+    end.
 
 %%====================================================================
 %% Eunit tests
@@ -414,6 +436,10 @@ comp_to_predicate(Comparator, Value) ->
         lesser -> fun(Elem) -> Elem < Value end;
         lessereq -> fun(Elem) -> Elem =< Value end
     end.
+
+filter_keys(_Predicate, []) -> [];
+filter_keys(Predicate, Keys) when is_list(Keys) ->
+    lists:filter(Predicate, Keys).
 
 comparison_convert_test() ->
     ValueList = [0, 1, 2, 3, 4],

@@ -30,28 +30,6 @@
 -export([async_execute_object_function/8, sync_execute_object_function/7]).
 
 async_execute_object_function(Sender, Transaction, IndexNode, Key, Type, ReadFun, WriteSet, InternalReadSet) ->
-%%    Snapshot = case orddict:find(Key, InternalReadSet) of
-%%                   {ok, S} ->
-%%                       S;
-%%                   error ->
-%%                       case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-%%                           {ok, S}->
-%%                               S;
-%%                           {error, Reason}->
-%%                               {error, {exec_object_function_failed, Reason}}
-%%                       end
-%%               end,
-%%    case Snapshot of
-%%        {error, R} ->
-%%            {error, R}; %% {error, Reason} is returned here.
-%%        Snapshot ->
-%%            case Type:is_operation(ReadFun) of
-%%                true ->
-%%                    {Snapshot, Type:value(ReadFun, Snapshot)};
-%%                false ->
-%%                    {error, {function_not_supported, ReadFun}}
-%%            end
-%%    end.
     case orddict:find(Key, InternalReadSet) of
         {ok, Snapshot} ->
             {fsm, Sender0} = Sender,
@@ -64,13 +42,6 @@ async_execute_object_function(Sender, Transaction, IndexNode, Key, Type, ReadFun
                     gen_statem:cast(Sender0, {error, {function_not_supported, ReadFun}})
             end;
         error ->
-            %case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-            %    {ok, Snapshot, Value}->
-            %        gen_statem:cast(IndexNode, {ok, {Key, Type, Snapshot, Value}});
-            %        %{ok, Snapshot, Value};
-            %    {error, Reason}->
-            %        {error, {exec_object_function_failed, Reason}}
-            %end
             ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type, ReadFun, WriteSet)
     end,
     ok.

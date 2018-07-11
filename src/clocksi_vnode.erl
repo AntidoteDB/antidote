@@ -99,10 +99,9 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 read_data_item(Node, TxId, Key, Type, Operation, Updates) ->
-    case clocksi_readitem_server:read_data_item(Node, Key, Type, Operation, Updates, TxId, []) of
+    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+    case clocksi_readitem_server:read_data_item(Node, Key, Type, Operation, Updates2, TxId, []) of
         {ok, Snapshot, Value} ->
-            %%Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            %%Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
             {ok, Snapshot, Value};
         {error, Reason} ->
             {error, Reason}
@@ -112,8 +111,9 @@ async_read_data_item(Node, TxId, Key, Type) ->
     clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
 
 async_read_data_item(Node, TxId, Key, Type, Operation, Updates) ->
+    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
     clocksi_readitem_server:async_read_data_item(
-        Node, Key, Type, Operation, Updates, TxId, [], {fsm, self()}).
+        Node, Key, Type, Operation, Updates2, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node

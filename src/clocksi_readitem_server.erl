@@ -241,19 +241,6 @@ perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
         return(Coordinator, Key, Type, Transaction, PropertyList, Partition)
     end.
 
-%%perform_read_internal(Coordinator, Key, Type, Function, Transaction, PropertyList,
-%%    _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
-%%    TxId = Transaction#transaction.txn_id,
-%%    TxLocalStartTime = TxId#tx_id.local_start_time,
-%%    case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
-%%        {not_ready, Time} ->
-%%            %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-%%            _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Function, Transaction, PropertyList}),
-%%            ok;
-%%        ready ->
-%%            return(Coordinator, Key, Type, Function, Transaction, PropertyList, Partition)
-%%    end.
-
 perform_read_internal(Coordinator, Key, Type, Op, Updates, Transaction, PropertyList,
     _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
     TxId = Transaction#transaction.txn_id,
@@ -326,28 +313,6 @@ return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
             end
     end,
     ok.
-
-%%return(Coordinator, Key, Type, Function, Transaction, PropertyList, Partition) ->
-%%    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-%%    TxId = Transaction#transaction.txn_id,
-%%    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition) of
-%%        {ok, Snapshot} ->
-%%            Value = Type:value(Function, Snapshot),
-%%            case Coordinator of
-%%                {fsm, Sender} -> %% Return Type and Value directly here.
-%%                    gen_statem:cast(Sender, {ok, {Key, Type, Value}});
-%%                _ ->
-%%                    _Ignore=gen_server:reply(Coordinator, {ok, Value})
-%%            end;
-%%        {error, Reason} ->
-%%            case Coordinator of
-%%                {fsm, Sender} -> %% Return Type and Value directly here.
-%%                    gen_statem:cast(Sender, {error, Reason});
-%%                _ ->
-%%                    _Ignore=gen_server:reply(Coordinator, {error, Reason})
-%%            end
-%%    end,
-%%    ok.
 
 return(Coordinator, Key, Type, Operation, Updates, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,

@@ -104,11 +104,12 @@ read_function(ObjKeys, {Function, Args}, TxId)
 
     Reads = lists:map(fun(Key) -> {Key, {Function, Args}} end, ObjKeys),
     read_crdts(value, Reads, TxId);
-read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, WriteSet})
+read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, UpdatedPartitions})
     when is_list(ObjKeys) andalso is_record(TxId, transaction)  ->
 
     lists:map(fun({Key, Type, Bucket}) ->
         Partition = ?LOG_UTIL:get_key_partition({Key, Bucket}),
+        WriteSet = get_write_set(Partition, UpdatedPartitions),
 
         case clocksi_object_function:sync_execute_object_function(
             TxId, Partition, Key, Type, {Function, Args}, WriteSet, ReadSet) of
@@ -201,11 +202,11 @@ first_occurrence(_Predicate, []) -> undefined.
 %% ====================================================================
 
 %% TODO read objects from Cure or Materializer?
-read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet, _WriteSet} = Transaction)
+read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet, _UpdatedPartitions} = Transaction)
     when is_list(ObjKeys) andalso is_record(TxId, transaction) ->
     {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
     Objs;
-read_crdts(StateOrValue, ObjKey, {TxId, _ReadSet, _WriteSet} = Transaction)
+read_crdts(StateOrValue, ObjKey, {TxId, _ReadSet, _UpdatedPartitions} = Transaction)
     when is_record(TxId, transaction) ->
     read_crdts(StateOrValue, [ObjKey], Transaction);
 
@@ -239,15 +240,23 @@ read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
     end, ObjKeys),
     {ok, ReadObjects}.
 
-read_data_item({Key, Type, Bucket}, {Transaction, ReadSet, WriteSet}) ->
+read_data_item({Key, Type, Bucket}, {Transaction, ReadSet, UpdatedPartitions}) ->
     SendKey = {Key, Bucket},
     case orddict:find(SendKey, ReadSet) of
         error ->
             Partition = ?LOG_UTIL:get_key_partition(SendKey),
+            WriteSet = get_write_set(Partition, UpdatedPartitions),
+
             {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
             {ok, Snapshot};
         {ok, State} ->
             {ok, State}
+    end.
+
+get_write_set(Partition, Partitions) ->
+    case lists:keyfind(Partition, 1, Partitions) of
+        false -> [];
+        {Partition, WS} -> WS
     end.
 
 map_update({{Key, CRDT}, {Op, Value} = Operation}) ->

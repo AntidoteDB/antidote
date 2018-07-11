@@ -77,19 +77,19 @@ lookup_range(Key, Ranges) ->
         error -> []
     end.
 
-to_predicate({?RANGE(nil, infinity, nil, infinity), Expected}) ->
-    {ignore, fun(V) -> not lists:member(V, Expected) end};
-to_predicate({?RANGE(greatereq, Val, lessereq, Val), Expected}) ->
+to_predicate({?RANGE(nil, infinity, nil, infinity), Excluded}) ->
+    {ignore, fun(V) -> not lists:member(V, Excluded) end};
+to_predicate({?RANGE(greatereq, Val, lessereq, Val), Excluded}) ->
     Equality = fun(V) -> V == Val end,
-    Inequality = fun(V) -> not lists:member(V, Expected) end,
+    Inequality = fun(V) -> not lists:member(V, Excluded) end,
     {Equality, Inequality};
-to_predicate({?RANGE(LBound, LVal, UBound, UVal), Expected}) ->
+to_predicate({?RANGE(LBound, LVal, UBound, UVal), Excluded}) ->
     LowerComp = to_pred(LBound, LVal),
     UpperComp = to_pred(UBound, UVal),
-    Inequality = fun(V) -> not lists:member(V, Expected) end,
+    Inequality = fun(V) -> not lists:member(V, Excluded) end,
     {{LowerComp, UpperComp}, Inequality}.
 
-to_condition({?RANGE(LBound, LVal, UBound, UVal), _Expected}) ->
+to_condition({?RANGE(LBound, LVal, UBound, UVal), _Excluded}) ->
     {to_pred(LBound, LVal), to_pred(UBound, UVal)}.
 
 %% ====================================================================

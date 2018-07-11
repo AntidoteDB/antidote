@@ -79,9 +79,7 @@ get_objects(Objects, TxId) ->
 
 -spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
 obtain_objects(Objects, TxId, StateOrValue) ->
-    %lager:info("Objects: ~p", [Objects]),
     FormattedObjects = format_read_params(Objects),
-    %lager:info("FormattedObjects: ~p", [FormattedObjects]),
     case gen_statem:call(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
         {ok, Res} ->
             {ok, transform_reads(Res, StateOrValue, Objects)};
@@ -141,7 +139,7 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
             [{Key, Type}] = FormattedObjects,
             {ok, Val, CommitTime} = clocksi_interactive_coord:
                 perform_singleitem_operation(Clock, Key, Type, Properties),
-            {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
+            {ok, transform_reads([{{Key, state}, Val}], StateOrValue, Objects), CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
@@ -269,7 +267,6 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
 
 format_read_params(ReadObjects) ->
     lists:map(fun(ReadObj) ->
-        %lager:info("ReadObjs: ~p", [ReadObj]),
                       {Key, Type, Bucket, Function} =
                           case ReadObj of
                               {{K, T, B}, {_Op, _Args} = Fun} ->

@@ -379,15 +379,7 @@ internal_read(Key, Type, Operation, Updates, MinSnapshotTime, TxId, _PropertyLis
 
     %% Now apply the operations to the snapshot, and return a materialized value
     {ok, Snapshot} = materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp),
-    Updates2 = lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
-        case KeyPrime == Key of
-            true ->
-                [Op | Acc];
-            false ->
-                Acc
-        end
-    end, [], Updates),
-    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates),
     case Type:is_operation(Operation) of
         true ->
             {ok, Snapshot2, Type:value(Operation, Snapshot2)};
