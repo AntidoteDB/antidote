@@ -31,8 +31,8 @@ if [ -z "$METRICS_PORT" ]; then
 fi
 
 # RabbitMQ host.
-if [ -z "$RABBITMQ_HOST" ]; then
-  export RABBITMQ_HOST="localhost"
+if [ -z "$KAFKA_HOST" ]; then
+  export KAFKA_HOST="localhost"
 fi
 
 # Ring State directory.

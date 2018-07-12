@@ -15,7 +15,7 @@
 -define(NUM_R, 2).
 -define(DEFAULT_PUBSUB_PORT, 8086).
 -define(DEFAULT_LOGREADER_PORT, 8085).
--define(DEFAULT_RABBITMQ_HOST, "localhost").
+-define(DEFAULT_KAFKA_HOST, "localhost").
 
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
@@ -53,7 +53,7 @@
 %% that read.
 -define(SPIN_WAIT, 10).
 %% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
--define(HEARTBEAT_PERIOD, 1000).
+-define(HEARTBEAT_PERIOD, 10000).
 %% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
 -define(VECTORCLOCK_UPDATE_PERIOD, 100).
 %% This is the time that nodes will sleep inbetween sending meta-data

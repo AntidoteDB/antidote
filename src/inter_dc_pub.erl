@@ -25,7 +25,6 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
--include_lib("amqp_client/include/amqp_client.hrl").
 
 %% API
 -export([
@@ -42,14 +41,15 @@
   code_change/3]).
 
 %% State
--record(state, {connection, channel}). %% connection :: amqp_connection, channel :: amqp_channel
+-record(state, {}). %% the Kafka connections are handled by the brod client process under the name antidote_pub
 
 %%%% API --------------------------------------------------------------------+
 
 -spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn = #interdc_txn{partition = P}) ->
-  RoutingKey = list_to_binary(io_lib:format("P~p", [P])),
-  case catch gen_server:call(?MODULE, {publish, RoutingKey, term_to_binary(Txn, [{compressed, 6}])}) of
+  % lager:info("Sending ~p", [Txn]),
+  SimpleIndex = P div (chash:ring_increment(dc_utilities:get_partitions_num())),
+  case catch gen_server:call(?MODULE, {publish, SimpleIndex, term_to_binary(Txn, [{compressed, 6}])}) of
     {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
@@ -59,29 +59,18 @@ broadcast(Txn = #interdc_txn{partition = P}) ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
-  lager:info("Connecting to RabbitMQ on host ~p", [Host]),
-  case amqp_connection:start(#amqp_params_network{host=Host}) of
-    {ok, Connection} ->
-      {ok, Channel} = amqp_connection:open_channel(Connection),
-      amqp_channel:call(Channel, #'exchange.declare'{exchange = <<"transactions">>,
-                                                      type = <<"direct">>}),
-      lager:info("Publisher started"),
-      {ok, #state{connection = Connection, channel = Channel}};
-    {error, Error} ->
-      lager:error("Error connecting to RabbitMQ: ~p", [Error]),
-      {error, Error}
-  end.
+  Host = application:get_env(antidote, kafka_host, ?DEFAULT_KAFKA_HOST),
+  lager:info("Connecting to Kafka on host ~p", [Host]),
+  KafkaBootstrapEndpoints = [{Host, 9092}],
+  ok = brod:start_client(KafkaBootstrapEndpoints, antidote_pub),
+  ok = brod:start_producer(antidote_pub, <<"interdc">>, _ProducerConfig=[]),
+  {ok, #state{}}.
 
-handle_call({publish, Partition, Message}, _From, State) -> {reply, amqp_channel:cast(State#state.channel, #'basic.publish'{
-                                                                                                              exchange = <<"transactions">>,
-                                                                                                              routing_key = Partition
-                                                                                                            },
-                                                                                                            #amqp_msg{payload = Message}), State}.
+handle_call({publish, Partition, Message}, _From, State) ->
+  {reply, brod:produce_sync(antidote_pub, <<"interdc">>, Partition, <<"">>, Message), State}.
 
-terminate(_Reason, State) ->
-  amqp_channel:close(State#state.channel),
-  amqp_connection:close(State#state.connection).
+terminate(_Reason, _State) ->
+  brod:stop_client(antidote_pub).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

@@ -25,7 +25,7 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
--include_lib("amqp_client/include/amqp_client.hrl").
+-include_lib("brod/include/brod.hrl").
 
 %% Server methods
 -export([
@@ -39,66 +39,51 @@
   ]).
 
 %% State
--record(state, {
-  connection, %% amqp_connection
-  channel %% amqp_channel
-}).
+-record(state, {}). %% state is managed by the brod Kafka client
 
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
-    Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
-    lager:info("Connecting to RabbitMQ on host ~p", [Host]),
-    case amqp_connection:start(#amqp_params_network{host=Host}) of
-        {ok, Connection} ->
-            {ok, Channel} = amqp_connection:open_channel(Connection),
-            amqp_channel:call(Channel, #'exchange.declare'{exchange = <<"transactions">>,
-                                                            type = <<"direct">>}),
-            #'queue.declare_ok'{queue = Queue} =
-                amqp_channel:call(Channel, #'queue.declare'{exclusive = true}),
-            lists:foreach(fun(P) ->
-                            RoutingKey = list_to_binary(io_lib:format("P~p", [P])),
-                            lager:info("Subscribing to routing key ~p", [RoutingKey]),
-                            amqp_channel:call(Channel, #'queue.bind'{exchange = <<"transactions">>,
-                                                                    routing_key = RoutingKey,
-                                                                    queue = Queue})
-                        end, dc_utilities:get_my_partitions()),
-            amqp_channel:subscribe(Channel, #'basic.consume'{queue = Queue}, self()),
-            receive
-                #'basic.consume_ok'{} ->
-
-                    lager:info("Subscriber started"),
-                    {ok, #state{connection = Connection, channel = Channel}}
-            end;
-        {error, Error} ->
-            lager:error("Error connecting to RabbitMQ: ~p", [Error]),
-            {error, Error}
-    end.
+    Host = application:get_env(antidote, kafka_host, ?DEFAULT_KAFKA_HOST),
+    lager:info("Connecting to Kafka on host ~p", [Host]),
+    KafkaBootstrapEndpoints = [{Host, 9092}],
+    ok = brod:start_client(KafkaBootstrapEndpoints, antidote_sub),
+    Indices = lists:map(fun(P)->
+            P div (chash:ring_increment(dc_utilities:get_partitions_num()))
+        end,
+        dc_utilities:get_my_partitions()),
+    lager:info("Subscribing to partitions ~p", [Indices]),
+    brod_topic_subscriber:start_link(antidote_sub, <<"interdc">>, _Partitions=Indices,
+        _ConsumerConfig=[{begin_offset, earliest}],
+        _CommittedOffsets=[],
+        messages,
+        fun(_Partition, #kafka_message{key = _DCId, value = BinaryMsg}, State) ->
+            %% decode the message
+            Msg = binary_to_term(BinaryMsg),
+            LocalDCId = dc_utilities:get_my_dc_id(),
+            case Msg#interdc_txn.dcid of
+            LocalDCId ->
+                % ignore own messages
+                done;
+            _ ->
+                %% deliver the message to an appropriate vnode
+                ok = inter_dc_sub_vnode:deliver_txn(Msg),
+                done
+            end,
+            {ok, ack, State}
+        end, _InitialState=[]),
+    {ok, #state{}}.
 
 handle_call(_Request, _From, Ctx) ->
     {reply, not_implemented, Ctx}.
 
 %% handle an incoming interDC transaction from a remote node.
-handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload = BinaryMsg}}, State) ->
-    %% decode the message
-    Msg = binary_to_term(BinaryMsg),
-    LocalDCId = dc_utilities:get_my_dc_id(),
-    case Msg#interdc_txn.dcid of
-    LocalDCId ->
-        % ignore own messages
-        done;
-    _ ->
-        %% deliver the message to an appropriate vnode
-        ok = inter_dc_sub_vnode:deliver_txn(Msg),
-        done
-    end,
-    amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag}),
+handle_info(_Msg, State) ->
     {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
-terminate(_Reason, State) ->
-  amqp_channel:close(State#state.channel),
-  amqp_connection:close(State#state.connection).
+terminate(_Reason, _State) ->
+  brod:stop_client(antidote_sub).
 

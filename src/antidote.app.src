@@ -22,7 +22,7 @@
                   elli_prometheus,
                   prometheus_process_collector,
                   vectorclock,
-                  amqp_client
+                  brod
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
