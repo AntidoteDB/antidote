@@ -20,7 +20,8 @@
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
-%%% @doc
+%%% @doc An Antidote module that supports some utility functions for
+%%%      CRDTs.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------

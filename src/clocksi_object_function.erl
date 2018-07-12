@@ -20,7 +20,11 @@
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
-%%% @doc
+%%% @doc This module performs a read function over a CRDT snapshot,
+%%%      given its key and type.
+%%%      The function can be applied to a snapshot from the
+%%%      transaction's read-set or from the materializer.
+%%%      The read can be performed synchronously or asynchronously.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
