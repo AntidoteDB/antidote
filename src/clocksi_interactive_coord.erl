@@ -64,6 +64,7 @@
     start_link/5,
     generate_name/1,
     perform_singleitem_operation/4,
+    perform_singleitem_operation/5,
     perform_singleitem_update/5,
     finish_op/3
 ]).
@@ -155,6 +156,20 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
             {ok, Snapshot, CommitTime}
+    end.
+
+perform_singleitem_operation(Clock, Key, Type, Operation, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Operation, [], Transaction, []) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, Snapshot, Value} ->
+            %% Read only transaction has no commit, hence return the snapshot time
+            CommitTime = Transaction#transaction.vec_snapshot_time,
+            {ok, Snapshot, Value, CommitTime}
     end.
 
 %% @doc This is a standalone function for directly contacting the update

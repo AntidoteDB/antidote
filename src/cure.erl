@@ -136,10 +136,16 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
     case SingleKey of
         true -> %% Execute the fast path
             FormattedObjects = format_read_params(Objects),
-            [{Key, Type}] = FormattedObjects,
-            {ok, Val, CommitTime} = clocksi_interactive_coord:
-                perform_singleitem_operation(Clock, Key, Type, Properties),
-            {ok, transform_reads([{{Key, state}, Val}], StateOrValue, Objects), CommitTime};
+            case FormattedObjects of
+                [{Key, Type}] ->
+                    {ok, Val, CommitTime} = clocksi_interactive_coord:
+                    perform_singleitem_operation(Clock, Key, Type, Properties),
+                    {ok, transform_reads([{{0, Key}, {state, Val}}], StateOrValue, Objects), CommitTime};
+                [{Key, Type, Function}] ->
+                    {ok, _, Val, CommitTime} = clocksi_interactive_coord:
+                    perform_singleitem_operation(Clock, Key, Type, Function, Properties),
+                    {ok, transform_reads([{{0, Key}, {value, Val}}], StateOrValue, Objects), CommitTime}
+            end;
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
