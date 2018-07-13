@@ -29,7 +29,8 @@
 
 %% API
 -export([
-  broadcast/1]).
+  broadcast/1,
+  send_retry/0]).
 
 %% Server methods
 -export([
@@ -42,7 +43,7 @@
   code_change/3]).
 
 %% State
--record(state, {connection, channel}). %% connection :: amqp_connection, channel :: amqp_channel
+-record(state, {connection, channel, connected}). %% connection :: amqp_connection, channel :: amqp_channel
 
 %%%% API --------------------------------------------------------------------+
 
@@ -59,6 +60,9 @@ broadcast(Txn = #interdc_txn{partition = P}) ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
+  maybe_connect().
+
+maybe_connect() ->
   Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
   lager:info("Connecting to RabbitMQ on host ~p", [Host]),
   case amqp_connection:start(#amqp_params_network{host=Host}) of
@@ -67,21 +71,47 @@ init([]) ->
       amqp_channel:call(Channel, #'exchange.declare'{exchange = <<"transactions">>,
                                                       type = <<"direct">>}),
       lager:info("Publisher started"),
-      {ok, #state{connection = Connection, channel = Channel}};
+      {ok, #state{connection = Connection, channel = Channel, connected = true}};
     {error, Error} ->
       lager:error("Error connecting to RabbitMQ: ~p", [Error]),
-      {error, Error}
+      % set timeout to try again
+      timer:apply_after(?MESSAGING_RETRY_TIME, ?MODULE, send_retry, []),
+      {ok, #state{connected = false}}
   end.
 
-handle_call({publish, Partition, Message}, _From, State) -> {reply, amqp_channel:cast(State#state.channel, #'basic.publish'{
-                                                                                                              exchange = <<"transactions">>,
-                                                                                                              routing_key = Partition
-                                                                                                            },
-                                                                                                            #amqp_msg{payload = Message}), State}.
+send_retry() ->
+  gen_server:cast(?MODULE, try_connect).
 
-terminate(_Reason, State) ->
-  amqp_channel:close(State#state.channel),
-  amqp_connection:close(State#state.connection).
-handle_cast(_Request, State) -> {noreply, State}.
+handle_call({publish, Partition, Message}, _From, State=#state{connected = Connected}) ->
+  case Connected of
+    true ->
+      {reply, amqp_channel:cast(State#state.channel, #'basic.publish'{
+                                                                      exchange = <<"transactions">>,
+                                                                      routing_key = Partition
+                                                                    },
+                                                                    #amqp_msg{payload = Message}), State};
+    false ->
+      {reply, ok, State}
+  end.
+
+terminate(_Reason, State = #state{connected = Connected}) ->
+  case Connected of
+    true ->
+      amqp_channel:close(State#state.channel),
+      amqp_connection:close(State#state.connection);
+    false ->
+      ok
+  end.
+
+handle_cast(try_connect, State=#state{connected = false}) ->
+  case maybe_connect() of
+    {ok, NewState} ->
+      {noreply, NewState};
+    {error, _Error} ->
+      {noreply, State}
+  end;
+handle_cast(_Request, State) ->
+  {noreply, State}.
+
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

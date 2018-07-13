@@ -38,16 +38,24 @@
   code_change/3
   ]).
 
+-export([
+    send_retry/0
+]).
+
 %% State
 -record(state, {
   connection, %% amqp_connection
-  channel %% amqp_channel
+  channel, %% amqp_channel
+  connected %% are we connected?
 }).
 
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
+    maybe_connect().
+
+maybe_connect() ->
     Host = application:get_env(antidote, rabbitmq_host, ?DEFAULT_RABBITMQ_HOST),
     lager:info("Connecting to RabbitMQ on host ~p", [Host]),
     case amqp_connection:start(#amqp_params_network{host=Host}) of
@@ -69,12 +77,17 @@ init([]) ->
                 #'basic.consume_ok'{} ->
 
                     lager:info("Subscriber started"),
-                    {ok, #state{connection = Connection, channel = Channel}}
+                    {ok, #state{connection = Connection, channel = Channel, connected = true}}
             end;
         {error, Error} ->
             lager:error("Error connecting to RabbitMQ: ~p", [Error]),
-            {error, Error}
+            % set timeout to try again
+            timer:apply_after(?MESSAGING_RETRY_TIME, ?MODULE, send_retry, []),
+            {ok, #state{connected = false}}
     end.
+
+send_retry() ->
+  gen_server:cast(?MODULE, try_connect).
 
 handle_call(_Request, _From, Ctx) ->
     {reply, not_implemented, Ctx}.
@@ -96,7 +109,16 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload = BinaryMsg
     amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag}),
     {noreply, State}.
 
-handle_cast(_Request, State) -> {noreply, State}.
+handle_cast(try_connect, State=#state{connected = false}) ->
+    case maybe_connect() of
+        {ok, NewState} ->
+            {noreply, NewState};
+        {error, _Error} ->
+            {noreply, State}
+    end;
+handle_cast(_Request, State) ->
+  {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
   amqp_channel:close(State#state.channel),
