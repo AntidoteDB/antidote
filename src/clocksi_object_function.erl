@@ -45,8 +45,10 @@ async_execute_object_function(Sender, Transaction, IndexNode, ReqNum, Key, Type,
             case Type:is_operation(ReadFun) of
                 true ->
                     {Op, _Args} = ReadFun,
-                    Value = Type:value(ReadFun, Snapshot),
-                    gen_statem:cast(Sender0, {ok, {ReqNum, Key, Type, Op, Snapshot, Value}});
+                    Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
+                    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+                    Value = Type:value(ReadFun, Snapshot2),
+                    gen_statem:cast(Sender0, {ok, {ReqNum, Key, Type, Op, Snapshot2, Value}});
                 false ->
                     gen_statem:cast(Sender0, {error, {function_not_supported, ReadFun}})
             end;
@@ -61,8 +63,10 @@ sync_execute_object_function(Transaction, IndexNode, Key, Type, ReadFun, WriteSe
         {ok, Snapshot} ->
             case Type:is_operation(ReadFun) of
                 true ->
-                    Value = Type:value(ReadFun, Snapshot),
-                    {ok, {Key, Type, Op, Snapshot, Value}};
+                    Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
+                    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+                    Value = Type:value(ReadFun, Snapshot2),
+                    {ok, {Key, Type, Op, Snapshot2, Value}};
                 false ->
                     {error, {function_not_supported, ReadFun}}
             end;
