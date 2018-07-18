@@ -163,13 +163,19 @@ perform_singleitem_operation(Clock, Key, Type, Operation, Properties) ->
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Operation, [], Transaction, []) of
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Operation, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
-        {ok, Snapshot, Value} ->
+        {ok, Snapshot} ->
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
-            {ok, Snapshot, Value, CommitTime}
+            case Type:is_operation(Operation) of
+                true ->
+                    Value = Type:value(Operation, Snapshot),
+                    {ok, Snapshot, Value, CommitTime};
+                false ->
+                    {error, {function_not_supported, Operation}}
+            end
     end.
 
 %% @doc This is a standalone function for directly contacting the update
@@ -563,24 +569,30 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
 }) ->
     %% TODO: type is hard-coded..
 
-    {ReqNum, Key, Type, Snapshot, Operation, Value} =
+    {ReqNum, Key, Type, Snapshot, Operation} =
         case Response of
-            {N, K, T, F, S, V} -> {N, K, T, S, F, V};
-            {N, K, T, S} -> {N, K, T, S, undefined, undefined}
+            {N, K, T, F, S} -> {N, K, T, S, F};
+            {N, K, T, S} -> {N, K, T, S, undefined}
         end,
 
+    UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
     {ReadValues, NewReadSet} =
         case Operation of
             undefined ->
-                UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
                 %% Swap keys with their appropriate read values
                 {replace_first(ReadKeys, Key, {{ReqNum, Key}, {state, UpdatedSnapshot}}),
                     orddict:store(Key, UpdatedSnapshot, ReadSet)};
             Operation ->
-                %{replace_last(ReadKeys, Key, {value, Value}),
-                %    orddict:store(Key, Snapshot, ReadSet)}
-                {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, Value}}),
-                    orddict:store(Key, Snapshot, ReadSet)}
+                case Type:is_operation(Operation) of
+                    true ->
+                        Value = Type:value(Operation, UpdatedSnapshot),
+                        {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, Value}}),
+                            orddict:store(Key, UpdatedSnapshot, ReadSet)};
+                    false ->
+                        ErrorMsg = {error, {function_not_supported, Operation}},
+                        {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, ErrorMsg}}),
+                            orddict:store(Key, UpdatedSnapshot, ReadSet)}
+                end
         end,
 
     %% Loop back to the same state until we process all the replies
@@ -820,25 +832,33 @@ execute_command(read, {Key, Type}, Sender, State = #coord_state{
 
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State =
-    #coord_state{transaction=Transaction, updated_partitions = UpdatedPartitions, internal_read_set = ReadSet}) ->
+    #coord_state{transaction=Transaction, internal_read_set = ReadSet}) ->
 
     ExecuteReads = fun(Object, {ReqNum, AccState}) ->
         ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         case Object of
             {Key, Type, Function} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
-                WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
-                               false -> [];
-                               {Partition, WS} -> WS
-                           end,
+                case orddict:find(Key, ReadSet) of
+                    {ok, Snapshot} ->
+                        gen_statem:cast(self(), {ok, {ReqNum, Key, Type, Function, Snapshot}});
+                    error ->
+                        ok = clocksi_vnode:async_read_data_function(Partition, Transaction, ReqNum, Key, Type, Function)
+                end,
 
-                ok = clocksi_object_function:async_execute_object_function(
-                    {fsm, self()}, Transaction, Partition, ReqNum, Key, Type, Function, WriteSet, ReadSet),
+                %ok = clocksi_object_function:async_execute_object_function(
+                %    {fsm, self()}, Transaction, Partition, ReqNum, Key, Type, Function, WriteSet, ReadSet),
                 ReadKeys = AccState#coord_state.return_accumulator,
                 {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}};
             {Key, Type} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
-                ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type),
+                case orddict:find(Key, ReadSet) of
+                    {ok, Snapshot} ->
+                        gen_statem:cast(self(), {ok, {ReqNum, Key, Type, Snapshot}});
+                    error ->
+                        ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type)
+                end,
+
                 ReadKeys = AccState#coord_state.return_accumulator,
                 {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}}
         end

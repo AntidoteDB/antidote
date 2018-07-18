@@ -44,37 +44,43 @@ async_execute_object_function(Sender, Transaction, IndexNode, ReqNum, Key, Type,
             {fsm, Sender0} = Sender,
             case Type:is_operation(ReadFun) of
                 true ->
-                    {Op, _Args} = ReadFun,
                     Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
                     Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
                     Value = Type:value(ReadFun, Snapshot2),
-                    gen_statem:cast(Sender0, {ok, {ReqNum, Key, Type, Op, Snapshot2, Value}});
+                    gen_statem:cast(Sender0, {ok, {ReqNum, Key, Type, ReadFun, Snapshot2, Value}});
                 false ->
                     gen_statem:cast(Sender0, {error, {function_not_supported, ReadFun}})
             end;
         error ->
-            ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, ReqNum, Key, Type, ReadFun, WriteSet)
+            ok = clocksi_vnode:async_read_data_function(IndexNode, Transaction, ReqNum, Key, Type, ReadFun)
     end,
     ok.
 
 sync_execute_object_function(Transaction, IndexNode, Key, Type, ReadFun, WriteSet, InternalReadSet) ->
-    {Op, _Args} = ReadFun,
-    case orddict:find(Key, InternalReadSet) of
-        {ok, Snapshot} ->
+    Result =
+        case orddict:find(Key, InternalReadSet) of
+            {ok, S} ->
+                S;
+            error ->
+                case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                    {ok, S}->
+                        S;
+                    {error, Reason1}->
+                        {error, {exec_object_function_failed, Reason1}}
+                end
+        end,
+
+    case Result of
+        {error, Reason2} ->
+            {error, Reason2};
+        Snapshot ->
+            Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
             case Type:is_operation(ReadFun) of
                 true ->
-                    Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
-                    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
                     Value = Type:value(ReadFun, Snapshot2),
-                    {ok, {Key, Type, Op, Snapshot2, Value}};
+                    {ok, {Key, Type, ReadFun, Snapshot2, Value}};
                 false ->
                     {error, {function_not_supported, ReadFun}}
-            end;
-        error ->
-            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                {ok, Snapshot, Value}->
-                    {ok, {Key, Type, Op, Snapshot, Value}};
-                {error, Reason}->
-                    {error, {exec_object_function_failed, Reason}}
             end
     end.
