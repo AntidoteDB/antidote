@@ -1,0 +1,303 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
+%%%-------------------------------------------------------------------
+%%% @author pedrolopes
+%%% @doc An Antidote module to manage triggers that modify indexes.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(index_triggers).
+
+-include("querying.hrl").
+
+-define(MAP_UPD(ColName, ColType, Operation, Value), {{ColName, ColType}, {Operation, Value}}).
+-define(INDEX_UPD(TableName, IndexName, EntryKey, EntryValue), {TableName, IndexName, EntryKey, EntryValue}).
+-define(INDEX_OPERATION, update).
+-define(PINDEX_ENTRY_DT, antidote_crdt_register_lww).
+
+%% API
+-export([create_index_hooks/2,
+    index_update_hook/2,
+    index_update_hook/1,
+    build_index_updates/2]).
+
+create_index_hooks(Updates, _TxId) when is_list(Updates) ->
+    lists:foldl(fun(ObjUpdate, UpdAcc) ->
+        ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
+        case update_type({Key, Type, Bucket}) of
+            ?TABLE_UPD_TYPE ->
+                case antidote_hooks:has_hook(pre_commit, Bucket) of
+                    true -> ok;
+                    false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
+                end,
+
+                lists:append(UpdAcc, []);
+            ?RECORD_UPD_TYPE ->
+                case antidote_hooks:has_hook(pre_commit, Bucket) of
+                    true -> ok;
+                    false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
+                end,
+
+                lists:append(UpdAcc, []);
+            _ ->
+                lists:append(UpdAcc, [])
+        end
+                end, [], Updates).
+
+% Uncomment to use with following 3 hooks
+%%fill_pindex(Key, Bucket) ->
+%%    TableName = querying_utils:to_atom(Bucket),
+%%    PIdxName = generate_pindex_key(TableName),
+%%    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    PIdxUpdate = {PIdxKey, add, Key},
+%%    [PIdxUpdate].
+%%
+%%empty_hook({{Key, Bucket}, Type, Param}) ->
+%%    {ok, {{Key, Bucket}, Type, Param}}.
+%%
+%%transaction_hook({{Key, Bucket}, Type, Param}) ->
+%%    {UpdateOp, Updates} = Param,
+%%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+%%
+%%    {ok, TxId} = cure:start_transaction(ignore, [], false),
+%%    {ok, _} = cure:commit_transaction(TxId),
+%%
+%%    {ok, ObjUpdate}.
+%%
+%%rwtransaction_hook({{Key, Bucket}, Type, Param}) ->
+%%    {UpdateOp, Updates} = Param,
+%%    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+%%
+%%    {ok, TxId} = cure:start_transaction(ignore, [], false),
+%%
+%%    %% write a key
+%%    [ObjKey] = querying_utils:build_keys(key1, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    Upd = querying_utils:create_crdt_update(ObjKey, ?MAP_OPERATION, {antidote_crdt_register_lww, pk1, {assign, val1}}),
+%%    {ok, _} = querying_utils:write_keys(Upd, TxId),
+%%
+%%    %% read a key
+%%    [ObjKey] = querying_utils:build_keys(key2, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+%%    [_Obj] = querying_utils:read_keys(value, ObjKey, TxId),
+%%
+%%    {ok, _} = cure:commit_transaction(TxId),
+%%
+%%    {ok, ObjUpdate}.
+
+%% The 'Transaction' object passed here is a tuple on the form
+%% {TxId, ReadSet, WriteSet} that represents a transaction id,
+%% a transaction read set, and a transaction write set, respectively.
+index_update_hook(Update, Transaction) when is_tuple(Update) ->
+    {{Key, Bucket}, Type, Param} = Update,
+    case generate_index_updates(Key, Type, Bucket, Param, Transaction) of
+        [] ->
+            {ok, Update};
+        Updates ->
+            SendUpds = lists:append([Update], Updates),
+            {ok, SendUpds}
+    end.
+
+index_update_hook(Update) when is_tuple(Update) ->
+    {ok, TxId} = querying_utils:start_transaction(),
+    {ok, Updates} = index_update_hook(Update, TxId),
+    {ok, _} = querying_utils:commit_transaction(TxId),
+
+    {ok, Updates}.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+update_type({?TABLE_METADATA_KEY, ?TABLE_METADATA_DT, ?AQL_METADATA_BUCKET}) ->
+    ?TABLE_UPD_TYPE;
+update_type({_Key, ?TABLE_METADATA_DT, ?AQL_METADATA_BUCKET}) ->
+    ?METADATA_UPD_TYPE;
+update_type({_Key, ?TABLE_DT, _Bucket}) ->
+    ?RECORD_UPD_TYPE;
+update_type(_) ->
+    ?OTHER_UPD_TYPE.
+
+generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
+    {UpdateOp, Updates} = Param,
+    ObjUpdate = ?OBJECT_UPDATE(Key, Type, Bucket, UpdateOp, Updates),
+    ObjBoundKey = {Key, Type, Bucket},
+
+    case update_type({Key, Type, Bucket}) of
+        ?TABLE_UPD_TYPE ->
+            % Is a table update
+            %lager:info("Is a table update: ~p", [ObjUpdate]),
+
+            [{{TableName, _}, _}] = Updates,
+
+            Table = table_utils:table_metadata(TableName, Transaction),
+            SIdxUpdates = fill_index(ObjUpdate, Table, Transaction),
+            Upds = build_index_updates(SIdxUpdates, Transaction),
+
+            %% Remove table metadata entry from cache -- mark as 'dirty'
+            ok = metadata_caching:remove_key(TableName),
+
+            Upds;
+        ?RECORD_UPD_TYPE ->
+            % Is a record update
+            %lager:info("Is a record update: ~p", [ObjUpdate]),
+
+            TName = filter_table_name(Bucket),
+            Table = table_utils:table_metadata(TName, Transaction),
+            case Table of
+                [] -> [];
+                _Else ->
+                    % A table exists
+                    TableName = table_utils:name(Table),
+
+                    PIdxName = indexing:generate_pindex_key(TableName),
+                    [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+
+                    PIdxUpdate = create_pindex_update(ObjBoundKey, Updates, Table, PIdxKey, Transaction),
+
+                    Indexes = table_utils:indexes(Table),
+                    SIdxUpdates = lists:foldl(fun(Operation, IdxUpdates2) ->
+                        {{Col, CRDT}, {_CRDTOper, Val} = Op} = Operation,
+                        case indexing:lookup_index(Col, Indexes) of
+                            [] -> IdxUpdates2;
+                            Idxs ->
+                                AuxUpdates = lists:map(fun(Idx) ->
+                                    ?INDEX_UPD(TableName, indexing:index_name(Idx), {Val, CRDT}, {ObjBoundKey, Op})
+                                end, Idxs),
+                                lists:append(IdxUpdates2, AuxUpdates)
+                        end
+                    end, [], Updates),
+
+                    %lager:info("SIdxUpdates: ~p", [SIdxUpdates]),
+
+                    lists:append([PIdxUpdate], build_index_updates(SIdxUpdates, Transaction))
+            end;
+        _ -> []
+    end.
+
+fill_index(ObjUpdate, Table, Transaction) ->
+    case retrieve_index(ObjUpdate, Table) of
+        {_, []} ->
+            % No index was created
+            %lager:info("No index was created"),
+            [];
+        {NewTable, Indexes} when is_list(Indexes) ->
+            lists:foldl(fun(Index, Acc) ->
+                % A new index was created
+                %lager:info("A new index was created"),
+
+                ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
+                [PrimaryKey] = table_utils:primary_key_name(NewTable),
+                PIndexObject = indexing:read_index(primary, TableName, Transaction),
+                SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
+
+                IdxUpds = lists:map(fun({_EntryKey, EntrySet}) ->
+                    [ObjKey] = ordsets:to_list(EntrySet),
+                    case record_utils:record_data(ObjKey, Transaction) of
+                        [] -> [];
+                        [Record] ->
+                            PkValue = querying_utils:to_atom(record_utils:lookup_value(PrimaryKey, Record)),
+                            ?ATTRIBUTE(_ColName, Type, Value) = record_utils:get_column(IndexedColumn, Record),
+                            case is_element(Value, PkValue, SIndexObject) of
+                                true -> [];
+                                false ->
+                                    Op = crdt_utils:to_insert_op(Type, Value), %% generate an op according to Type
+                                    ?INDEX_UPD(TableName, IndexName, {Value, Type}, {ObjKey, Op})
+                            end
+                    end
+                end, PIndexObject),
+                lists:append(Acc, lists:flatten(IdxUpds))
+            end, [], Indexes)
+    end.
+
+%% Given a list of index updates on the form {TableName, IndexName, {EntryKey, EntryValue}},
+%% build the database updates given that it may be necessary to delete old entries and
+%% insert the new ones.
+build_index_updates([], _TxId) -> [];
+build_index_updates(Updates, _TxId) when is_list(Updates) ->
+    %lager:info("List of updates: ~p", [Updates]),
+
+    lists:foldl(fun(Update, AccList) ->
+        ?INDEX_UPD(TableName, IndexName, {_Value, Type}, {PkValue, Op}) = Update,
+
+        DBIndexName = indexing:generate_sindex_key(TableName, IndexName),
+        [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+
+        IdxUpdate = case is_list(Op) of
+                        true ->
+                            lists:map(fun(Op2) ->
+                                {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op2}),
+                                {{K, B}, T, {UpdateOp, Upd}}
+                                      end, Op);
+                        false ->
+                            {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op}),
+                            [{{K, B}, T, {UpdateOp, Upd}}]
+                    end,
+
+        lists:append([AccList, IdxUpdate])
+                end, [], Updates);
+build_index_updates(Update, TxId) when ?is_index_upd(Update) ->
+    build_index_updates([Update], TxId).
+
+retrieve_index(ObjUpdate, Table) ->
+    ?OBJECT_UPDATE(_Key, _Type, _Bucket, _UpdOp, [Assign]) = ObjUpdate,
+    ?MAP_UPD(_TableName, _CRDT, _CRDTOp, NewTableMeta) = Assign,
+
+    CurrentIdx =
+        case Table of
+            [] -> [];
+            _ -> table_utils:indexes(Table)
+        end,
+    NIdx = table_utils:indexes(NewTableMeta),
+    NewIndexes = lists:filter(fun(?INDEX(IndexName, _, _)) ->
+        not lists:keymember(IndexName, 1, CurrentIdx)
+    end, NIdx),
+    {NewTableMeta, NewIndexes}.
+
+create_pindex_update(ObjBoundKey, Updates, Table, PIndexKey, Transaction) ->
+    TableCols = table_utils:columns(Table),
+    [PKName] = table_utils:primary_key_name(Table),
+    {PKName, PKType, _Constraint} = maps:get(PKName, TableCols),
+    PKCRDT = crdt_utils:type_to_crdt(PKType, ignore),
+
+    ConvPKey = case proplists:get_value({PKName, PKCRDT}, Updates) of
+                   {_Op, Value} ->
+                       Value;
+                   undefined ->
+                       [Record] = record_utils:record_data(ObjBoundKey, Transaction),
+                       record_utils:lookup_value({PKName, PKCRDT}, Record)
+               end,
+
+    PIdxOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ConvPKey),
+
+    {{IdxKey, IdxType, IdxBucket}, UpdateType, IndexOp} =
+        querying_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {?PINDEX_ENTRY_DT, ObjBoundKey, PIdxOp}),
+    {{IdxKey, IdxBucket}, IdxType, {UpdateType, IndexOp}}.
+
+is_element(IndexedVal, Pk, IndexObj) ->
+    case orddict:find(IndexedVal, IndexObj) of
+        {ok, Pks} ->
+            querying_utils:first_occurrence(fun({K, _T, _B}) -> K == Pk end, Pks) =/= undefined;
+        error -> false
+    end.
+
+filter_table_name(Bucket) ->
+    BucketStr = atom_to_list(Bucket),
+    AtIdx = string:chr(BucketStr, $@),
+    list_to_atom(string:sub_string(BucketStr, AtIdx + 1)).

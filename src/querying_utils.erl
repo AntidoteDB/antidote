@@ -36,6 +36,7 @@
 -endif.
 
 -include("antidote.hrl").
+-include("querying.hrl").
 
 -define(CRDT_INDEX, antidote_crdt_index).
 -define(CRDT_MAP, antidote_crdt_map_go).
@@ -43,7 +44,7 @@
 -define(INVALID_OP_MSG(Operation, CRDT), io_lib:format("The operation ~p is not part of the ~p specification", [Operation, CRDT])).
 
 %% API
--export([build_keys/3,
+-export([build_keys/3, build_keys_from_table/3,
     read_keys/3, read_keys/2,
     read_function/3, read_function/2,
     write_keys/2, write_keys/1,
@@ -71,6 +72,30 @@ build_keys([Key | Tail1], [Type | Tail2], Bucket, Acc) ->
     ObjKey = {Key, TypeAtom, BucketAtom},
     build_keys(Tail1, Tail2, Bucket, lists:append(Acc, [ObjKey]));
 build_keys([], [], _Bucket, Acc) ->
+    Acc.
+
+build_keys_from_table(Keys, Table, TxId) when is_list(Keys) ->
+    build_keys_from_table(Keys, Table, TxId, []);
+build_keys_from_table(Key, Table, TxId) ->
+    build_keys_from_table([Key], Table, TxId).
+
+build_keys_from_table([{AtomKey, RawKey} | Keys], Table, TxId, Acc) ->
+    TName = table_utils:name(Table),
+    PartCol = table_utils:partition_column(Table),
+
+    BoundKey =
+        case PartCol of
+            [_] ->
+                Index = indexing:read_index(primary, TName, TxId),
+                %% we are only relying on the first key
+                {_, [BObj | _Rest]} = lists:keyfind(RawKey, 1, Index),
+                BObj;
+            undefined ->
+                [BObj] = build_keys(AtomKey, ?TABLE_DT, TName),
+                BObj
+        end,
+    build_keys_from_table(Keys, Table, TxId, lists:append(Acc, [BoundKey]));
+build_keys_from_table([], _Table, _TxId, Acc) ->
     Acc.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

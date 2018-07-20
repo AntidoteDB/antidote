@@ -7,7 +7,7 @@
 %%%-------------------------------------------------------------------
 
 %% Table metadata definitions
--define(TABLE(Name, Policy, Cols, FKeys, Indexes), {Name, Policy, Cols, FKeys, Indexes}).
+-define(TABLE(Name, Policy, Cols, FKeys, Indexes, PartitionCol), {Name, Policy, Cols, FKeys, Indexes, PartitionCol}).
 -define(ATTRIBUTE(Column, Type, Value), {{Column, Type}, Value}).
 -define(FK(FkName, FkType, RefTableName, RefColName, DeleteRule), {{FkName, FkType}, {RefTableName, RefColName}, DeleteRule}).
 -define(TABLE_DT, antidote_crdt_map_go).

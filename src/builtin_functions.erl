@@ -68,6 +68,8 @@ assert_visibility(State, Rule, Versions, SourceTable, TxId) ->
     case table_crps:dep_level(Policy) of
         ?REMOVE_WINS ->
             ExplicitState andalso check_versions(Versions, TxId);
+        ?ADD_WINS ->
+            ExplicitState andalso check_versions(Versions, TxId);
         _Other ->
             ExplicitState
     end.
@@ -78,30 +80,37 @@ check_versions([[Version, TName] | Versions], TxId) ->
 check_versions([], _TxId) -> true.
 
 assert_visibility({Key, Version}, TableName, TxId) ->
+    Table = table_utils:table_metadata(TableName, TxId),
     KeyAtom = querying_utils:to_atom(Key),
-    BoundObj = querying_utils:build_keys(KeyAtom, ?TABLE_DT, TableName),
+    %BoundObj = querying_utils:build_keys(KeyAtom, ?TABLE_DT, TableName),
+    BoundObj = querying_utils:build_keys_from_table({KeyAtom, Key}, Table, TxId),
     [RefData] = querying_utils:read_keys(value, BoundObj, TxId),
     VersionKey = {?VERSION_COL, ?VERSION_COL_DT},
     RefVersion = record_utils:lookup_value(VersionKey, RefData),
 
-    Table = table_utils:table_metadata(TableName, TxId),
     Policy = table_utils:policy(Table),
     %lager:info("Version: ~p", [Version]),
     %lager:info("BoundObj: ~p", [BoundObj]),
     %lager:info("RefData: ~p", [RefData]),
     %lager:info("RefVersion: ~p", [RefVersion]),
     %lager:info("Policy: ~p", [Policy]),
+    RefDepLevel = table_crps:dep_level(Policy),
+    RefPDepLevel = table_crps:p_dep_level(Policy),
     FinalRes =
-        case table_crps:p_dep_level(Policy) of
+        case RefPDepLevel of
             ?REMOVE_WINS ->
                 RefVersion =:= Version andalso
                     is_visible(RefData, Table, TxId);
             _ ->
+                case RefDepLevel of
+                    ?REMOVE_WINS -> is_visible(RefData, Table, TxId);
+                    _ -> true
+                end
                 %is_visible(RefData, Table, TxId)
                 %RefRule = table_crps:get_rule(Policy),
                 %RefState = record_utils:lookup_value({?STATE_COL, ?STATE_COL_DT}, RefData),
                 %find_last(RefState, RefRule, ignore) =/= d
-                true
+                %true
         end,
 
     %lager:info("{~p, ~p}: ~p", [Key, Version, FinalRes]),
@@ -172,17 +181,19 @@ is_visible(ObjData, Table, TxId) ->
     %lager:info("PKName: ~p", [PKName]),
     PKValue = querying_utils:to_atom(record_utils:lookup_value(PKName, ObjData)),
     %lager:info("PKValue: ~p", [PKValue]),
-    ObjKey = {PKValue, ?TABLE_DT, table_utils:table(Table)},
+    ObjKey = {PKValue, ?TABLE_DT, table_utils:name(Table)},
 
     %% TODO delete ObjData
     find_last(ObjState, Rule, ignore) =/= d andalso
         (is_visible0(FKeys, ObjData, TxId) orelse
         record_utils:delete_record(ObjKey, TxId)).
 
-is_visible0([?FK(FkName, _, FkTable, _, _) | Tail], Record, TxId) when length(FkName) == 1 ->
+is_visible0([?FK(FkName, _, FkTable, _, _) | Tail], Record, TxId)
+    when length(FkName) == 1 ->
     ObjVersion = record_utils:lookup_value(FkName, Record),
     assert_visibility(ObjVersion, FkTable, TxId) andalso is_visible0(Tail, Record, TxId);
-is_visible0([?FK(FkName, _, _, _, _) | Tail], Record, TxId) when length(FkName) > 1 ->
+is_visible0([?FK(FkName, _, _, _, _) | Tail], Record, TxId)
+    when length(FkName) > 1 ->
     is_visible0(Tail, Record, TxId);
 is_visible0([], _Record, _TxId) -> true.
 

@@ -45,15 +45,25 @@ record_data(Keys, TxId) when is_list(Keys) ->
 record_data(Key, TxId) ->
     record_data([Key], TxId).
 
-record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
+record_data(PKeys, TableName, TxId)
+    when is_list(PKeys) andalso is_atom(TableName) ->
     PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
     ObjKeys = querying_utils:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
     case querying_utils:read_keys(value, ObjKeys, TxId) of
         [[]] -> [];
         ObjValues -> ObjValues
     end;
-record_data(PKey, TableName, TxId) ->
-    record_data([PKey], TableName, TxId).
+record_data(PKeys, Table, TxId)
+    when is_list(PKeys) ->
+    PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
+    ZippedKeys = lists:zip(PKeyAtoms, PKeys),
+    ObjKeys = querying_utils:build_keys_from_table(ZippedKeys, Table, TxId),
+    case querying_utils:read_keys(value, ObjKeys, TxId) of
+        [[]] -> [];
+        ObjValues -> ObjValues
+    end;
+record_data(PKey, Table, TxId) ->
+    record_data([PKey], Table, TxId).
 
 get_column(_ColumnName, []) -> undefined;
 get_column({ColumnName, CRDT}, Record) ->
@@ -84,9 +94,10 @@ delete_record(ObjKey, TxId) ->
     ok = querying_utils:write_keys(Update, TxId),
     false.
 
+satisfies_function(_, _, [], _) -> false;
 satisfies_function({Func, Predicate}, Table, Record, TxId) ->
     ?FUNCTION(FuncName, Args) = Func,
-    TableName = table_utils:table(Table),
+    TableName = table_utils:name(Table),
     AllCols = table_utils:all_column_names(Table),
 
     ReplaceArgs = builtin_functions:replace_args({FuncName, Args}, TableName, AllCols, Record),
@@ -99,6 +110,7 @@ satisfies_function({Func, Predicate}, Table, Record, TxId) ->
     Result = builtin_functions:exec({FuncName, AppendTable}, TxId),
     Predicate(Result).
 
+satisfies_predicate(_, _, []) -> false;
 satisfies_predicate(Column, Predicate, Record) when is_list(Record) ->
     Find = querying_utils:first_occurrence(
         fun(?ATTRIBUTE(ColName, CRDT, Val)) ->

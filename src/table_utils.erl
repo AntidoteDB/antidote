@@ -29,11 +29,12 @@
 -include("querying.hrl").
 
 %% API
--export([table/1,
+-export([name/1,
          policy/1,
          columns/1,
          foreign_keys/1,
          indexes/1,
+         partition_column/1,
          column_names/1,
          primary_key_name/1,
          all_column_names/1,
@@ -42,17 +43,19 @@
          is_primary_key/2,
          is_column/2,
          is_foreign_key/2,
-         shadow_column_state/4]).
+         get_foreign_key/2]).
 
-table(?TABLE(TName, _Policy, _Cols, _SCols, _Idx)) -> TName.
+name(?TABLE(TName, _Policy, _Cols, _SCols, _Idx, _PartCol)) -> TName.
 
-policy(?TABLE(_TName, Policy, _Cols, _SCols, _Idx)) -> Policy.
+policy(?TABLE(_TName, Policy, _Cols, _SCols, _Idx, _PartCol)) -> Policy.
 
-columns(?TABLE(_TName, _Policy, Cols, _SCols, _Idx)) -> Cols.
+columns(?TABLE(_TName, _Policy, Cols, _SCols, _Idx, _PartCol)) -> Cols.
 
-foreign_keys(?TABLE(_TName, _Policy, _Cols, SCols, _Idx)) -> SCols.
+foreign_keys(?TABLE(_TName, _Policy, _Cols, SCols, _Idx, _PartCol)) -> SCols.
 
-indexes(?TABLE(_TName, _Policy, _Cols, _SCols, Idx)) -> Idx.
+indexes(?TABLE(_TName, _Policy, _Cols, _SCols, Idx, _PartCol)) -> Idx.
+
+partition_column(?TABLE(_TName, _Policy, _Cols, _SCols, _Idx, PartCol)) -> PartCol.
 
 column_names(Table) ->
     Columns = columns(Table),
@@ -90,37 +93,19 @@ table_metadata(TableName, TxId) ->
             TableMetaObj %% table metadata is a 'value' type object
     end.
 
-is_primary_key(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
+is_primary_key(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx, _PartCol)) when is_map(Cols) ->
     ColList = maps:get(?PK_COLUMN, Cols),
     lists:member(ColumnName, ColList).
 
-is_column(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
+is_column(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx, _PartCol)) when is_map(Cols) ->
     ColList = maps:get(?COLUMNS, Cols),
     lists:member(ColumnName, ColList).
 
-is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
-    Aux = querying_utils:first_occurrence(
+is_foreign_key(ColumnName, Table) ->
+    get_foreign_key(ColumnName, Table) =/= undefined.
+
+get_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx, _PartCol)) ->
+    querying_utils:first_occurrence(
         fun(?FK(FkName, _FkType, _RefTable, _RefCol, _DelRule)) ->
             ColumnName == FkName
-        end, FKeys),
-
-    Aux =/= undefined.
-
-% RecordData represents a single record, i.e. a list of tuples on the form:
-% {{col_name, datatype}, value}
-shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
-    ?FK(FkName, FkType, _RefTable, _RefCol, _DelRule) = ShadowCol,
-    ColName = {column_name(FkName), crdt_utils:type_to_crdt(FkType, undefined)},
-    RefColValue = record_utils:lookup_value(ColName, RecordData),
-    StateObjKey = querying_utils:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
-    [ShColData] = querying_utils:read_keys(value, StateObjKey, TxId),
-    RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
-    State = record_utils:lookup_value(RefColName, ShColData),
-    State.
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
-
-column_name([{_TableName, ColName}]) -> ColName;
-column_name(FkName) -> FkName.
+        end, FKeys).
