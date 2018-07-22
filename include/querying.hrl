@@ -43,7 +43,7 @@
 -define(is_index(Index), is_tuple(Index) andalso tuple_size(Index) =:= 3).
 -define(PINDEX_PREFIX, "#_").
 -define(SINDEX_PREFIX, "#2i_").
--define(PINDEX_DT, antidote_crdt_index).
+-define(PINDEX_DT, antidote_crdt_index_p).
 -define(SINDEX_DT, antidote_crdt_index).
 -define(is_index_upd(Update), is_tuple(Update) andalso tuple_size(Update) =:= 3).
 -define(RECORD_UPD_TYPE, record).

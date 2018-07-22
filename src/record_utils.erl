@@ -90,7 +90,7 @@ delete_record(ObjKey, TxId) ->
     StateKey = {?STATE_COL, ?STATE_COL_DT},
     StateOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, 'd'),
     MapOp = {StateKey, StateOp},
-    Update = querying_utils:create_crdt_update(ObjKey, update, MapOp),
+    Update = crdt_utils:create_crdt_update(ObjKey, update, MapOp),
     ok = querying_utils:write_keys(Update, TxId),
     false.
 

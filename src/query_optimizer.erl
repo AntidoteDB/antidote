@@ -59,7 +59,7 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                 case Conditions of
                     [] ->
                         Index = indexing:read_index(primary, TableName, TxId),
-                        Keys = lists:map(fun({_EntryKey, EntrySet}) -> [BObj | _Rest] = EntrySet, BObj end, Index),
+                        Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
                         Records = read_records(Keys, TxId),
                         prepare_records(table_utils:column_names(Table), Table, Records);
                     _Else ->
@@ -181,7 +181,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
 iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:name(Table),
     Index = indexing:read_index(primary, TableName, TxId),
-    Keys = lists:map(fun({_EntryKey, EntrySet}) -> [BObj | _Rest] = EntrySet, BObj end, Index),
+    Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
     Data = read_records(Keys, TxId),
     PreparedData = prepare_records(table_utils:column_names(Table), Table, Data),
     iterate_ranges(RangeQueries, Table, PreparedData, TxId).
@@ -410,7 +410,7 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             {_, Excluded} = Range,
             Aux = indexing:read_index(IndexType, IndexName, TxId),
 
-            lists:filter(fun({IdxVal, _Set}) ->
+            lists:filter(fun({IdxVal, _}) ->
                 %% inequality predicate
                 not lists:member(IdxVal, Excluded)
             end, Aux);

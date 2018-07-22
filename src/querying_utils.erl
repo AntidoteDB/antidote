@@ -38,11 +38,6 @@
 -include("antidote.hrl").
 -include("querying.hrl").
 
--define(CRDT_INDEX, antidote_crdt_index).
--define(CRDT_MAP, antidote_crdt_map_go).
--define(CRDT_SET, antidote_crdt_set_aw).
--define(INVALID_OP_MSG(Operation, CRDT), io_lib:format("The operation ~p is not part of the ~p specification", [Operation, CRDT])).
-
 %% API
 -export([build_keys/3, build_keys_from_table/3,
     read_keys/3, read_keys/2,
@@ -52,7 +47,6 @@
     to_atom/1,
     to_list/1,
     remove_duplicates/1,
-    create_crdt_update/3,
     is_list_of_lists/1,
     replace/3,
     first_occurrence/2]).
@@ -88,7 +82,7 @@ build_keys_from_table([{AtomKey, RawKey} | Keys], Table, TxId, Acc) ->
             [_] ->
                 Index = indexing:read_index(primary, TName, TxId),
                 %% we are only relying on the first key
-                {_, [BObj | _Rest]} = lists:keyfind(RawKey, 1, Index),
+                {_, BObj} = lists:keyfind(RawKey, 1, Index),
                 BObj;
             undefined ->
                 [BObj] = build_keys(AtomKey, ?TABLE_DT, TName),
@@ -196,16 +190,6 @@ remove_duplicates(Other) ->
             throw(lists:flatten(ErrorMsg))
     end.
 
-%% TODO pass this function to crdt_utils
-create_crdt_update({_Key, ?CRDT_MAP, _Bucket} = ObjKey, UpdateOp, Value) ->
-    Update = map_update(Value),
-    {ObjKey, UpdateOp, Update};
-create_crdt_update({_Key, ?CRDT_INDEX, _Bucket} = ObjKey, UpdateOp, Value) ->
-    Update = index_update(Value),
-    {ObjKey, UpdateOp, Update};
-create_crdt_update(ObjKey, UpdateOp, Value) ->
-    set_update(ObjKey, UpdateOp, Value).
-
 is_list_of_lists(List) when is_list(List) ->
     NotDropped = lists:dropwhile(fun(Elem) -> is_list(Elem) end, List),
     NotDropped =:= [];
@@ -284,31 +268,3 @@ get_write_set(Partition, Partitions) ->
         {Partition, WS} -> WS
     end.
 
-map_update({{Key, CRDT}, {Op, Value} = Operation}) ->
-    case CRDT:is_operation(Operation) of
-        true -> [{{Key, CRDT}, {Op, Value}}];
-        false -> throw(lists:flatten(?INVALID_OP_MSG(Operation, CRDT)))
-    end;
-map_update(Values) when is_list(Values) ->
-    lists:foldl(fun(Update, Acc) ->
-        lists:append(Acc, map_update(Update))
-                end, [], Values).
-index_update({CRDT, Key, {Op, Value} = Operation}) ->
-    case CRDT:is_operation(Operation) of
-        true -> [{CRDT, Key, {Op, Value}}];
-        false -> throw(lists:flatten(?INVALID_OP_MSG(Operation, CRDT)))
-    end;
-index_update({CRDT, Key, Operations}) when is_list(Operations) ->
-    lists:foldl(fun(Op, Acc) ->
-        lists:append(Acc, index_update({CRDT, Key, Op}))
-                end, [], Operations);
-index_update(Values) when is_list(Values) ->
-    lists:foldl(fun(Update, Acc) ->
-        lists:append(Acc, index_update(Update))
-                end, [], Values).
-
-set_update({_Key, ?CRDT_SET, _Bucket} = ObjKey, UpdateOp, Value) ->
-    case ?CRDT_SET:is_operation(UpdateOp) of
-        true -> {ObjKey, UpdateOp, Value};
-        false -> throw(lists:flatten(?INVALID_OP_MSG(UpdateOp, ?CRDT_SET)))
-    end.

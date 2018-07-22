@@ -173,12 +173,16 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
 
                     Indexes = table_utils:indexes(Table),
                     SIdxUpdates = lists:foldl(fun(Operation, IdxUpdates2) ->
-                        {{Col, CRDT}, {_CRDTOper, Val} = Op} = Operation,
+                        {{Col, CRDT}, {_CRDTOper, Val}} = Operation,
                         case indexing:lookup_index(Col, Indexes) of
                             [] -> IdxUpdates2;
                             Idxs ->
                                 AuxUpdates = lists:map(fun(Idx) ->
-                                    ?INDEX_UPD(TableName, indexing:index_name(Idx), {Val, CRDT}, {ObjBoundKey, Op})
+                                    BObjOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ObjBoundKey),
+                                    IndexValOp = crdt_utils:to_insert_op(CRDT, Val),
+                                    Op = [{bound_obj, BObjOp}, {index_val, IndexValOp}],
+
+                                    ?INDEX_UPD(TableName, indexing:index_name(Idx), {Val, CRDT}, {Key, Op})
                                 end, Idxs),
                                 lists:append(IdxUpdates2, AuxUpdates)
                         end
@@ -197,29 +201,34 @@ fill_index(ObjUpdate, Table, Transaction) ->
             % No index was created
             %lager:info("No index was created"),
             [];
-        {NewTable, Indexes} when is_list(Indexes) ->
+        {_NewTable, Indexes} when is_list(Indexes) ->
             lists:foldl(fun(Index, Acc) ->
                 % A new index was created
                 %lager:info("A new index was created"),
 
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
-                [PrimaryKey] = table_utils:primary_key_name(NewTable),
+                %[PrimaryKey] = table_utils:primary_key_name(NewTable),
                 PIndexObject = indexing:read_index(primary, TableName, Transaction),
-                SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
+                %SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
 
-                IdxUpds = lists:map(fun({_EntryKey, EntrySet}) ->
-                    [ObjKey] = ordsets:to_list(EntrySet),
-                    case record_utils:record_data(ObjKey, Transaction) of
+                IdxUpds = lists:map(fun({RawKey, BoundKey}) ->
+                    case record_utils:record_data(BoundKey, Transaction) of
                         [] -> [];
                         [Record] ->
-                            PkValue = querying_utils:to_atom(record_utils:lookup_value(PrimaryKey, Record)),
+                            %%PkValue = querying_utils:to_atom(record_utils:lookup_value(PrimaryKey, Record)),
                             ?ATTRIBUTE(_ColName, Type, Value) = record_utils:get_column(IndexedColumn, Record),
-                            case is_element(Value, PkValue, SIndexObject) of
-                                true -> [];
-                                false ->
-                                    Op = crdt_utils:to_insert_op(Type, Value), %% generate an op according to Type
-                                    ?INDEX_UPD(TableName, IndexName, {Value, Type}, {ObjKey, Op})
-                            end
+                            AtomKey = querying_utils:to_atom(RawKey),
+                            BObjOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, BoundKey),
+                            IndexValOp = crdt_utils:to_insert_op(Type, Value),
+                            Op = [{bound_obj, BObjOp}, {index_val, IndexValOp}],
+                            ?INDEX_UPD(TableName, IndexName, {Value, Type}, {AtomKey, Op})
+
+%%                            case is_element(Value, PkValue, SIndexObject) of
+%%                                true -> [];
+%%                                false ->
+%%                                    Op = crdt_utils:to_insert_op(Type, Value), %% generate an op according to Type
+%%                                    ?INDEX_UPD(TableName, IndexName, {Value, Type}, {BoundKey, Op})
+%%                            end
                     end
                 end, PIndexObject),
                 lists:append(Acc, lists:flatten(IdxUpds))
@@ -239,19 +248,11 @@ build_index_updates(Updates, _TxId) when is_list(Updates) ->
         DBIndexName = indexing:generate_sindex_key(TableName, IndexName),
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
 
-        IdxUpdate = case is_list(Op) of
-                        true ->
-                            lists:map(fun(Op2) ->
-                                {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op2}),
-                                {{K, B}, T, {UpdateOp, Upd}}
-                                      end, Op);
-                        false ->
-                            {{K, T, B}, UpdateOp, Upd} = querying_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op}),
-                            [{{K, B}, T, {UpdateOp, Upd}}]
-                    end,
+        {{K, T, B}, UpdateOp, Upd} = crdt_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op}),
+        IdxUpdate = [{{K, B}, T, {UpdateOp, Upd}}],
 
         lists:append([AccList, IdxUpdate])
-                end, [], Updates);
+    end, [], Updates);
 build_index_updates(Update, TxId) when ?is_index_upd(Update) ->
     build_index_updates([Update], TxId).
 
@@ -284,18 +285,18 @@ create_pindex_update(ObjBoundKey, Updates, Table, PIndexKey, Transaction) ->
                        record_utils:lookup_value({PKName, PKCRDT}, Record)
                end,
 
-    PIdxOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ConvPKey),
+    PIdxOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ObjBoundKey),
 
     {{IdxKey, IdxType, IdxBucket}, UpdateType, IndexOp} =
-        querying_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {?PINDEX_ENTRY_DT, ObjBoundKey, PIdxOp}),
+        crdt_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {ConvPKey, PIdxOp}),
     {{IdxKey, IdxBucket}, IdxType, {UpdateType, IndexOp}}.
 
-is_element(IndexedVal, Pk, IndexObj) ->
-    case orddict:find(IndexedVal, IndexObj) of
-        {ok, Pks} ->
-            querying_utils:first_occurrence(fun({K, _T, _B}) -> K == Pk end, Pks) =/= undefined;
-        error -> false
-    end.
+%%is_element(IndexedVal, Pk, IndexObj) ->
+%%    case orddict:find(IndexedVal, IndexObj) of
+%%        {ok, Pks} ->
+%%            querying_utils:first_occurrence(fun({K, _T, _B}) -> K == Pk end, Pks) =/= undefined;
+%%        error -> false
+%%    end.
 
 filter_table_name(Bucket) ->
     BucketStr = atom_to_list(Bucket),
