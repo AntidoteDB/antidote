@@ -56,10 +56,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, "clocksi_bucket").
+-define(BUCKET, clocksi_bucket).
 
 init_per_suite(Config) ->
-    lager_common_test_backend:bounce(debug),
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
 
     Clusters = test_utils:set_up_clusters_common(Config),
@@ -81,7 +81,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [clocksi_test1,
@@ -156,7 +157,6 @@ update_sets(Node, Keys, Ops, TxId) ->
 clocksi_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    lager:info("Test1 started"),
 
     Key1=clocksi_test1_key1,
     Key2=clocksi_test1_key2,
@@ -181,7 +181,6 @@ clocksi_test1(Config) ->
 clocksi_test2(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    lager:info("Test2 started"),
 
     Key1=clocksi_test2_key1,
     Key2=clocksi_test2_key2,
@@ -203,7 +202,6 @@ clocksi_test2(Config) ->
     {ok, CausalSnapshot} = CommitResult,
 
     check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, CausalSnapshot, static),
-    lager:info("Test2 passed"),
     pass.
 
 %% @doc This test makes sure to block pending reads when a prepare is in progress
@@ -211,7 +209,6 @@ clocksi_test2(Config) ->
 clocksi_test_prepare(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    lager:info("Test prepare started"),
 
     Key1=clocksi_test_prepare_key1,
     Preflist = rpc:call(FirstNode, log_utilities, get_preflist_from_key, [aaa]),
@@ -253,7 +250,6 @@ clocksi_test_prepare(Config) ->
     End1 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId1]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
 
-    lager:info("Test prepare passed"),
     pass.
 
 find_key_same_node(FirstNode, IndexNode, Num) ->
@@ -278,7 +274,6 @@ spawn_com(FirstNode, TxId) ->
 clocksi_test5(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    lager:info("Test2 started"),
     Key1=clocksi_test5_key1,
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
@@ -297,7 +292,6 @@ clocksi_test5(Config) ->
     ?assertMatch({ok, _CausalSnapshot}, End),
     {ok, CausalSnapshot} = End,
     check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [b], CausalSnapshot, static),
-    lager:info("Test5 passed"),
     pass.
 
 %% @doc The following function tests an interactive tx.
@@ -306,7 +300,6 @@ clocksi_test5(Config) ->
 clocksi_multiple_updates_per_txn_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    lager:info("Test6 started"),
     Key1=clocksi_multiple_updates_per_txn_key1,
     BoundObj = {Key1, antidote_crdt_register_mv, ?BUCKET},
 
@@ -327,20 +320,17 @@ clocksi_multiple_updates_per_txn_test(Config) ->
     {ok, CausalSnapshot} = End,
     check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
 
-    lager:info("Test6 passed"),
     pass.
 
 %% @doc The following function tests that ClockSI can run both a single
 %%      read and a bulk-update tx.
 clocksi_single_key_update_read_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    lager:info("Test3 started"),
     FirstNode = hd(Nodes),
     Key = clocksi_single_key_update_read_test_key1,
     {ok, CommitTime} = update_counters(FirstNode, [Key, Key], [1, 1], ignore, static),
     check_read_key(FirstNode, Key, antidote_crdt_counter_pn, 2, CommitTime, static),
 
-    lager:info("clocksi_single_key_update_read_test passed"),
     pass.
 
 %% @doc Verify that multiple reads/writes are successful.
@@ -362,7 +352,6 @@ clocksi_multiple_key_update_read_test(Config) ->
 %%      read-only interactive tx.
 clocksi_test4(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    lager:info("Test4 started"),
     FirstNode = hd(Nodes),
     Key1 = clocksi_test4_key1,
     {ok, TxId1} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
@@ -377,7 +366,6 @@ clocksi_test4(Config) ->
 clocksi_test_read_time(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     %% Start a new tx,  perform an update over key abc, and send prepare.
-    lager:info("Test read_time started"),
     Key1 = clocksi_test_read_time_key1,
     FirstNode = hd(Nodes),
     LastNode= lists:last(Nodes),
@@ -474,7 +462,6 @@ clocksi_test_cert_property(Config) ->
     end.
 
 clocksi_test_certification_check_run(Nodes, DisableCert) ->
-    lager:info("clockSI_test_certification_check started"),
     Key1 = clockSI_test_certification_check_key1,
 
     FirstNode = hd(Nodes),
@@ -541,8 +528,6 @@ clocksi_multiple_test_certification_check(Config) ->
     end.
 
 clocksi_multiple_test_certification_check_run(Nodes) ->
-    lager:info("clockSI_multiple_test_certification_check started"),
-
     Key1 = clocksi_multiple_test_certification_check_key1,
     Key2 = clocksi_multiple_test_certification_check_key2,
     Key3 = clocksi_multiple_test_certification_check_key3,
@@ -724,10 +709,9 @@ clocksi_static_parallel_writes_test(Config) ->
                          , true
                          ]),
 
-    lager:info("updated 5 times the sabe object, no problem"),
+    lager:info("updated 5 times the same object, no problem"),
 
     {ok, Res1, _CT4} = rpc:call(Node, cure, obtain_objects,
                                 [CT2, [], [Bound_object1], true, object_value]),
     ?assertMatch([6], Res1),
-    lager:info("result is correct after reading those updates. Test passed."),
     pass.

@@ -123,7 +123,7 @@ unregister_hook(Prefix, Bucket) ->
 start_transaction(Clock, Properties) ->
     cure:start_transaction(Clock, Properties, false).
 
--spec abort_transaction(TxId::txid()) -> {error, reason()}.
+-spec abort_transaction(TxId::txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
     cure:abort_transaction(TxId).
 

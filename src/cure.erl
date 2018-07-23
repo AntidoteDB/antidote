@@ -52,10 +52,12 @@ start_transaction(Clock, Properties, KeepAlive) ->
 start_transaction(Clock, Properties) ->
     clocksi_istart_tx(Clock, Properties, false).
 
--spec abort_transaction(txid()) -> {error, reason()}.
-abort_transaction(_TxId) ->
-    %% TODO
-    {error, operation_not_implemented}.
+-spec abort_transaction(txid()) -> ok | {error, reason()}.
+abort_transaction(TxId) ->
+    case gen_statem:call(TxId#tx_id.server_pid, {abort, []}) of
+        {error, {aborted, _TxId}} -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
 
 -spec commit_transaction(txid()) ->
                                 {ok, snapshot_time()} | {error, reason()}.
