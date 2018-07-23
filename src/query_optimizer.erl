@@ -370,10 +370,9 @@ interpret_index({primary, TName}, Table, RangeQueries, TxId) ->
 
     IdxData = filter_index(GetRange, primary, TName, Table, TxId),
 
-    lists:foldl(fun({_IdxCol, PKs}, Set) ->
+    lists:foldl(fun({_RawKey, BoundObj}, Set) ->
         %% there's an assumption that the accumulator will never have repeated keys
-        [FirstFk | _Rest] = PKs,
-        ordsets:add_element(FirstFk, Set)
+        ordsets:add_element(BoundObj, Set)
     end, ordsets:new(), IdxData);
 
 interpret_index({secondary, {Name, TName, [Col]}}, Table, RangeQueries, TxId) -> %% TODO support more columns
@@ -397,7 +396,7 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
                 case IndexType of
                     primary ->
                         AtomVal = querying_utils:to_atom(Val),
-                        BObj = querying_utils:build_keys_from_table({AtomVal, Val}, Table, TxId),
+                        [BObj] = querying_utils:build_keys_from_table({AtomVal, Val}, Table, TxId),
                         {Val, BObj};
                     secondary ->
                         indexing:read_index_function(IndexType, IndexName, {get, Val}, TxId)

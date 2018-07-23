@@ -2,7 +2,7 @@
 [{<<"accept">>,{pkg,<<"accept">>,<<"0.3.0">>},1},
  {<<"antidote_crdt">>,
   {git,"https://github.com/pedromslopes/antidote_crdt",
-       {ref,"226fd25049c468dca3713a8edc915bcf537e1f36"}},
+       {ref,"441fd9e3fe52e5bf183b8b289e4c9c08484dd133"}},
   0},
  {<<"antidote_pb">>,
   {git,"https://github.com/syncfree/antidote_pb",

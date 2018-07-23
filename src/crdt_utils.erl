@@ -47,8 +47,8 @@ to_insert_op(?CRDT_BOOLEAN, Value) ->
         true -> {enable, {}};
         false -> {disable, {}}
     end;
-to_insert_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
-    {Inc, Dec} = Value,
+to_insert_op(?CRDT_BCOUNTER_INT, {Inc, Dec})
+    when is_list(Inc) andalso is_list(Dec) ->
     IncList = orddict:to_list(Inc),
     DecList = orddict:to_list(Dec),
     SumInc = sum_values(IncList),
@@ -56,6 +56,8 @@ to_insert_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
     IncUpdate = increment_bcounter(SumInc),
     DecUpdate = decrement_bcounter(SumDec),
     lists:flatten([IncUpdate, DecUpdate]);
+to_insert_op(?CRDT_BCOUNTER_INT, Value) ->
+    increment_bcounter(Value);
 to_insert_op(?CRDT_COUNTER_INT, Value) ->
     increment_counter(Value);
 to_insert_op(_, _) -> {error, invalid_crdt}.
@@ -100,14 +102,18 @@ increment_counter(Value) when is_integer(Value) ->
 %    {decrement, Value}.
 
 increment_bcounter(0) -> [];
-increment_bcounter(Value) when is_integer(Value) ->
+increment_bcounter({0, _Actor}) -> [];
+increment_bcounter(Value) ->
     bcounter_op(increment, Value).
 
 decrement_bcounter(0) -> [];
-decrement_bcounter(Value) when is_integer(Value) ->
+decrement_bcounter({0, _Actor}) -> [];
+decrement_bcounter(Value) ->
     bcounter_op(decrement, Value).
 
-bcounter_op(Op, Value) ->
+bcounter_op(Op, {Value, Actor}) ->
+    {Op, {Value, Actor}};
+bcounter_op(Op, Value) when is_integer(Value) ->
     {Op, {Value, term}}.
 
 sum_values(List) when is_list(List) ->
@@ -123,7 +129,7 @@ map_update(Values) when is_list(Values) ->
         lists:append(Acc, map_update(Update))
                 end, [], Values).
 
-index_update(UpdateOp, {_CRDT, _Key, Operations} = Update) when is_list(Operations) ->
+index_update(UpdateOp, Update) when is_tuple(Update) ->
     case ?CRDT_INDEX:is_operation({UpdateOp, Update}) of
         true -> [Update];
         false -> throw(lists:flatten(?INVALID_OP_MSG(Update, ?CRDT_INDEX_P)))
