@@ -213,7 +213,7 @@ get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
                     ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
                     throw(lists:flatten(ErrorMsg))
             end
-    end
+    end.
 
 release_locks(Type, TxId) ->
     clocksi_interactive_coord:release_locks(Type, TxId).

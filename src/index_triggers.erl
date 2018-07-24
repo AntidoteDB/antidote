@@ -153,7 +153,7 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
             Upds = build_index_updates(SIdxUpdates, Transaction),
 
             %% Remove table metadata entry from cache -- mark as 'dirty'
-            %ok = metadata_caching:remove_key(TableName),
+            ok = metadata_caching:remove_key(TableName),
 
             Upds;
         ?RECORD_UPD_TYPE ->
