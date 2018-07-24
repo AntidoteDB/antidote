@@ -102,7 +102,11 @@
 
     committing_2pc/3,
     committing/3,
-    committing_single/3
+    committing_single/3,
+
+    get_locks/3,
+    get_locks/4,
+    release_locks/2
 ]).
 
 %%%===================================================================
@@ -144,7 +148,7 @@ start_link(From) ->
     start_link(From, ignore, antidote:get_default_txn_properties()).
 
 %% TODO spec
-stop(Pid) -> 
+stop(Pid) ->
     gen_statem:stop(Pid).
 
 %% @doc This is a standalone function for directly contacting the read
@@ -375,7 +379,7 @@ finish_op(From, Key, Result) ->
 init([From, ClientClock, Properties, StayAlive]) ->
     lager:info("clocksi_interactive_coord_11111(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, false, false, Properties),
-    
+
     Locks = lists:keyfind(locks,1,Properties),
     Shared_Locks = lists:keyfind(shared_locks,1,Properties),
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
@@ -773,12 +777,12 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 %% #Locks
 %% Release the locks when the transaction terminates
-terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = TransactionId}, _SD) -> 
+terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = TransactionId}, _SD) ->
 
     Locks = lists:keyfind(locks,1,Properties),
     case Locks of
         false -> ok;
-        {locks,_Locks} -> 
+        {locks,_Locks} ->
             ?LOCK_MGR:release_locks(TransactionId),
             ok
     end,
@@ -786,7 +790,7 @@ terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = T
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
     case {Shared_Locks,Exclusive_Locks} of
         {false,false} -> ok;
-        _ -> 
+        _ ->
             ?LOCK_MGR_ES:release_locks(TransactionId),
             ok
     end;
@@ -827,9 +831,9 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
                 true ->
                     %lager:info("start_tx_internal- ok",[]),
                     ok;
-                false -> 
+                false ->
                     %lager:info("start_tx_internal- {ok, TransactionId}  Msg Send",[]),
-                    From ! {ok, TransactionId}   
+                    From ! {ok, TransactionId}
             end,
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
@@ -907,6 +911,12 @@ get_locks_helper(Timeout, TransactionId,Locks,Caller) ->
 get_locks_helper_es(Timeout, TransactionId,Shared_Locks,Exclusive_Locks,Caller) ->
     Return_Value = get_locks(Timeout, TransactionId, Shared_Locks,Exclusive_Locks),
     Caller ! {es_locks,Return_Value}.
+
+-spec release_locks(lock_mgr | lock_mgr_es, txid()) -> ok.
+release_locks(lock_mgr, TransactionId) ->
+    ?LOCK_MGR:release_locks(TransactionId);
+release_locks(lock_mgr_es, TransactionId) ->
+    ?LOCK_MGR_ES:release_locks(TransactionId).
 
 %% @doc TODO
 %%noinspection ErlangUnresolvedFunction
@@ -1151,7 +1161,6 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
             {receive_logging_responses, LoggingState, 0}
     end.
 
-
 %% @doc function called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
 prepare_2pc(State = #coord_state{
@@ -1191,11 +1200,11 @@ reply_to_client(State = #coord_state{
     transactionid=TransactionId,
     properties=Properties
 }) ->
-    
+
     Locks = lists:keyfind(locks,1,Properties),
     case Locks of
         false -> ok;
-        {locks,_Locks} -> 
+        {locks,_Locks} ->
             ?LOCK_MGR:release_locks(TransactionId),
             ok
     end,
@@ -1203,11 +1212,11 @@ reply_to_client(State = #coord_state{
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
     case {Shared_Locks,Exclusive_Locks} of
         {false,false} -> ok;
-        _ -> 
+        _ ->
             ?LOCK_MGR_ES:release_locks(TransactionId),
             ok
     end,
-    
+
     case From of
         undefined ->
             ok;

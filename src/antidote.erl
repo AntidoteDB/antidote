@@ -24,6 +24,8 @@
 
 -include("antidote.hrl").
 -include("querying.hrl").
+-include("lock_mgr.hrl").
+-include("lock_mgr_es.hrl").
 
 %% API for applications
 -export([ start/0, stop/0,
@@ -44,7 +46,10 @@
           get_objects/3,
           get_log_operations/1,
           get_default_txn_properties/0,
-          get_txn_property/2
+          get_txn_property/2,
+          get_locks/3,
+          get_locks/4,
+          release_locks/2
         ]).
 
 %% Public API
@@ -198,6 +203,22 @@ update_objects(Clock, Properties, Updates) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec get_locks(default | integer(), [key()], txid()) -> {ok,snapshot_time()} | {locks_not_available,[key()]} | {missing_locks, [{txid(),[key()]}]}.
+get_locks(default, Locks, TxId) ->
+    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
+get_locks(Timeout, Locks, TxId) ->
+    clocksi_interactive_coord:get_locks(Timeout, TxId, Locks).
+
+-spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
+    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
+get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
+    clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
+
+-spec release_locks(lock_mgr | lock_mgr_es, txid()) -> ok.
+release_locks(Type, TxId) ->
+    clocksi_interactive_coord:release_locks(Type, TxId).
 
 %%% Internal function %%
 %%% ================= %%
