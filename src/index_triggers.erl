@@ -301,7 +301,21 @@ create_pindex_update(ObjBoundKey, Updates, Table, PIndexKey, Transaction) ->
         crdt_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {ConvPKey, PIdxOp}),
     {{IdxKey, IdxBucket}, IdxType, {UpdateType, IndexOp}}.
 
-filter_table_name(Bucket) ->
+filter_table_name(Bucket) when is_atom(Bucket) ->
     BucketStr = atom_to_list(Bucket),
-    AtIdx = string:chr(BucketStr, $@),
-    list_to_atom(string:sub_string(BucketStr, AtIdx + 1)).
+    BucketName = filter_table_name(BucketStr),
+    list_to_atom(BucketName);
+filter_table_name(Bucket) when is_binary(Bucket) ->
+    BucketStr = binary_to_list(Bucket),
+    BucketName = filter_table_name(BucketStr),
+    list_to_binary(BucketName);
+filter_table_name(Bucket) when is_integer(Bucket) ->
+    BucketStr = integer_to_list(Bucket),
+    BucketName = filter_table_name(BucketStr),
+    list_to_integer(BucketName);
+filter_table_name(Bucket) when is_list(Bucket) ->
+    AtIdx = string:chr(Bucket, $@),
+    case AtIdx of
+        0 -> Bucket;
+        _ -> string:sub_string(Bucket, AtIdx + 1)
+    end.

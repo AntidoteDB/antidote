@@ -169,6 +169,9 @@ to_atom(Term) when is_list(Term) ->
 to_atom(Term) when is_integer(Term) ->
     List = integer_to_list(Term),
     list_to_atom(List);
+to_atom(Term) when is_binary(Term) ->
+    List = binary_to_list(Term),
+    list_to_atom(List);
 to_atom(Term) when is_atom(Term) ->
     Term.
 
@@ -176,6 +179,8 @@ to_list(Term) when is_list(Term) ->
     Term;
 to_list(Term) when is_integer(Term) ->
     integer_to_list(Term);
+to_list(Term) when is_binary(Term) ->
+    binary_to_list(Term);
 to_list(Term) when is_atom(Term) ->
     atom_to_list(Term).
 
