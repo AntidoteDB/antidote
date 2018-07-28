@@ -147,7 +147,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
         _Else ->
             case CurrentData of
                 nil ->
-                    {Remain, Indexes} = read_indexes(RangeQueries, Table),
+                    {RemainRanges, Indexes} = read_indexes(RangeQueries, Table),
                     LeastKeys = lists:foldl(fun(Index, Curr) ->
                         ReadKeys = interpret_index(Index, Table, RangeQueries, TxId),
                         case Curr of
@@ -164,9 +164,9 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             Objects = read_records(KeyList, TxId),
                             PreparedObjs = prepare_records(table_utils:column_names(Table), Table, Objects),
 
-                            RemainRanges = dict:filter(fun(Column, _Range) ->
-                                lists:member(Column, Remain)
-                            end, RangeQueries),
+                            %RemainRanges = dict:filter(fun(Column, _Range) ->
+                            %    lists:member(Column, Remain)
+                            %end, RangeQueries),
 
                             case dict:is_empty(RemainRanges) of
                                 true -> PreparedObjs;
@@ -339,9 +339,9 @@ read_predicate(Range) ->
 
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:name(Table),
-    dict:fold(fun(Column, _Range, {RemainAcc, IdxAcc}) ->
+    dict:fold(fun(Column, Range, {RemainAcc, IdxAcc}) ->
         case ?is_function(Column) of
-            true -> {lists:append(RemainAcc, [Column]), IdxAcc};
+            true -> {dict:store(Column, Range, RemainAcc), IdxAcc};
             false ->
                 case table_utils:is_primary_key(Column, Table) of
                     true ->
@@ -349,12 +349,12 @@ read_indexes(RangeQueries, Table) ->
                     false ->
                         SIndexes = table_utils:indexes(Table),
                         case find_index_by_attribute(Column, SIndexes) of
-                            [] -> {lists:append(RemainAcc, [Column]), IdxAcc};
+                            [] -> {dict:store(Column, Range, RemainAcc), IdxAcc};
                             [SIndex] -> {RemainAcc, lists:append(IdxAcc, [{secondary, SIndex}])}
                         end
                 end
         end
-    end, {[], []}, RangeQueries).
+    end, {dict:new(), []}, RangeQueries).
 
 interpret_index({primary, TName}, Table, RangeQueries, TxId) ->
     % TODO old code; uncomment to use with an antidote_crdt_set_go type index
@@ -415,10 +415,10 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             end, Aux);
         range ->
             {{LeftBound, RightBound}, Excluded} = Range,
-            Index = indexing:read_index_function(IndexType,
-                IndexName, {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
+            Index = indexing:read_index_function(IndexType, IndexName,
+                {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
 
-            lists:filter(fun({IdxCol, _PKs}) ->
+            lists:filter(fun({IdxCol, _}) ->
                 %% inequality predicate
                 not lists:member(IdxCol, Excluded)
             end, Index)

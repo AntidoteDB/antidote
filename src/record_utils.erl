@@ -47,7 +47,7 @@ record_data(Key, TxId) ->
 
 record_data(PKeys, TableName, TxId)
     when is_list(PKeys) andalso is_atom(TableName) ->
-    PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
+    PKeyAtoms = [querying_utils:to_atom(PKey) || PKey <- PKeys],
     ObjKeys = querying_utils:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
     case querying_utils:read_keys(value, ObjKeys, TxId) of
         [[]] -> [];
@@ -55,7 +55,7 @@ record_data(PKeys, TableName, TxId)
     end;
 record_data(PKeys, Table, TxId)
     when is_list(PKeys) ->
-    PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
+    PKeyAtoms = [querying_utils:to_atom(PKey) || PKey <- PKeys],
     ZippedKeys = lists:zip(PKeyAtoms, PKeys),
     ObjKeys = querying_utils:build_keys_from_table(ZippedKeys, Table, TxId),
     case querying_utils:read_keys(value, ObjKeys, TxId) of

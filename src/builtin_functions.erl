@@ -84,7 +84,7 @@ assert_visibility({Key, Version}, TableName, TxId) ->
     KeyAtom = querying_utils:to_atom(Key),
     %BoundObj = querying_utils:build_keys(KeyAtom, ?TABLE_DT, TableName),
     BoundObj = querying_utils:build_keys_from_table({KeyAtom, Key}, Table, TxId),
-    [RefData] = querying_utils:read_keys(value, BoundObj, TxId),
+    [RefData] = record_utils:record_data(BoundObj, TxId),
     VersionKey = {?VERSION_COL, ?VERSION_COL_DT},
     RefVersion = record_utils:lookup_value(VersionKey, RefData),
 
