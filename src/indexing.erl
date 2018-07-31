@@ -90,7 +90,7 @@ generate_sindex_key(TableName, IndexName) ->
 apply_updates(Update, TxId) when ?is_index_upd(Update) ->
     apply_updates([Update], TxId);
 apply_updates([Update | Tail], TxId) when ?is_index_upd(Update) ->
-    DatabaseUpdates = index_triggers:build_index_updates([Update], TxId),
+    DatabaseUpdates = index_triggers:create_sindex_updates([Update], TxId),
     ok = querying_utils:write_keys(DatabaseUpdates, TxId),
     apply_updates(Tail, TxId);
 apply_updates([], _TxId) ->

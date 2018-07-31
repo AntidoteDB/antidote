@@ -108,7 +108,7 @@ get_hooks(post_commit, Bucket) ->
     riak_core_metadata:get(?PREFIX_POST, Bucket).
 
 has_hook(PreOrPost, Bucket)
-    when is_atom(PreOrPost) andalso is_atom(Bucket) ->
+    when is_atom(PreOrPost) ->
     get_hooks(PreOrPost, Bucket) =/= undefined.
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->

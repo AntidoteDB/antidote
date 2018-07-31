@@ -46,9 +46,12 @@
     read_function/3, read_function/2,
     write_keys/2, write_keys/1,
     start_transaction/0, commit_transaction/1,
-    get_locks/3, get_locks/4, release_locks/2,
-    to_atom/1,
+    get_locks/3, get_locks/4, release_locks/2]).
+
+-export([to_atom/1,
     to_list/1,
+    to_binary/1,
+    to_term/1,
     remove_duplicates/1,
     is_list_of_lists/1,
     replace/3,
@@ -84,7 +87,6 @@ build_keys_from_table([{AtomKey, RawKey} | Keys], Table, TxId, Acc) ->
         case PartCol of
             [_] ->
                 Index = indexing:read_index(primary, TName, TxId),
-                %% we are only relying on the first key
                 {_, BObj} = lists:keyfind(RawKey, 1, Index),
                 BObj;
             undefined ->
@@ -227,6 +229,9 @@ to_atom(Term) when is_list(Term) ->
 to_atom(Term) when is_integer(Term) ->
     List = integer_to_list(Term),
     list_to_atom(List);
+to_atom(Term) when is_binary(Term) ->
+    List = binary_to_list(Term),
+    list_to_atom(List);
 to_atom(Term) when is_atom(Term) ->
     Term.
 
@@ -234,8 +239,25 @@ to_list(Term) when is_list(Term) ->
     Term;
 to_list(Term) when is_integer(Term) ->
     integer_to_list(Term);
+to_list(Term) when is_binary(Term) ->
+    binary_to_list(Term);
 to_list(Term) when is_atom(Term) ->
     atom_to_list(Term).
+
+to_binary(Term) when is_list(Term) ->
+    list_to_binary(Term);
+to_binary(Term) when is_integer(Term) ->
+    integer_to_binary(Term);
+to_binary(Term) when is_binary(Term) ->
+    Term;
+to_binary(Term) when is_atom(Term) ->
+    ToList = atom_to_list(Term),
+    list_to_binary(ToList).
+
+to_term(Term) when is_binary(Term) ->
+    binary_to_term(Term);
+to_term(Term) ->
+    Term.
 
 remove_duplicates(List) when is_list(List) ->
     Aux = sets:from_list(List),
@@ -268,7 +290,7 @@ first_occurrence(_Predicate, []) -> undefined.
 %% Internal functions
 %% ====================================================================
 
-%% TODO read objects from Cure or Materializer?
+
 read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet, _UpdatedPartitions} = Transaction)
     when is_list(ObjKeys) andalso is_record(TxId, transaction) ->
     {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
