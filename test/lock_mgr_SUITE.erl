@@ -93,9 +93,9 @@ all() -> [
          asynchronous_test_4,
          asynchronous_test_5,
          a_lot_of_locks_per_transaction_1,
-         a_lot_of_locks_per_transaction_2,
-         cluster_failure_test_1,
-         cluster_failure_test_2
+         a_lot_of_locks_per_transaction_2%,
+         %cluster_failure_test_1,
+         %cluster_failure_test_2
         ].
 
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used

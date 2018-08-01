@@ -909,17 +909,17 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Shared_Locks,Exclusive_Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    lager:info("handle_call({get_locks,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
+    lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
     New_Shared_Locks = Shared_Locks--Exclusive_Locks,
     case using(Shared_Locks,Exclusive_Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
-            New_Local_Locks2=required(Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks2=required(New_Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
             {reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
         {locks_in_use, Transactions_Using_The_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started locks_in_use-- ~n",[TxId,Locks]),
-            New_Local_Locks3=required(Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks3=required(New_Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished locks_in_use-- ~n",[TxId,Locks]),
             {reply, {locks_in_use, Transactions_Using_The_Locks} , State#state{local_locks=New_Local_Locks3}};
         New_Lokal_Locks1 ->
