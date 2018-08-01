@@ -877,12 +877,16 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                         properties = Properties},
                     {ok,Transaction, TransactionId};
                 {{locks_not_available,Missing_Locks},{ok,_}} ->
+                    ?LOCK_MGR_ES:release_locks(TransactionId),
                     {locks_not_available,Missing_Locks};
                 {{locks_in_use,Tx_Using_The_Locks},{ok,_}} ->
+                    ?LOCK_MGR_ES:release_locks(TransactionId),
                     {locks_in_use,Tx_Using_The_Locks};
                 {{ok,_},{locks_not_available,Missing_Locks}} ->
+                    ?LOCK_MGR:release_locks(TransactionId),
                     {locks_not_available,Missing_Locks};
                 {{ok,_},{locks_in_use,Tx_Using_The_Locks}} ->
+                    ?LOCK_MGR:release_locks(TransactionId),
                     {locks_in_use,Tx_Using_The_Locks};
                 {{_,Error_Info1},{_,Error_Info2}}->
                     {lock_not_available_or_in_use,{Error_Info1,Error_Info2}}
