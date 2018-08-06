@@ -298,14 +298,58 @@ init([From, ClientClock, Properties, StayAlive]) ->
     Locks = lists:keyfind(locks,1,Properties),
     Shared_Locks = lists:keyfind(shared_locks,1,Properties),
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
-    State = if
-        ((Locks == false) and (Shared_Locks == false) and (Exclusive_Locks == false)) ->
+    State = case {Locks,Shared_Locks,Exclusive_Locks} of
+        {false,false,false} ->
             start_tx_internal(From, ClientClock, Properties, BaseState);
-        true ->
-            Locks1 = case Locks of false -> []; {locks,A} -> A end,
-            Shared_Locks1 = case Shared_Locks of false -> []; {shared_locks,B} -> B end,
-            Exclusive_Locks1 = case Exclusive_Locks of false -> []; {exclusive_locks,C} -> C end,
-            start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,Locks1,Shared_Locks1,Exclusive_Locks1)
+        {{locks,A},{shared_locks,B},{exclusive_locks,C}} when (is_list(A) and is_list(B) and is_list(C))  ->
+            case ((A ++ B ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,{shared_locks,B},{exclusive_locks,C}} when (is_list(B) and is_list(C))  ->
+            case ((B ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},false,{exclusive_locks,C}} when (is_list(A) and is_list(C))  ->
+            case ((A ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},{shared_locks,B},false} when (is_list(A) and is_list(B))  ->
+            case ((A ++ B) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},false,false} when (is_list(A))  ->
+            case ((A) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,{shared_locks,B},false} when (is_list(B))  ->
+            case ((B) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,false,{exclusive_locks,C}} when (is_list(C))  ->
+            case ((C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],[],C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end
     end,
     {ok, execute_op, State};
 
