@@ -50,7 +50,8 @@
          shared_locks_asynchroneous_test2/1,
          shared_locks_asynchroneous_test3/1,
          shared_locks_asynchroneous_test4/1,
-         different_key_types_test1/1
+         different_key_types_test1/1,
+         locks_and_exclusive_locks_together_test1/1
         ]).
 
 -export([
@@ -107,7 +108,8 @@ all() -> [
          shared_locks_asynchroneous_test2,
          shared_locks_asynchroneous_test3,
          shared_locks_asynchroneous_test4,
-         different_key_types_test1
+         different_key_types_test1,
+         locks_and_exclusive_locks_together_test1
         ].
 % One dc (leader) tries to get the shared lock of a new lock
 single_dc_sl_test1(Config) ->
@@ -468,8 +470,12 @@ different_key_types_test1(Config) ->
     {ok, _Clock8} = rpc:call(Node1, antidote, commit_transaction, [TxId8]).
     
     
-
-
+% Tests if exclusive locks and regular locks can be acquired at the same time.
+locks_and_exclusive_locks_together_test1(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Locks = [locks_and_exclusive_locks_together_test1_key_1,locks_and_exclusive_locks_together_test1_test_key_2,locks_and_exclusive_locks_together_test1_test_key_3,locks_and_exclusive_locks_together_test1_test_key_4],
+    {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Locks},{locks,Locks}]]),
+    {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId]).
 
 
 
