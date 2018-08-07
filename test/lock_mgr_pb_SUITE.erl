@@ -54,12 +54,14 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(ADDRESS, "localhost").
--define(PORT, 10017).
+-define(PORT1, 10017).
+-define(PORT2, 10037).
+-define(PORT3, 10047).
 -define(BUCKET, pb_client_bucket).
 -define(BUCKET_BIN, <<"pb_client_bucket">>).
 
 init_per_suite(Config) ->
-    ct:print("Starting test suite ~p with pb client at ~s:~p", [?MODULE, ?ADDRESS, ?PORT]),
+    ct:print("Starting test suite ~p with pb client at ~s:~p", [?MODULE, ?ADDRESS, ?PORT1]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
@@ -98,7 +100,7 @@ all() -> [
 
 %% Testing lock acquisition via protocol buffer interface
 lock_pb_test1(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_test1_key_1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_test1_key_1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{locks,Locks}]),
@@ -109,7 +111,7 @@ lock_pb_test1(_Config) ->
 
 %% Testing shared_lock acquisition via protocol buffer interface
 lock_pb_test2(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_test2_key_1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_test2_key_1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{shared_locks,Locks}]),
@@ -120,7 +122,7 @@ lock_pb_test2(_Config) ->
 
 %% Testing exclusive_lock acquisition via protocol buffer interface
 lock_pb_test3(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_test2_key_1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_test2_key_1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks}]),
@@ -131,7 +133,7 @@ lock_pb_test3(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test1(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test1_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test1_key1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks}]),
@@ -142,7 +144,7 @@ lock_pb_combination_test1(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test2(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test2_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test2_key1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{shared_locks,Locks}]),
@@ -153,7 +155,7 @@ lock_pb_combination_test2(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test3(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test3_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test3_key1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{locks,Locks},{shared_locks,Locks}]),
@@ -164,7 +166,7 @@ lock_pb_combination_test3(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test4(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test4_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test4_key1">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
@@ -175,7 +177,7 @@ lock_pb_combination_test4(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test5(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test5_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test5_key1">>,<<"lock_pb_combination_test5_key2">>,<<"lock_pb_combination_test5_key3">>,<<"lock_pb_combination_test5_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{locks,Locks},{exclusive_locks,Locks}]),
@@ -186,7 +188,7 @@ lock_pb_combination_test5(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test6(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test6_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test6_key1">>,<<"lock_pb_combination_test6_key2">>,<<"lock_pb_combination_test6_key3">>,<<"lock_pb_combination_test6_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{shared_locks,Locks},{exclusive_locks,Locks}]),
@@ -197,7 +199,7 @@ lock_pb_combination_test6(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test7(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test7_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test7_key1">>,<<"lock_pb_combination_test7_key2">>,<<"lock_pb_combination_test7_key3">>,<<"lock_pb_combination_test7_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{shared_locks,Locks},{locks,Locks}]),
@@ -208,7 +210,7 @@ lock_pb_combination_test7(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test8(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test8_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test8_key1">>,<<"lock_pb_combination_test8_key2">>,<<"lock_pb_combination_test8_key3">>,<<"lock_pb_combination_test8_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{shared_locks,Locks},{locks,Locks},{exclusive_locks,Locks}]),
@@ -219,7 +221,7 @@ lock_pb_combination_test8(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test9(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test9_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test9_key1">>,<<"lock_pb_combination_test9_key2">>,<<"lock_pb_combination_test9_key3">>,<<"lock_pb_combination_test9_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{locks,Locks},{shared_locks,Locks},{exclusive_locks,Locks}]),
@@ -230,7 +232,7 @@ lock_pb_combination_test9(_Config) ->
 
 %% Testing combinations of lock acquisitions via protocol buffer interface
 lock_pb_combination_test10(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     Bound_object = {<<"lock_pb_combination_test10_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_combination_test10_key1">>,<<"lock_pb_combination_test10_key2">>,<<"lock_pb_combination_test10_key3">>,<<"lock_pb_combination_test10_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
@@ -242,7 +244,7 @@ lock_pb_combination_test10(_Config) ->
 %% Testing combinations of lock acquisitions via protocol buffer interface using not the leader DC (The one which may create)
 %% new locks)
 lock_pb_not_leader_dc_test1(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
     Bound_object = {<<"lock_pb_not_leader_dc_test1_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_not_leader_dc_test1_key1">>,<<"lock_pb_not_leader_dc_test1_key2">>,<<"lock_pb_not_leader_dc_test1_key3">>,<<"lock_pb_not_leader_dc_test1_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{shared_locks,Locks},{locks,Locks},{exclusive_locks,Locks}]),
@@ -254,7 +256,7 @@ lock_pb_not_leader_dc_test1(_Config) ->
 %% Testing combinations of lock acquisitions via protocol buffer interface using not the leader DC (The one which may create)
 %% new locks)
 lock_pb_not_leader_dc_test2(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT3),
     Bound_object = {<<"lock_pb_not_leader_dc_test2_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_not_leader_dc_test2_key2">>,<<"lock_pb_not_leader_dc_test2_key2">>,<<"lock_pb_not_leader_dc_test2_key3">>,<<"lock_pb_not_leader_dc_test2_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{locks,Locks},{shared_locks,Locks},{exclusive_locks,Locks}]),
@@ -266,7 +268,7 @@ lock_pb_not_leader_dc_test2(_Config) ->
 %% Testing combinations of lock acquisitions via protocol buffer interface using not the leader DC (The one which may create)
 %% new locks)
 lock_pb_not_leader_dc_test3(_Config) ->
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
     Bound_object = {<<"lock_pb_not_leader_dc_test3_key1">>, antidote_crdt_counter_pn, ?BUCKET_BIN},
     Locks = [<<"lock_pb_not_leader_dc_test3_key1">>,<<"lock_pb_not_leader_dc_test3_key2">>,<<"lock_pb_not_leader_dc_test3_key3">>,<<"lock_pb_not_leader_dc_test3_key4">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
