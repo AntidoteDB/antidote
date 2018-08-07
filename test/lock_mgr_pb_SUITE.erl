@@ -46,7 +46,10 @@
         lock_pb_combination_test10/1,
         lock_pb_not_leader_dc_test1/1,
         lock_pb_not_leader_dc_test2/1,
-        lock_pb_not_leader_dc_test3/1
+        lock_pb_not_leader_dc_test3/1,
+        internal_data_test1/1,
+        internal_data_test2/1,
+        internal_data_test3/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -64,8 +67,10 @@ init_per_suite(Config) ->
     ct:print("Starting test suite ~p with pb client at ~s:~p", [?MODULE, ?ADDRESS, ?PORT1]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
-    [{nodes, Nodes}|Config].
+    Node1 = hd(hd(Clusters)),
+    Node2 = hd(hd(tl(Clusters))),
+    Node3 = hd(hd(tl(tl(Clusters)))),
+    [{nodes, [Node1,Node2,Node3]}|Config].
 
 end_per_suite(Config) ->
     Config.
@@ -93,7 +98,10 @@ all() -> [
         lock_pb_combination_test10,
         lock_pb_not_leader_dc_test1,
         lock_pb_not_leader_dc_test2,
-        lock_pb_not_leader_dc_test3
+        lock_pb_not_leader_dc_test3,
+        internal_data_test1,
+        internal_data_test2,
+        internal_data_test3
         ].
 
 
@@ -276,3 +284,43 @@ lock_pb_not_leader_dc_test3(_Config) ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(true, antidotec_counter:is_type(Val)).
+
+%% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
+internal_data_test1(Config) ->
+    [Node1, _Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
+    Locks = [<<"internal_data_test1_key1">>,<<"internal_data_test1_key2">>,<<"internal_data_test1_key3">>],
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
+    Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
+    [{_,{using,Locks}}] = Lock_Info2,
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+%% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
+internal_data_test2(Config) ->
+    [_Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
+    Locks = [<<"internal_data_test2_key1">>,<<"internal_data_test2_key2">>,<<"internal_data_test2_key3">>],
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
+    Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    Lock_Info2 = rpc:call(Node2, lock_mgr, local_locks_info, []),
+    [{_,{using,Locks}}] = Lock_Info2,
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+
+%% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
+internal_data_test3(Config) ->
+    [_Node1, _Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT3),
+    Locks = [<<"internal_data_test3_key1">>,<<"internal_data_test3_key2">>,<<"internal_data_test3_key3">>],
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
+    Lock_Info1 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    Lock_Info2 = rpc:call(Node3, lock_mgr, local_locks_info, []),
+    [{_,{using,Locks}}] = Lock_Info2,
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
