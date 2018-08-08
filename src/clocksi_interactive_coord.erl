@@ -298,72 +298,72 @@ init([From, ClientClock, Properties, StayAlive]) ->
     Locks = lists:keyfind(locks,1,Properties),
     Shared_Locks = lists:keyfind(shared_locks,1,Properties),
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
-    lager:info("Clocksi_init Locks: ~p; Shared_Locks: ~p; Exclusive_Locks: ~p;", [Locks,Shared_Locks,Exclusive_Locks]),
+    %lager:info("Clocksi_init Locks: ~p; Shared_Locks: ~p; Exclusive_Locks: ~p;", [Locks,Shared_Locks,Exclusive_Locks]),
     State = case {Locks,Shared_Locks,Exclusive_Locks} of
         {false,false,false} ->
-            lager:info("Clocksi_init {false,false,false}"),
+            %lager:info("Clocksi_init {false,false,false}"),
             start_tx_internal(From, ClientClock, Properties, BaseState);
         {{locks,A},{shared_locks,B},{exclusive_locks,C}} when (is_list(A) and is_list(B) and is_list(C))  ->
             case ((A ++ B ++ C) == []) of
                 false ->
-                    lager:info("Clocksi_init {lock,lock,lock} - false"),
+                    %lager:info("Clocksi_init {lock,lock,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,C);
                 true ->
-                    lager:info("Clocksi_init {lock,lock,lock} - true"),
+                    %lager:info("Clocksi_init {lock,lock,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,{shared_locks,B},{exclusive_locks,C}} when (is_list(B) and is_list(C))  ->
             case ((B ++ C) == []) of
                 false ->
-                    lager:info("Clocksi_init {false,lock,lock} - false"),
+                    %lager:info("Clocksi_init {false,lock,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,C);
                 true ->
-                    lager:info("Clocksi_init {false,lock,lock} - true"),
+                    %lager:info("Clocksi_init {false,lock,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},false,{exclusive_locks,C}} when (is_list(A) and is_list(C))  ->
             case ((A ++ C) == []) of
                 false ->
-                    lager:info("Clocksi_init {lock,false,lock} - false"),
+                    %lager:info("Clocksi_init {lock,false,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],C);
                 true ->
-                    lager:info("Clocksi_init {lock,false,lock} - true"),
+                    %lager:info("Clocksi_init {lock,false,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},{shared_locks,B},false} when (is_list(A) and is_list(B))  ->
             case ((A ++ B) == []) of
                 false ->
-                    lager:info("Clocksi_init {lock,lock,false} - false"),
+                    %lager:info("Clocksi_init {lock,lock,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,[]);
                 true ->
-                    lager:info("Clocksi_init {lock,lock,false} - true"),
+                    %lager:info("Clocksi_init {lock,lock,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},false,false} when (is_list(A))  ->
             case ((A) == []) of
                 false ->
-                    lager:info("Clocksi_init {lock,false,false} - false"),
+                    %lager:info("Clocksi_init {lock,false,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],[]);
                 true ->
-                    lager:info("Clocksi_init {lock,false,false} - true"),
+                    %lager:info("Clocksi_init {lock,false,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,{shared_locks,B},false} when (is_list(B))  ->
             case ((B) == []) of
                 false ->
-                    lager:info("Clocksi_init {false,lock,false} - false"),
+                    %lager:info("Clocksi_init {false,lock,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,[]);
                 true ->
-                    lager:info("Clocksi_init {false,lock,false} - true"),
+                    %lager:info("Clocksi_init {false,lock,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,false,{exclusive_locks,C}} when (is_list(C))  ->
             case ((C) == []) of
                 false ->
-                    lager:info("Clocksi_init {false,false,lock} - false"),
+                    %lager:info("Clocksi_init {false,false,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],[],C);
                 true ->
-                    lager:info("Clocksi_init {false,false,lock} - true"),
+                    %lager:info("Clocksi_init {false,false,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end
     end,
