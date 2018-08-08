@@ -10,3 +10,6 @@
 % Parameters the clocksi_interactive_coord - lock_mgr_es interaction can be modified with.
 -define(How_LONG_TO_WAIT_FOR_LOCKS,3).   % Defines how often a transaction should retry to get the locks before it is aborted
 -define(GET_LOCKS_INTERVAL,500).         % Defines how long a transaction waits between retrying to get the locks
+-define(GET_LOCKS_FINAL_TRY_OPTION,true).    % Decides if the clocksi_interactive_coord waits for GET_LOCKS_FINAL_TRY_WAIT after a lock could not be aquired.
+                                            % This is usefull if GET_LOCKS_INTERVAL_ES is set very low in comparison to the time needed by DCs to communicate.
+-define(GET_LOCKS_FINAL_TRY_WAIT,400).       % Defines how long it waits untill it does the last attempt to get the locks.

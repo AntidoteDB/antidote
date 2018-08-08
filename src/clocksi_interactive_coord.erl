@@ -821,7 +821,11 @@ get_locks(Timeout,TransactionId,Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL),
                     NewTimeout1 = Timeout-1,
                     get_locks(NewTimeout1, TransactionId, Locks);
-                false -> {locks_in_use,Tx_Using_The_Locks}
+                false -> 
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId, Locks);
+                        false-> {locks_in_use,Tx_Using_The_Locks}
+                    end
             end;
         {missing_locks, Missing_Locks} ->
             case Timeout > 0 of
@@ -829,8 +833,32 @@ get_locks(Timeout,TransactionId,Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL),
                     NewTimeout2 = Timeout-1,
                     get_locks(NewTimeout2, TransactionId, Locks);
-                false -> {locks_not_available,Missing_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId, Locks);
+                        false-> {locks_not_available,Missing_Locks}
+                    end
             end
+    end.
+get_locks_extra(TransactionId,Locks)->
+    timer:sleep(?GET_LOCKS_FINAL_TRY_WAIT),
+    Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
+    case Result of
+        {ok,Snapshot_Time} -> {ok,Snapshot_Time};
+        {locks_in_use,Tx_Using_The_Locks} ->
+            {locks_in_use,Tx_Using_The_Locks};
+        {missing_locks, Missing_Locks} ->
+            {locks_not_available,Missing_Locks}
+    end.
+get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks)->
+    timer:sleep(?GET_LOCKS_FINAL_TRY_WAIT_ES),
+    Result = ?LOCK_MGR_ES:get_locks(Shared_Locks,Exclusive_Locks, TransactionId),
+    case Result of
+        {ok,Snapshot_Time} -> {ok,Snapshot_Time};
+        {locks_in_use,Tx_Using_The_Locks} ->
+            {locks_in_use,Tx_Using_The_Locks};
+        {missing_locks, Missing_Locks} ->
+            {locks_not_available,Missing_Locks}
     end.
 
 %% @doc This function tries to aquire the specified exclusive and hared locks, if this fails it will retry after GET_LOCKS_INTERVALms
@@ -847,7 +875,11 @@ get_locks(Timeout,TransactionId,Shared_Locks,Exclusive_Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL_ES),
                     NewTimeout1 = Timeout-1,
                     get_locks(NewTimeout1, TransactionId, Shared_Locks,Exclusive_Locks);
-                false -> {locks_in_use,Tx_Using_The_Locks}
+                false -> 
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks);
+                        false-> {locks_in_use,Tx_Using_The_Locks}
+                    end
             end;
         {missing_locks, Missing_Locks} ->
             case Timeout > 0 of
@@ -855,9 +887,15 @@ get_locks(Timeout,TransactionId,Shared_Locks,Exclusive_Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL_ES),
                     NewTimeout2 = Timeout-1,
                     get_locks(NewTimeout2, TransactionId, Shared_Locks,Exclusive_Locks);
-                false -> {locks_not_available,Missing_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks);
+                        false-> {locks_not_available,Missing_Locks}
+                    end
             end
     end.
+
+
 
 get_locks_helper(Timeout, TransactionId,Locks,Caller) ->
     Return_Value = get_locks(Timeout, TransactionId, Locks),
