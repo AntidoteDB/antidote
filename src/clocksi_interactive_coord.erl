@@ -292,78 +292,61 @@ finish_op(From, Key, Result) ->
 %% @doc Initialize the state.
 %% #Locks
 init([From, ClientClock, Properties, StayAlive]) ->
-    %lager:info("clocksi_interactive_coord_11111(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, false, false, Properties),
     
     Locks = lists:keyfind(locks,1,Properties),
     Shared_Locks = lists:keyfind(shared_locks,1,Properties),
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
-    %lager:info("Clocksi_init Locks: ~p; Shared_Locks: ~p; Exclusive_Locks: ~p;", [Locks,Shared_Locks,Exclusive_Locks]),
     State = case {Locks,Shared_Locks,Exclusive_Locks} of
         {false,false,false} ->
-            %lager:info("Clocksi_init {false,false,false}"),
             start_tx_internal(From, ClientClock, Properties, BaseState);
         {{locks,A},{shared_locks,B},{exclusive_locks,C}} when (is_list(A) and is_list(B) and is_list(C))  ->
             case ((A ++ B ++ C) == []) of
                 false ->
-                    %lager:info("Clocksi_init {lock,lock,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,C);
                 true ->
-                    %lager:info("Clocksi_init {lock,lock,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,{shared_locks,B},{exclusive_locks,C}} when (is_list(B) and is_list(C))  ->
             case ((B ++ C) == []) of
                 false ->
-                    %lager:info("Clocksi_init {false,lock,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,C);
                 true ->
-                    %lager:info("Clocksi_init {false,lock,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},false,{exclusive_locks,C}} when (is_list(A) and is_list(C))  ->
             case ((A ++ C) == []) of
                 false ->
-                    %lager:info("Clocksi_init {lock,false,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],C);
                 true ->
-                    %lager:info("Clocksi_init {lock,false,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},{shared_locks,B},false} when (is_list(A) and is_list(B))  ->
             case ((A ++ B) == []) of
                 false ->
-                    %lager:info("Clocksi_init {lock,lock,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,[]);
                 true ->
-                    %lager:info("Clocksi_init {lock,lock,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {{locks,A},false,false} when (is_list(A))  ->
             case ((A) == []) of
                 false ->
-                    %lager:info("Clocksi_init {lock,false,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],[]);
                 true ->
-                    %lager:info("Clocksi_init {lock,false,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,{shared_locks,B},false} when (is_list(B))  ->
             case ((B) == []) of
                 false ->
-                    %lager:info("Clocksi_init {false,lock,false} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,[]);
                 true ->
-                    %lager:info("Clocksi_init {false,lock,false} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end;
         {false,false,{exclusive_locks,C}} when (is_list(C))  ->
             case ((C) == []) of
                 false ->
-                    %lager:info("Clocksi_init {false,false,lock} - false"),
                     start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],[],C);
                 true ->
-                    %lager:info("Clocksi_init {false,false,lock} - true"),
                     start_tx_internal(From, ClientClock, Properties, BaseState)
             end
     end,
@@ -372,7 +355,6 @@ init([From, ClientClock, Properties, StayAlive]) ->
 %% @doc Initialize static transaction with Operations.
 %% #Locks
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
-    %lager:info("clocksi_interactive_coord_22222(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, true, true, Properties),
 
     Locks = lists:keyfind(locks,1,Properties),
@@ -783,25 +765,20 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
         {ok,Transaction,TransactionId} ->
             case IsStatic of
                 true ->
-                    %lager:info("start_tx_internal- ok",[]),
                     ok;
-                false -> 
-                    %lager:info("start_tx_internal- {ok, TransactionId}  Msg Send",[]),
+                false ->
                     From ! {ok, TransactionId}   
             end,
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
             State#coord_state{transaction = Transaction, num_to_read = 0, properties = Properties, transactionid = TransactionId};
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
-            %lager:info("start_tx_internal- {error,Missing_Locks}  Msg Send",[]),
             From ! {error,Missing_Locks},
             {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))};
         {locks_in_use,Tx_Using_The_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
-            %lager:info("start_tx_internal- {error,Tx_Using_The_Locks}  Msg Send",[]),
             From ! {error,Tx_Using_The_Locks},
             {stop, "Transaction using the locks: "++lists:flatten(io_lib:format("~p",[Tx_Using_The_Locks]))};   %%TODO
         {lock_not_available_or_in_use,Error_Info}->
-            %lager:info("start_tx_internal- {error,lock_not_available_or_in_use}  Msg Send",[]),
             From ! {error,Error_Info},
             {stop, "Transaction using the locks ore are missing: "++lists:flatten(io_lib:format("~p",[Error_Info]))}   %%TODO
     end.
@@ -925,7 +902,6 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-    %lager:debug("create_transaction_record_with_locks: Locks: ~p, Shared_Locks: ~p, Exclusive_Locks: ~p", [Locks,Shared_Locks,Exclusive_Locks]),
     case {Locks,Shared_Locks,Exclusive_Locks} of
         {_,[],[]}->
             case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
@@ -960,10 +936,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                     {locks_in_use,Tx_Using_The_Locks}
             end;
         _->
-            %lager:error("spawn get_locks_helper(Param1: ~w; Param2: ~w; Param3: ~w; Param4: ~w)~n",[?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks, self()]),
-            
             spawn(clocksi_interactive_coord,get_locks_helper,[?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks, self()]),
-            %lager:error("spawn get_locks_helper_es(Param1: ~w; Param2: ~w; Param3: ~w; Param4: ~w; Param5: ~w)~n",[?How_LONG_TO_WAIT_FOR_LOCKS_ES, TransactionId, Shared_Locks, Exclusive_Locks, self()]),
             spawn(clocksi_interactive_coord,get_locks_helper_es,[?How_LONG_TO_WAIT_FOR_LOCKS_ES, TransactionId, Shared_Locks, Exclusive_Locks, self()]),
             Result1 = receive
                 {locks,Result_1} ->
