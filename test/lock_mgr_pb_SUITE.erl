@@ -31,6 +31,7 @@
 
 %% tests
 -export([
+        kram/1,
         lock_pb_test1/1,
         lock_pb_test2/1,
         lock_pb_test3/1,
@@ -144,6 +145,7 @@ end_per_testcase(Name, _) ->
     ok.
 
 all() -> [
+        kram,
         lock_pb_test1,
         lock_pb_test2,
         lock_pb_test3,
@@ -214,6 +216,15 @@ all() -> [
         pb_locks_other_node_speed_test12
         ].
 
+
+kram(Config)->
+    [Node1, Node2, Node3 | Nodes] = proplists:get_value(nodes, Config),
+    Result1 = rpc:call(Node1, dc_utilities, get_stable_snapshot, []),
+    ct:print("Snapshot Node1: ~p", [Result1]),
+    Result2 = rpc:call(Node2, dc_utilities, get_stable_snapshot, []),
+    ct:print("Snapshot Node2: ~p", [Result2]),
+    Result3 = rpc:call(Node3, dc_utilities, get_stable_snapshot, []),
+    ct:print("Snapshot Node3: ~p", [Result3]).
 
 
 %% Testing lock acquisition via protocol buffer interface

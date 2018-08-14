@@ -368,11 +368,11 @@ asynchronous_test_1(Config) ->
                                 {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
                                 {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
                                 ?assertEqual(300,Res3)
-                        after 100000 -> ?assertError("The test case took too long and was timed out",false)
+                        after 300000 -> ?assertError("The test case took too long and was timed out",false)
                         end
-            after 100000 -> ?assertError("The test case took too long and was timed out",false)
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 100000 -> ?assertError("The test case took too long and was timed out",false)
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
     
     
@@ -666,7 +666,7 @@ a_lot_of_locks_per_transaction_2(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(500,"asiuiopdf"),
+    Keys1 = generate_lock_helper(200,"asiuiopdf"),
     Object1 = {es_a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,20,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,20,[],self(),0,2]),

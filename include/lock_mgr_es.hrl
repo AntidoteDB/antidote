@@ -9,8 +9,13 @@
 -define(LOCK_PART_TO_DC_OFFSET,0).          % non_neg_integer()
                                             % Defines with how many lock parts in addition to those of "LOCK_PART_TO_DC_FACTOR" a new es_lock is intitiated with
 -define(ADDITIONAL_LOCK_PARTS_SEND,1).          % Defines how many lock parts are send to a requesting dc in addition to the requested amount (To distribute them faster across the system)
--define(WAIT_FOR_SHARED_LOCKS,a).           % Compilation Flag:  defined - When acquiring a exclusive lock, the transaction will wait for data updates of all shared lock commits
-                                            %                    undefined -The transaction will only wait for the data of commits of exclusive locks
+                                            % Compilation Flag: at most one of (WAIT_FOR_SHARED_LOCKS1,WAIT_FOR_SHARED_LOCKS2) may be defined 
+-define(WAIT_FOR_SHARED_LOCKS1,1).          %                    1 - When acquiring an exclusive lock, the transaction will wait for data updates of all shared and exclusive lock commits
+%-define(WAIT_FOR_SHARED_LOCKS2,1).          %                    2 - For every exclusive lock requested, the transaction will wait for data updates of all shared and exclusive lock commits
+                                            %                        For every shared lock requested, the transaction will only wait for data updates of commits using that lock as an excluisve one
+%Default if neither WAIT_FOR_SHARED_LOCKS1  %                    3 - For every exclusive lock requested, the transaction will wait for data updates of all shared and exclusive lock commits
+% nor WAIT_FOR_SHARED_LOCKS2 are defined    %                        It will not wait because of any requested shared lock. Though the timestamps of their commits will still be stored and
+                                            %                        used the next time that lock is used as an exlusive one.
 -define(REDUCED_INTER_DC_COMMUNICATION_ES,true).% true - Reduces the communication of lock_mgr_es with each other by answering to a lock request at most once.
                                             % false - Improves performance of lock_mgr_es if bandwidth/inter_dc_communication is not the bottleneck
 % Parameters the clocksi_interactive_coord - lock_mgr_es interaction can be modified with.

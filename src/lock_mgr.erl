@@ -350,7 +350,8 @@ send_lock(Lock,To)->
                                     end
                     end;
                 [] ->
-                    {ok,Now} = get_snapshot_time(),
+                    %{ok,Now} = get_snapshot_time(),
+                    Now = dict:from_list([]),
                     case am_i_leader() of
                         true ->
                             DCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -363,7 +364,8 @@ send_lock(Lock,To)->
                     end;
 
                 {error,_Reason} ->
-                    {ok,Now} = get_snapshot_time(),
+                    %{ok,Now} = get_snapshot_time(),
+                    Now = dict:from_list([]),
                     DCID = dc_meta_data_utilities:get_my_dc_id(),
                     dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}},Now})
                     % sending the the total amount of locks again is not required here, since a lock was never send.

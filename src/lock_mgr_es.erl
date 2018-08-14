@@ -67,7 +67,8 @@
         dets_info/0,
         am_i_leader/0,
          update_send_history2/2,
-         update_send_history/2
+         update_send_history/2,
+         get_last_modified/1
 ]).
 % TODO to remove
 -export([remote_lock_request_es/4
@@ -256,8 +257,10 @@ check_if_used_for_shared_locks(Locks,Local_Locks) ->
             end
         end,
         [],Local_Locks).
+
+
 % Compiliation flag that determines if transactions should wait for the updates made using shared locks or not
--ifdef(WAIT_FOR_SHARED_LOCKS).
+-ifdef(WAIT_FOR_SHARED_LOCKS1).
 
 %% TxId : transaction whose locks are to be released
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -285,6 +288,37 @@ what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
     _All_Locks = Shared_Locks ++ Exclusive_Locks.
 
 -else.
+-ifdef(WAIT_FOR_SHARED_LOCKS2).
+
+%% TxId : transaction whose locks are to be released
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (only for exclusive locks)
+%% Releases ownership and lock requests of all locks of the specified TxId
+%% Returns the updated lokal_locks list
+-spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+release_locks(TxId,Local_Locks) ->
+    case orddict:find(TxId,Local_Locks) of
+        {ok,{using,_Shared_Locks,Exclusive_Locks}} ->
+            case Exclusive_Locks of
+                [] -> ok;
+                _ -> update_last_changed(Exclusive_Locks)
+            end;
+        error ->
+            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
+            ok
+    end,
+    _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
+
+%% Shared_Locks : Shared locks requested via get locks
+%% Exclusive_Locks : Exclusive locks requested via get locks
+%% Returns all requested locks if WAIT_FOR_SHARED_LOCKS is defined in lock_mgr_es.hrl
+%% Returns only the requested exclusive locks if WAIT_FOR_SHARED_LOCKS is NOT defined in lock_mgr_es.hrl
+-spec what_locks_to_wait_for([key()],[key()]) -> [key()].
+what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
+    _All_Locks = Shared_Locks ++ Exclusive_Locks.
+
+-else.
+%-ifdef(WAIT_FOR_SHARED_LOCKS3).
 
 %% TxId : transaction whose locks are to be released
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -313,6 +347,7 @@ release_locks(TxId,Local_Locks) ->
 what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
     Exclusive_Locks.
 
+-endif.
 -endif.
 
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -407,7 +442,8 @@ create_dets_ref_lock_entry(Lock) ->
             true -> AllDCIds;
             false -> [MyDCId|AllDCIds]
         end,
-    {ok,Now} = get_snapshot_time(),
+    %{ok,Now} = get_snapshot_time(),
+    Now = dict:from_list([]),
     _New_Dets_Ref_Table_Entry =
         {Lock,lists:foldl(fun(DCId_From,AccIn1)->
             [{DCId_From,lists:foldl(fun(DCId_To,AccIn2)->
@@ -464,12 +500,14 @@ send_lock(Lock,Amount,To)->
                                                   false -> New_Lock_Parts - 1
                                               end
                                      end,
-                    {Lock,Send_History,Snapshot} = create_dets_ref_lock_entry(Lock),
-                    dets:insert(?DETS_FILE_NAME,{Lock,Send_History,Snapshot}),
-                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
+                    {Lock,Send_History,_Snapshot} = create_dets_ref_lock_entry(Lock),
+                    %TODO Check if dict:from_list([]) works as intended. The receiving DC should not have to wait for a
+                    % snapshot without introducing any other unwanted interactions.
+                    dets:insert(?DETS_FILE_NAME,{Lock,Send_History,dict:from_list([])}),
+                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),   
                     update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send),
                     New_Lock_Send_History = get_send_history_of(Lock),
-                    remote_send_lock_history(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0),
+                    remote_send_lock_history(Lock,New_Lock_Send_History,dict:from_list([]),MyDCId,To,0),
                     ok;
                 false ->
                     New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
@@ -523,11 +561,11 @@ update_dets_ref_send_entry(Lock,From,To,Additional_Amount) ->
                             end
                     end;
                 []->
-                    {ok,Now} = get_snapshot_time(),
-                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],Now});
+                    %{ok,Now} = get_snapshot_time(),
+                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],dict:from_list([])});
                 {error,_Reason} ->
-                    {ok,Now} = get_snapshot_time(),
-                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],Now})
+                    %{ok,Now} = get_snapshot_time(),
+                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],dict:from_list([])})
     end.
 %% Old_Send_History : Send history of a specific lock to be updated
 %% New_Send_History : Send history of the same lock to update the other one
@@ -778,7 +816,10 @@ am_i_leader() ->
 
 %% Locks : list of locks
 %% Returns a list of the snapshot times the specified locks were released the last time as exclusive locks
+
 -spec get_last_modified([key()]) -> [snapshot_time()].
+get_last_modified([])->
+    [dict:from_list([])|[]];
 get_last_modified(Locks)->
     %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     lists:foldl(
