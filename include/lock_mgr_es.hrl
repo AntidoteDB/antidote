@@ -10,8 +10,8 @@
                                             % Defines with how many lock parts in addition to those of "LOCK_PART_TO_DC_FACTOR" a new es_lock is intitiated with
 -define(ADDITIONAL_LOCK_PARTS_SEND,1).          % Defines how many lock parts are send to a requesting dc in addition to the requested amount (To distribute them faster across the system)
                                             % Compilation Flag: at most one of (WAIT_FOR_SHARED_LOCKS1,WAIT_FOR_SHARED_LOCKS2) may be defined 
--define(WAIT_FOR_SHARED_LOCKS1,1).          %                    1 - When acquiring an exclusive lock, the transaction will wait for data updates of all shared and exclusive lock commits
-%-define(WAIT_FOR_SHARED_LOCKS2,1).          %                    2 - For every exclusive lock requested, the transaction will wait for data updates of all shared and exclusive lock commits
+%-define(WAIT_FOR_SHARED_LOCKS1,1).          %                    1 - When acquiring an exclusive lock, the transaction will wait for data updates of all shared and exclusive lock commits
+-define(WAIT_FOR_SHARED_LOCKS2,1).          %                    2 - For every exclusive lock requested, the transaction will wait for data updates of all shared and exclusive lock commits
                                             %                        For every shared lock requested, the transaction will only wait for data updates of commits using that lock as an excluisve one
 %Default if neither WAIT_FOR_SHARED_LOCKS1  %                    3 - For every exclusive lock requested, the transaction will wait for data updates of all shared and exclusive lock commits
 % nor WAIT_FOR_SHARED_LOCKS2 are defined    %                        It will not wait because of any requested shared lock. Though the timestamps of their commits will still be stored and
@@ -23,4 +23,4 @@
 -define(GET_LOCKS_INTERVAL_ES,50).         % Defines how long a transaction waits between retrying to get the locks
 -define(GET_LOCKS_FINAL_TRY_OPTION_ES,true).   % Decides if the clocksi_interactive_coord waits for GET_LOCKS_FINAL_TRY_WAIT after a lock could not be aquired.
                                             % This is usefull if GET_LOCKS_INTERVAL_ES is set very low in comparison to the time needed by DCs to communicate.
--define(GET_LOCKS_FINAL_TRY_WAIT_ES,400).    % Defines how long it waits untill it does the last attempt to get the locks.
+-define(GET_LOCKS_FINAL_TRY_WAIT_ES,800).    % Defines how long it waits untill it does the last attempt to get the locks.
