@@ -32,6 +32,7 @@
 %% tests
 -export([
         kram/1,
+        kram2/1,
         lock_pb_test1/1,
         lock_pb_test2/1,
         lock_pb_test3/1,
@@ -146,6 +147,7 @@ end_per_testcase(Name, _) ->
 
 all() -> [
         kram,
+        kram2,
         lock_pb_test1,
         lock_pb_test2,
         lock_pb_test3,
@@ -225,6 +227,15 @@ kram(Config)->
     ct:print("Snapshot Node2: ~p", [Result2]),
     Result3 = rpc:call(Node3, dc_utilities, get_stable_snapshot, []),
     ct:print("Snapshot Node3: ~p", [Result3]).
+
+kram2(Config)->
+    {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
+    {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
+    {ok, Pid3} = antidotec_pb_socket:start(?ADDRESS, ?PORT3),
+    Exclusive_Locks = [<<"kram2_key_1">>],
+    get_locks_helper3(Pid1, [], Exclusive_Locks),
+    get_locks_helper3(Pid2, [], Exclusive_Locks),
+    get_locks_helper3(Pid3, [], Exclusive_Locks).
 
 
 %% Testing lock acquisition via protocol buffer interface

@@ -147,14 +147,22 @@ dets_info() ->
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
-%% Sends remote_lock_request(Locks,0,dcid) messages to all other DCs.
 -spec required([key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 required(Locks,TxId,Timestamp,Local_Locks) ->
+    _New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
+
+%% Locks : locks reuqired for the txid
+%% TxId : transaction that requeires the specified locks
+%% Timestamp : timestamp of the request
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Returns the updated local_locks list
+%% Adds {TxId,{required,Locks,timestamp}} to local_locks
+%% Sends remote_lock_request(Locks,0,dcid) messages to all other DCs.
+-spec required_remote([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+required_remote(Locks,Missing_Locks,TxId,Timestamp,Local_Locks) ->
     DCID = dc_meta_data_utilities:get_my_dc_id(),
-        remote_lock_request(DCID, 0, Locks),  % TODO Key value ? (currently 0)
-        _New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
-
-
+    remote_lock_request(DCID, 0, Missing_Locks),  % TODO Key value ? (currently 0)
+    _New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
 
 
 %% Locks : locks used by the txid
@@ -416,7 +424,8 @@ check_lock(Lock) ->
                     Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
                     _Has_Lock = Total_Send < Total_Received;
                 [] ->
-                        {ok,Now} = get_snapshot_time(),
+                        %{ok,Now} = get_snapshot_time(),
+                        Now = dict:from_list([]),
                         case am_i_leader() of
                                 true ->
                                     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
@@ -542,6 +551,7 @@ remote_lock_request(MyDCId, Key, Locks) ->
 %% sends a message to the speciefed other DC containing the lock information
 -spec remote_send_lock(key(),non_neg_integer(),snapshot_time(),dcid(),dcid(),key())-> ok.
 remote_send_lock(Lock,Amount, Last_Changed,MyDCId, RemoteId, Key) ->
+    lager:info("remote_send_lock(~w,~w,Last_Changed,~w,~w,~w)~n",[Lock,Amount,MyDCId, RemoteId, Key]),
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks,
         {remote_send_lock, {Lock,Amount, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
@@ -566,7 +576,7 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
 handle_cast({remote_send_lock, {Lock,Amount,Snapshot,From,MyDCID1}}, State) ->
-        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w,~w},state)~n",[Lock,Amount,Snapshot,From,MyDCID1]),
+        lager:info("handle_cast({remote_send_lock,~w,~w,~w,~w},state)~n",[Lock,Amount,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
@@ -604,7 +614,7 @@ handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State
     case using(Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
-            New_Local_Locks2=required(Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks2=required_remote(Locks,Missing_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
             {reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
         {locks_in_use, Transactions_Using_The_Locks} ->

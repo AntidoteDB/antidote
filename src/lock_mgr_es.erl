@@ -163,14 +163,22 @@ dets_info() ->
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
-%% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
 -spec required([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
 required(Shared_Locks,Exclusive_Locks,TxId,Timestamp,Local_Locks) ->
-    DCID = dc_meta_data_utilities:get_my_dc_id(),
-    remote_lock_request_es(DCID,0,Shared_Locks,Exclusive_Locks), 
     _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
-
+%% Locks : locks reuqired for the txid
+%% TxId : transaction that requeires the specified locks
+%% Timestamp : timestamp of the request
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Returns the updated local_locks list
+%% Adds {TxId,{required,Locks,timestamp}} to local_locks
+%% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
+-spec required_remote([key()],[key()],{[key()],[key()]},txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
+required_remote(Shared_Locks,Exclusive_Locks,{Missing_Shared_Locks,Missing_Exclusive_Locks},TxId,Timestamp,Local_Locks) ->
+    DCID = dc_meta_data_utilities:get_my_dc_id(),
+    remote_lock_request_es(DCID,0,Missing_Shared_Locks,Missing_Exclusive_Locks), 
+    _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
 
 %% Shared_Locks : Shared locks used by the txid
@@ -298,11 +306,9 @@ what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
 -spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
 release_locks(TxId,Local_Locks) ->
     case orddict:find(TxId,Local_Locks) of
-        {ok,{using,_Shared_Locks,Exclusive_Locks}} ->
-            case Exclusive_Locks of
-                [] -> ok;
-                _ -> update_last_changed(Exclusive_Locks)
-            end;
+        {ok,{using,Shared_Locks,Exclusive_Locks}} ->
+            All_Locks = Shared_Locks ++ Exclusive_Locks,
+            update_last_changed(All_Locks);
         error ->
             lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
@@ -314,8 +320,8 @@ release_locks(TxId,Local_Locks) ->
 %% Returns all requested locks if WAIT_FOR_SHARED_LOCKS is defined in lock_mgr_es.hrl
 %% Returns only the requested exclusive locks if WAIT_FOR_SHARED_LOCKS is NOT defined in lock_mgr_es.hrl
 -spec what_locks_to_wait_for([key()],[key()]) -> [key()].
-what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
-    _All_Locks = Shared_Locks ++ Exclusive_Locks.
+what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
+    Exclusive_Locks.
 
 -else.
 %-ifdef(WAIT_FOR_SHARED_LOCKS3).
@@ -909,7 +915,7 @@ remote_lock_request_es(MyDCId, Key, Shared_Locks,Exclusive_Locks) ->
 %% sends a message to the speciefed other DC containing the lock information
 -spec remote_send_lock_history(key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time(),dcid(),dcid(),key())-> ok.
 remote_send_lock_history(Lock,Send_History, Last_Changed,MyDCId, RemoteId, Key) ->
-    %lager:info("remote_send_lock_history : ~w,~w,~w},state)~n",[Lock,RemoteId,MyDCId]),
+    lager:info("remote_send_lock_history : ~w,~w,~w},state)~n",[Lock,RemoteId,MyDCId]),
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks_es,
         {remote_send_lock_history, {Lock,Send_History, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
@@ -934,7 +940,7 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
 handle_cast({remote_send_lock_history, {Lock,Send_History,Snapshot,From,MyDCID1}}, State) ->
-        %lager:info("handle_cast({remote_send_lock_history,~w,~w,~w,~w,~w},state)~n",[Lock,Send_History,Snapshot,From,MyDCID1]),
+        lager:info("handle_cast({remote_send_lock_history,~w,~w,~w,~w,~w},state)~n",[Lock,Send_History,Snapshot,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
@@ -947,7 +953,7 @@ handle_cast({remote_send_lock_history, {Lock,Send_History,Snapshot,From,MyDCID1}
 %% Adds {dcid,[{lock,timestamp}]} to lock_requests to remember which DC requested which Locks
 %% Adds a timestamp to filter too old requests
 handle_cast({remote_lock_request_es, {Locks, Sender}}, #state{lock_requests=Lock_Requests}=State) ->
-    %lager:info("handle_cast({remote_lock_request_es,~w,~w},from,state)~n",[Locks,Sender]),
+    lager:info("handle_cast({remote_lock_request_es,~w,~w},from,state)~n",[Locks,Sender]),
     Timestamp = erlang:timestamp(),
     New_Lock_Requests = requested(Locks, Sender, Timestamp, Lock_Requests),
         {noreply, State#state{lock_requests=New_Lock_Requests}}.
@@ -968,12 +974,12 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Shared_Locks,Exclusive_Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    %lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
+    lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
     New_Shared_Locks = Shared_Locks--Exclusive_Locks,
     case using(Shared_Locks,Exclusive_Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
-            New_Local_Locks2=required(New_Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks2=required_remote(New_Shared_Locks,Exclusive_Locks,Missing_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
             {reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
         {locks_in_use, Transactions_Using_The_Locks} ->

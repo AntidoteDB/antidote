@@ -629,7 +629,7 @@ a_lot_of_locks_per_transaction_1(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(100,"erwwqd"),
+    Keys1 = generate_lock_helper(50,"erwwqd"),
     Object1 = {a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,10,[],self(),0,1]),
     spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,10,[],self(),0,2]),
@@ -646,7 +646,7 @@ a_lot_of_locks_per_transaction_2(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(200,"asdf"),
+    Keys1 = generate_lock_helper(100,"asdf"),
     Object1 = {a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,20,[],self(),0,1]),
     spawn(lock_mgr_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,20,[],self(),0,2]),

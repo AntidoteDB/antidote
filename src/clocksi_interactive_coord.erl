@@ -98,7 +98,7 @@
     receive_prepared/3,
     execute_op/3,
     start_tx/3,
-
+    wait_for_clock/1,
     committing_2pc/3,
     committing/3,
     committing_single/3
@@ -1264,6 +1264,7 @@ wait_for_clock(Clock) ->
             {ok, VecSnapshotTime};
         false ->
             %% wait for snapshot time to catch up with Client Clock
+            lager:info("clocksi_coord ~p ms sleep",[10]),
             timer:sleep(10),
             wait_for_clock(Clock)
     end.
