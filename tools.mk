@@ -10,14 +10,25 @@ test:
 	${REBAR} eunit skip_deps=true
 	${REBAR} cover
 
-systests: compile-utils rel
-	rm -f test/*.beam
+singledc: compile-utils rel
+	rm -f test/singledc/*.beam
 	mkdir -p logs
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/${SUITE} -cover test/antidote.coverspec
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/singledc/${SUITE} -cover test/antidote.coverspec
 else
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test -cover test/antidote.coverspec
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/singledc -cover test/antidote.coverspec
 endif
+
+multidc: compile-utils rel
+	rm -f test/multidc/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec
+endif
+
+systests: singledc multidc
 
 docs:
 	${REBAR} doc skip_deps=true

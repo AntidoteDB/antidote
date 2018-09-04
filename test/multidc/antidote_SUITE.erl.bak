@@ -69,14 +69,18 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
+     % multi
      dummy_test,
+     random_test,
+
+     % single
      static_txn_single_object,
      static_txn_single_object_clock,
      static_txn_multi_objects,
      static_txn_multi_objects_clock,
      interactive_txn,
-     interactive_txn_abort,
-     random_test
+     interactive_txn_abort
+
     ].
 
 dummy_test(Config) ->

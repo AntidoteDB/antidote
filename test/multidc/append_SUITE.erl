@@ -20,33 +20,27 @@
 
 -module(append_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
--export([%% suite/0,
+-export([
          init_per_suite/1,
          end_per_suite/1,
          init_per_testcase/2,
          end_per_testcase/2,
-         all/0]).
+         all/0
+        ]).
 
 %% tests
--export([append_test/1,
-         append_failure_test/1]).
+-export([
+         append_failure_test/1
+        ]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
--define(TYPE, antidote_crdt_counter_pn).
--define(BUCKET, append_bucket).
+
+-define(BUCKET, test_utils:bucket(append_bucket)).
 
 init_per_suite(Config) ->
-    test_utils:at_init_testsuite(),
-    %lager_common_test_backend:bounce(debug),
-    %% have the slave nodes monitor the runner node, so they can't outlive it
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
-    [{nodes, Nodes}|Config].
+    test_utils:init_single_dc(?MODULE, Config).
 
 
 end_per_suite(Config) ->
@@ -59,65 +53,38 @@ end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-all() ->
-    [
-    append_test,
-    append_failure_test
-    ].
+all() -> [ append_failure_test ].
 
-append_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    lager:info("Starting write operation 1"),
-    increment_counter(Node, append_key1),
-
-    lager:info("Starting write operation 2"),
-    increment_counter(Node, append_key2),
-
-    lager:info("Starting read operation 1"),
-    read_counter(Node, append_key1, 1),
-    lager:info("Starting read operation 2"),
-    read_counter(Node, append_key2, 1).
 
 append_failure_test(Config) ->
+    Bucket = ?BUCKET,
     Nodes = proplists:get_value(nodes, Config),
     N = hd(Nodes),
     Key = append_failure,
 
     %% Identify preference list for a given key.
     Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [Key]),
-    lager:info("Preference list: ~p", [Preflist]),
+    ct:log("Preference list: ~p", [Preflist]),
 
     NodeList = [Node || {_Index, Node} <- Preflist],
-    lager:info("Responsible nodes for key: ~p", [NodeList]),
+    ct:log("Responsible nodes for key: ~p", [NodeList]),
 
     {A, _} = lists:split(1, NodeList),
     First = hd(A),
 
     %% Perform successful write and read.
-    increment_counter(First, Key),
-    read_counter(First, Key, 1),
+    antidote_utils:increment_pn_counter(First, Key, Bucket),
+    {Val1, _} = antidote_utils:read_pn_counter(First, Key, Bucket),
+    ?assertEqual(1, Val1),
 
     %% Partition the network.
-    lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
+    ct:log("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
 
     %% Heal the partition.
     test_utils:heal_cluster(A, Nodes -- A),
 
     %% Read after the partition has been healed.
-    read_counter(First, Key, 1).
+    {Val2, _} = antidote_utils:read_pn_counter(First, Key, Bucket),
+    ?assertEqual(1, Val2).
 
-increment_counter(Node, Key) ->
-    Obj = {Key, ?TYPE, ?BUCKET},
-    WriteResult = rpc:call(Node,
-                           antidote, update_objects,
-                           [ignore, [], [{Obj, increment, 1}]]),
-    ?assertMatch({ok, _}, WriteResult).
-
-read_counter(Node, Key, ExpectedValue) ->
-    Obj = {Key, ?TYPE, ?BUCKET},
-    {ok, [Val], _} = rpc:call(Node,
-                           antidote, read_objects,
-                           [ignore, [], [Obj]]),
-    ?assertEqual(ExpectedValue, Val).
