@@ -65,8 +65,21 @@
 %% ===========================================
 
 init_single_dc(Suite, Config) ->
-    % TODO implement single dc tests
-    init_multi_dc(Suite, Config).
+    ct:pal("[~p]", [Suite]),
+    test_utils:at_init_testsuite(),
+
+    StartDCs = fun(Nodes) ->
+        test_utils:pmap(fun(N) -> test_utils:start_node(N, Config) end, Nodes)
+               end,
+    [Nodes] = test_utils:pmap( fun(N) -> StartDCs(N) end, [[dev1]] ),
+    [Node] = Nodes,
+
+    %% Check that the clocksi protocol is tested
+    ct:print("DC: ~p", [Node]),
+    {ok, Prot} = rpc:call(Node, application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
+
+    [{clusters, [Nodes]} | [{nodes, Nodes} | [{node, Node} | Config]]].
 
 
 init_multi_dc(Suite, Config) ->

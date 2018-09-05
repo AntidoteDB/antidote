@@ -36,7 +36,6 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(BUCKET, test_utils:bucket(append_bucket)).
 
@@ -60,8 +59,7 @@ all() ->
 
 append_test(Config) ->
     Bucket = ?BUCKET,
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
+    Node = proplists:get_value(node, Config),
     ct:log("Starting write operation 1"),
     antidote_utils:increment_pn_counter(Node, append_key1, Bucket),
 

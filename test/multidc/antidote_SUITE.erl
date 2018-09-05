@@ -41,7 +41,6 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(BUCKET, test_utils:bucket(antidote_bucket)).
 

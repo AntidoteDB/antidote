@@ -31,7 +31,6 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_counter_b).
 -define(BUCKET, test_utils:bucket(bcountermgr_bucket)).
@@ -75,8 +74,7 @@ all() -> [
 %% Test creating a new `bcounter()'.
 new_bcounter_test(Config) ->
     Bucket = ?BUCKET,
-    Clusters = proplists:get_value(clusters, Config),
-    [Node | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Node = proplists:get_value(node, Config),
     Key = bcounter1_mgr,
 
     % FIXME why is this not working?

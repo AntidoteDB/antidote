@@ -45,7 +45,6 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(BUCKET, test_utils:bucket(antidote_bucket)).
 
@@ -79,36 +78,36 @@ all() ->
 
 static_txn_single_object(Config) ->
     Bucket = ?BUCKET,
-    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Key = antidote_key_static1,
     Type = antidote_crdt_counter_pn,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
 
-    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
-    {ok, [Val], _} = rpc:call(Node1, antidote, read_objects, [ignore, [], [Object]]),
+    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, [Val], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Object]]),
     ?assertEqual(1, Val).
 
 
 static_txn_single_object_clock(Config) ->
     Bucket = ?BUCKET,
-    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Key = antidote_key_static2,
     Type = antidote_crdt_counter_pn,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
 
-    {ok, Clock1} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
-    {ok, [Val1], Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], [Object]]),
+    {ok, Clock1} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, [Val1], Clock2} = rpc:call(Node, antidote, read_objects, [Clock1, [], [Object]]),
     ?assertEqual(1, Val1),
-    {ok, Clock3} = rpc:call(Node1, antidote, update_objects, [Clock2, [], [Update]]),
-    {ok, [Val2], _Clock4} = rpc:call(Node1, antidote, read_objects, [Clock3, [], [Object]]),
+    {ok, Clock3} = rpc:call(Node, antidote, update_objects, [Clock2, [], [Update]]),
+    {ok, [Val2], _Clock4} = rpc:call(Node, antidote, read_objects, [Clock3, [], [Object]]),
     ?assertEqual(2, Val2).
 
 
 static_txn_multi_objects(Config) ->
     Bucket = ?BUCKET,
-    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
     IncValues = [1, 2, 3, 4],
@@ -120,14 +119,14 @@ static_txn_multi_objects(Config) ->
                                 {Object, increment, IncVal}
                         end, lists:zip(Objects, IncValues)),
 
-    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
-    {ok, Res, _} = rpc:call(Node1, antidote, read_objects, [ignore, [], Objects]),
+    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], Updates]),
+    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, [], Objects]),
     ?assertEqual([1, 2, 3, 4], Res).
 
 
 static_txn_multi_objects_clock(Config) ->
     Bucket = ?BUCKET,
-    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
     IncValues = [1, 2, 3, 4],
@@ -139,18 +138,18 @@ static_txn_multi_objects_clock(Config) ->
                                 {Object, increment, IncVal}
                         end, lists:zip(Objects, IncValues)),
 
-    {ok, Clock1} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
-    {ok, Res1, Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], Objects]),
+    {ok, Clock1} = rpc:call(Node, antidote, update_objects, [ignore, [], Updates]),
+    {ok, Res1, Clock2} = rpc:call(Node, antidote, read_objects, [Clock1, [], Objects]),
     ?assertEqual([1, 2, 3, 4], Res1),
 
-    {ok, Clock3} = rpc:call(Node1, antidote, update_objects, [Clock2, [], Updates]),
-    {ok, Res2, _} = rpc:call(Node1, antidote, read_objects, [Clock3, [], Objects]),
+    {ok, Clock3} = rpc:call(Node, antidote, update_objects, [Clock2, [], Updates]),
+    {ok, Res2, _} = rpc:call(Node, antidote, read_objects, [Clock3, [], Objects]),
     ?assertEqual([2, 4, 6, 8], Res2).
 
 
 interactive_txn(Config) ->
     Bucket = ?BUCKET,
-    [Node | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
     IncValues = [1, 2, 3, 4],
@@ -177,7 +176,7 @@ interactive_txn(Config) ->
 
 interactive_txn_abort(Config) ->
     Bucket = ?BUCKET,
-    [Node | _Nodes] = proplists:get_value(nodes, Config),
+    Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Key = antidote_int_abort_m1,
     Object = {Key, Type, Bucket},

@@ -37,7 +37,6 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_counter_b).
 -define(BUCKET, test_utils:bucket(bcountermgr_bucket)).
