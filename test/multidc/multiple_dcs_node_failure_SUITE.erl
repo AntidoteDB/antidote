@@ -20,15 +20,13 @@
 
 -module(multiple_dcs_node_failure_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% If logging is disabled these tests will fail and some reads will
 %% block as DCs will be waiting for missing messages, so add a
 %% timeout to these calls so the test suite can finish
 -define(RPC_TIMEOUT, 10000).
 
 %% common_test callbacks
--export([%% suite/0,
+-export([
          init_per_suite/1,
          end_per_suite/1,
          init_per_testcase/2,
@@ -42,15 +40,13 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, multiple_dcs_node_failure_bucket).
+-define(BUCKET, test_utils:bucket(multiple_dcs_node_failure_bucket)).
 
-init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = lists:flatten(Clusters),
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+    Clusters = proplists:get_value(clusters, Config),
+    Nodes = proplists:get_value(nodes, Config),
 
     %Ensure that the clocksi protocol is used
     test_utils:pmap(fun(Node) ->
@@ -60,7 +56,7 @@ init_per_suite(Config) ->
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
 
-    [{clusters, Clusters}|Config].
+    Config.
 
 end_per_suite(Config) ->
     Config.
@@ -72,10 +68,11 @@ end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-all() ->
-    [multiple_cluster_failure_test,
-     cluster_failure_test,
-     update_during_cluster_failure_test].
+all() -> [
+    multiple_cluster_failure_test,
+    cluster_failure_test,
+    update_during_cluster_failure_test
+].
 
 %% In this test there are 3 DCs each with 1 node
 %% The test starts by performing some updates, ensuring they are propagated
@@ -83,43 +80,45 @@ all() ->
 %% Once restarted it checks that updates are still performed safely
 %% and propagated to other DCs
 cluster_failure_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Key = cluster_failure_test,
+    Type = antidote_crdt_counter_pn,
+
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
+            ct:pal("Logging is disabled!"),
             pass;
         _ ->
-            Key = cluster_failure_test,
-            Type = antidote_crdt_counter_pn,
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
 
-            update_counters(Node1, [Key], [1], ignore, static),
-            update_counters(Node1, [Key], [1], ignore, static),
-            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
-
-            check_read_key(Node1, Key, Type, 3, ignore, static),
+            check_read_key(Node1, Key, Type, 3, ignore, static, Bucket),
 
             %% Kill and restart a node and be sure everything works
-            ct:print("Killing and restarting node ~w", [Node1]),
+            ct:log("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
-            lager:info("Done append in Node1"),
-            check_read_key(Node3, Key, Type, 3, CommitTime, static),
-            lager:info("Done read in Node3"),
-            check_read_key(Node2, Key, Type, 3, CommitTime, static),
+            ct:log("Done append in Node1"),
+            check_read_key(Node3, Key, Type, 3, CommitTime, static, Bucket),
+            ct:log("Done read in Node3"),
+            check_read_key(Node2, Key, Type, 3, CommitTime, static, Bucket),
 
-            lager:info("Done first round of read, I am gonna append"),
-            {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static),
-            lager:info("Done append in Node2"),
-            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
-            lager:info("Done append in Node3"),
-            lager:info("Done waiting, I am gonna read"),
+            ct:log("Done first round of read, I am gonna append"),
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static, Bucket),
+            ct:log("Done append in Node2"),
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static, Bucket),
+            ct:log("Done append in Node3"),
+            ct:log("Done waiting, I am gonna read"),
 
             SnapshotTime = CommitTime3,
-            check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
-            lager:info("Done read in Node1"),
-            check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
-            lager:info("Done read in Node2"),
-            check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
+            check_read_key(Node1, Key, Type, 5, SnapshotTime, static, Bucket),
+            ct:log("Done read in Node1"),
+            check_read_key(Node2, Key, Type, 5, SnapshotTime, static, Bucket),
+            ct:log("Done read in Node2"),
+            check_read_key(Node3, Key, Type, 5, SnapshotTime, static, Bucket),
             pass
     end.
 
@@ -130,39 +129,40 @@ cluster_failure_test(Config) ->
 %% Once restarted it checks that updates are still performed safely
 %% and propagated to other DCs
 multiple_cluster_failure_test(Config) ->
+    Bucket = ?BUCKET,
     [Cluster1, Cluster2 | _Rest] = proplists:get_value(clusters, Config),
     [Node1, Node3|_] = Cluster1,
+    Node2 = hd(Cluster2),
+    Key = multiple_cluster_failure_test,
+    Type = antidote_crdt_counter_pn,
+
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
+            ct:pal("Logging is disabled!"),
             pass;
         _ ->
-            Node2 = hd(Cluster2),
-
-            Key = multiple_cluster_failure_test,
-            Type = antidote_crdt_counter_pn,
-
-            update_counters(Node1, [Key], [1], ignore, static),
-            update_counters(Node1, [Key], [1], ignore, static),
-            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
-            check_read_key(Node1, Key, Type, 3, CommitTime, static),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            check_read_key(Node1, Key, Type, 3, CommitTime, static, Bucket),
 
             %% Kill and restart a node and be sure everything works
-            ct:print("Killing and restarting node ~w", [Node1]),
+            ct:log("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
-            lager:info("Done append in Node1"),
-            check_read_key(Node2, Key, Type, 3, CommitTime, static),
-            check_read_key(Node3, Key, Type, 3, CommitTime, static),
+            ct:log("Done append in Node1"),
+            check_read_key(Node2, Key, Type, 3, CommitTime, static, Bucket),
+            check_read_key(Node3, Key, Type, 3, CommitTime, static, Bucket),
 
-            lager:info("Done first round of read, I am gonna append"),
-            {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static),
-            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
-            lager:info("Done waiting, I am gonna read"),
+            ct:log("Done first round of read, I am gonna append"),
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static, Bucket),
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static, Bucket),
+            ct:log("Done waiting, I am gonna read"),
 
             SnapshotTime = CommitTime3,
-            check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
-            check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
-            check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
+            check_read_key(Node1, Key, Type, 5, SnapshotTime, static, Bucket),
+            check_read_key(Node2, Key, Type, 5, SnapshotTime, static, Bucket),
+            check_read_key(Node3, Key, Type, 5, SnapshotTime, static, Bucket),
             pass
     end.
 
@@ -174,31 +174,32 @@ multiple_cluster_failure_test(Config) ->
 %% Once restarted it checks that updates are still performed safely
 %% and propagated to other DCs
 update_during_cluster_failure_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Key = update_during_cluster_failure_test,
+    Type = antidote_crdt_counter_pn,
+
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
+            ct:pal("Logging is disabled!"),
             pass;
         _ ->
-
-            Key = update_during_cluster_failure_test,
-            Type = antidote_crdt_counter_pn,
-
-            update_counters(Node1, [Key], [1], ignore, static),
-            update_counters(Node1, [Key], [1], ignore, static),
-            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
-            check_read_key(Node1, Key, Type, 3, CommitTime, static),
-            lager:info("Done append in Node1"),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            check_read_key(Node1, Key, Type, 3, CommitTime, static, Bucket),
+            ct:log("Done append in Node1"),
 
             %% Kill a node
-            lager:info("Killing node ~w", [Node1]),
+            ct:log("Killing node ~w", [Node1]),
             [Node1] = test_utils:brutal_kill_nodes([Node1]),
 
             %% Be sure the other DC works while the node is down
-            {ok, CommitTime3a} = update_counters(Node2, [Key], [1], ignore, static),
+            {ok, CommitTime3a} = update_counters(Node2, [Key], [1], ignore, static, Bucket),
 
             %% Start the node back up and be sure everything works
-            lager:info("Restarting node ~w", [Node1]),
+            ct:log("Restarting node ~w", [Node1]),
             [Node1] = test_utils:restart_nodes([Node1], Config),
 
             %% Take the max of the commit times to be sure
@@ -207,26 +208,28 @@ update_during_cluster_failure_test(Config) ->
                 max(T1, T2)
             end, CommitTime, CommitTime3a),
 
-            check_read_key(Node1, Key, Type, 4, Time, static),
-            lager:info("Done Read in Node1"),
+            check_read_key(Node1, Key, Type, 4, Time, static, Bucket),
+            ct:log("Done Read in Node1"),
 
-            check_read_key(Node3, Key, Type, 4, Time, static),
-            lager:info("Done Read in Node3"),
-            check_read_key(Node2, Key, Type, 4, Time, static),
-            lager:info("Done first round of read, I am gonna append"),
+            check_read_key(Node3, Key, Type, 4, Time, static, Bucket),
+            ct:log("Done Read in Node3"),
+            check_read_key(Node2, Key, Type, 4, Time, static, Bucket),
+            ct:log("Done first round of read, I am gonna append"),
 
-            {ok, CommitTime2} = update_counters(Node2, [Key], [1], Time, static),
-            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], Time, static, Bucket),
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static, Bucket),
 
             SnapshotTime = CommitTime3,
-            check_read_key(Node1, Key, Type, 6, SnapshotTime, static),
-            check_read_key(Node2, Key, Type, 6, SnapshotTime, static),
-            check_read_key(Node3, Key, Type, 6, SnapshotTime, static),
+            check_read_key(Node1, Key, Type, 6, SnapshotTime, static, Bucket),
+            check_read_key(Node2, Key, Type, 6, SnapshotTime, static, Bucket),
+            check_read_key(Node3, Key, Type, 6, SnapshotTime, static, Bucket),
             pass
     end.
 
-check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
-    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
+
+
+check_read_key(Node, Key, Type, Expected, Clock, TxId, Bucket) ->
+    check_read(Node, [{Key, Type, Bucket}], [Expected], Clock, TxId).
 
 check_read(Node, Objects, Expected, Clock, TxId) ->
     case TxId of
@@ -240,9 +243,9 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
             {ok, Res}
     end.
 
-update_counters(Node, Keys, IncValues, Clock, TxId) ->
+update_counters(Node, Keys, IncValues, Clock, TxId, Bucket) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, Bucket}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),
