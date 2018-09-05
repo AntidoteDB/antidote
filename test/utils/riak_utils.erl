@@ -22,8 +22,6 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--compile({parse_transform, lager_transform}).
-
 -export([
     is_ring_ready/1,
     wait_until_ring_converged/1,
@@ -46,7 +44,6 @@ is_ring_ready(Node) ->
 %%      converged (ie. `riak_core_ring:is_ready' returns `true').
 -spec wait_until_ring_converged([node()]) -> ok.
 wait_until_ring_converged(Nodes) ->
-    lager:info("Wait until ring converged on ~p", [Nodes]),
     [?assertEqual(ok, time_utils:wait_until(Node, fun is_ring_ready/1)) || Node <- Nodes],
     ok.
 
@@ -55,7 +52,6 @@ wait_until_ring_converged(Nodes) ->
 %% on-going or pending ownership transfers.
 -spec wait_until_no_pending_changes([node()]) -> ok | fail.
 wait_until_no_pending_changes(Nodes) ->
-    lager:info("Wait until no pending changes on ~p", [Nodes]),
     F = fun() ->
         rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
         {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
@@ -81,6 +77,5 @@ owners_according_to(Node) ->
             Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
             lists:usort(Owners);
         {badrpc, _} = BadRpc ->
-            ct:print("Bad rpc call to riak core: ~p", [BadRpc]),
             BadRpc
     end.

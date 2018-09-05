@@ -1,14 +1,7 @@
 %%%-------------------------------------------------------------------
-%%% @author schimpf
-%%% @copyright (C) 2018, <COMPANY>
-%%% @doc
-%%%
-%%% @end
 %%% Created : 23. May 2018 16:17
 %%%-------------------------------------------------------------------
 -module(time_utils).
-
--compile({parse_transform, lager_transform}).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -104,7 +97,6 @@ wait_until_connected(Node1, Node2) ->
 %% @doc Waits until a certain registered name pops up on the remote node.
 -spec wait_until_registered(node(), any()) -> any().
 wait_until_registered(Node, Name) ->
-    ct:print("Wait until ~p is up on ~p", [Name, Node]),
     IsNameRegisteredMember = fun() ->
                 Registered = rpc:call(Node, erlang, registered, []),
                 lists:member(Name, Registered)
@@ -117,7 +109,6 @@ wait_until_registered(Node, Name) ->
 %% @doc Waits until nodes agree about ownership
 -spec wait_until_nodes_agree_about_ownership([node()]) -> any().
 wait_until_nodes_agree_about_ownership(Nodes) ->
-    lager:info("Wait until nodes agree about ownership ~p", [Nodes]),
     Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
 

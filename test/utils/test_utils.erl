@@ -74,16 +74,11 @@ init_single_dc(Suite, Config) ->
     [Nodes] = test_utils:pmap( fun(N) -> StartDCs(N) end, [[dev1]] ),
     [Node] = Nodes,
 
-    %% Check that the clocksi protocol is tested
-    ct:print("DC: ~p", [Node]),
-    {ok, Prot} = rpc:call(Node, application, get_env, [antidote, txn_prot]),
-    ?assertMatch(clocksi, Prot),
-
     [{clusters, [Nodes]} | [{nodes, Nodes} | [{node, Node} | Config]]].
 
 
 init_multi_dc(Suite, Config) ->
-    ct:print("[~p]", [Suite]),
+    ct:pal("[~p]", [Suite]),
 
     %distributed_init(),
     at_init_testsuite(),
@@ -116,7 +111,7 @@ distributed_init() ->
 
 start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
-    ct:pal("Starting node ~p", [Name]),
+    ct:log("Starting node ~p", [Name]),
 
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
@@ -167,7 +162,7 @@ start_node(Name, Config) ->
 
             Node;
         {error, already_started, Node} ->
-            ct:pal("Node ~p already started, reusing node", [Node]),
+            ct:log("Node ~p already started, reusing node", [Node]),
             Node;
         {error, Reason, Node} ->
             ct:pal("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
@@ -193,7 +188,7 @@ kill_nodes(NodeList) ->
 -spec brutal_kill_nodes([node()]) -> [node()].
 brutal_kill_nodes(NodeList) ->
     lists:map(fun(Node) ->
-                  ct:print("Killing node ~p", [Node]),
+                  ct:pal("Killing node ~p", [Node]),
                   OSPidToKill = rpc:call(Node, os, getpid, []),
                   %% try a normal kill first, but set a timer to
                   %% kill -9 after X seconds just in case
@@ -209,15 +204,15 @@ brutal_kill_nodes(NodeList) ->
 -spec restart_nodes([node()], [tuple()]) -> [node()].
 restart_nodes(NodeList, Config) ->
     pmap(fun(Node) ->
-        ct:print("Restarting node ~p", [Node]),
+        ct:pal("Restarting node ~p", [Node]),
 
-        ct:print("Starting and waiting until vnodes are restarted at node ~w", [Node]),
+        ct:log("Starting and waiting until vnodes are restarted at node ~w", [Node]),
         start_node(get_node_name(Node), Config),
 
-        ct:print("Waiting until ring converged @ ~p", [Node]),
+        ct:log("Waiting until ring converged @ ~p", [Node]),
         riak_utils:wait_until_ring_converged([Node]),
 
-        ct:print("Waiting until ready @ ~p", [Node]),
+        ct:log("Waiting until ready @ ~p", [Node]),
         time_utils:wait_until(Node, fun wait_init:check_ready/1),
         Node
          end, NodeList).
@@ -271,7 +266,7 @@ connect_cluster(Nodes) ->
 
   pmap(fun(Cluster) ->
               Node1 = hd(Cluster),
-              ct:print("Waiting until vnodes start on node ~p", [Node1]),
+              ct:log("Waiting until vnodes start on node ~p", [Node1]),
               time_utils:wait_until_registered(Node1, inter_dc_pub),
               time_utils:wait_until_registered(Node1, inter_dc_query_receive_socket),
               time_utils:wait_until_registered(Node1, inter_dc_query_response_sup),
@@ -295,7 +290,7 @@ connect_cluster(Nodes) ->
               Node = hd(Cluster),
               ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
           end, Clusters),
-    ct:pal("DC clusters connected!").
+    ct:log("DC clusters connected!").
 
 
 descriptors(Clusters) ->
@@ -339,7 +334,7 @@ other_web_port(Node) ->
 
 %% Build clusters
 join_cluster(Nodes) ->
-    ct:pal("Joining: ~p", [Nodes]),
+    ct:log("Joining: ~p", [Nodes]),
     %% Ensure each node owns 100% of it's own ring
     [?assertEqual([Node], riak_utils:owners_according_to(Node)) || Node <- Nodes],
     %% Join nodes
