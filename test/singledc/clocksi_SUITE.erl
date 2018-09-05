@@ -342,45 +342,45 @@ clocksi_concurrency_test(Config) ->
 clocksi_parallel_ops_test(Config) ->
     Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
-    Bound_object1 = {parallel_key1, antidote_crdt_counter_pn, Bucket},
-    Bound_object2 = {parallel_key2, antidote_crdt_counter_pn, Bucket},
-    Bound_object3 = {parallel_key3, antidote_crdt_counter_pn, Bucket},
-    Bound_object4 = {parallel_key4, antidote_crdt_counter_pn, Bucket},
-    Bound_object5 = {parallel_key5, antidote_crdt_counter_pn, Bucket},
+    BoundObject1 = {parallel_key1, antidote_crdt_counter_pn, Bucket},
+    BoundObject2 = {parallel_key2, antidote_crdt_counter_pn, Bucket},
+    BoundObject3 = {parallel_key3, antidote_crdt_counter_pn, Bucket},
+    BoundObject4 = {parallel_key4, antidote_crdt_counter_pn, Bucket},
+    BoundObject5 = {parallel_key5, antidote_crdt_counter_pn, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
 
     %% update 5 different objects
     ok = rpc:call(Node, antidote, update_objects,
-                  [[{Bound_object1, increment, 1},
-                    {Bound_object2, increment, 2},
-                    {Bound_object3, increment, 3},
-                    {Bound_object4, increment, 4},
-                    {Bound_object5, increment, 5}],
+                  [[{BoundObject1, increment, 1},
+                    {BoundObject2, increment, 2},
+                    {BoundObject3, increment, 3},
+                    {BoundObject4, increment, 4},
+                    {BoundObject5, increment, 5}],
                    TxId]),
 
     %% read the objects in the same transaction to see that the updates
     %% are seen.
-    Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
-                                                   Bound_object2, Bound_object3, Bound_object4, Bound_object5], TxId]),
+    Res = rpc:call(Node, antidote, read_objects, [[BoundObject1,
+                                                   BoundObject2, BoundObject3, BoundObject4, BoundObject5], TxId]),
     ?assertMatch({ok, [1, 2, 3, 4, 5]}, Res),
 
     %% update 5 times the first object.
     ok = rpc:call(Node, antidote, update_objects,
-                  [[{Bound_object1, increment, 1},
-                    {Bound_object1, increment, 1},
-                    {Bound_object1, increment, 1},
-                    {Bound_object1, increment, 1},
-                    {Bound_object1, increment, 1}],
+                  [[{BoundObject1, increment, 1},
+                    {BoundObject1, increment, 1},
+                    {BoundObject1, increment, 1},
+                    {BoundObject1, increment, 1},
+                    {BoundObject1, increment, 1}],
                    TxId]),
     %% see that these updates are seen too.
-    Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId]),
+    Res1 = rpc:call(Node, antidote, read_objects, [[BoundObject1], TxId]),
     ?assertMatch({ok, [6]}, Res1),
     {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
     %% start a new transaction that reads the updated objects.
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1,
-                                                    Bound_object2, Bound_object3, Bound_object4, Bound_object5], TxId2]),
+    Res2 = rpc:call(Node, antidote, read_objects, [[BoundObject1,
+                                                    BoundObject2, BoundObject3, BoundObject4, BoundObject5], TxId2]),
     ?assertMatch({ok, [6, 2, 3, 4, 5]}, Res2),
     {ok, _CT2} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
 
@@ -392,28 +392,28 @@ clocksi_parallel_ops_test(Config) ->
 clocksi_static_parallel_writes_test(Config) ->
     Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
-    Bound_object1 = {parallel_key6, antidote_crdt_counter_pn, Bucket},
-    Bound_object2 = {parallel_key7, antidote_crdt_counter_pn, Bucket},
-    Bound_object3 = {parallel_key8, antidote_crdt_counter_pn, Bucket},
-    Bound_object4 = {parallel_key9, antidote_crdt_counter_pn, Bucket},
-    Bound_object5 = {parallel_key10, antidote_crdt_counter_pn, Bucket},
+    BoundObject1 = {parallel_key6, antidote_crdt_counter_pn, Bucket},
+    BoundObject2 = {parallel_key7, antidote_crdt_counter_pn, Bucket},
+    BoundObject3 = {parallel_key8, antidote_crdt_counter_pn, Bucket},
+    BoundObject4 = {parallel_key9, antidote_crdt_counter_pn, Bucket},
+    BoundObject5 = {parallel_key10, antidote_crdt_counter_pn, Bucket},
     %% update 5 different objects
     {ok, CT} = rpc:call(Node, cure, update_objects,
                         [ignore, [],
-                         [{Bound_object1, increment, 1},
-                          {Bound_object2, increment, 2},
-                          {Bound_object3, increment, 3},
-                          {Bound_object4, increment, 4},
-                          {Bound_object5, increment, 5}]
+                         [{BoundObject1, increment, 1},
+                          {BoundObject2, increment, 2},
+                          {BoundObject3, increment, 3},
+                          {BoundObject4, increment, 4},
+                          {BoundObject5, increment, 5}]
                         , true
                         ]),
 
     ct:log("updated 5 objects no problem"),
 
     {ok, Res, CT1} = rpc:call(Node, cure, obtain_objects,
-                              [CT, [], [Bound_object1,
-                                        Bound_object2, Bound_object3,
-                                        Bound_object4, Bound_object5],
+                              [CT, [], [BoundObject1,
+                                        BoundObject2, BoundObject3,
+                                        BoundObject4, BoundObject5],
                               true, object_value
                               ]),
     ?assertMatch([1, 2, 3, 4, 5], Res),
@@ -423,17 +423,17 @@ clocksi_static_parallel_writes_test(Config) ->
     %% update 5 times the first object.
     {ok, CT2} = rpc:call(Node, cure, update_objects,
                          [CT1, [],
-                          [{Bound_object1, increment, 1},
-                           {Bound_object1, increment, 1},
-                           {Bound_object1, increment, 1},
-                           {Bound_object1, increment, 1},
-                           {Bound_object1, increment, 1}]
+                          [{BoundObject1, increment, 1},
+                           {BoundObject1, increment, 1},
+                           {BoundObject1, increment, 1},
+                           {BoundObject1, increment, 1},
+                           {BoundObject1, increment, 1}]
                          , true
                          ]),
 
     ct:log("updated 5 objects concurrently"),
 
     {ok, Res1, _CT4} = rpc:call(Node, cure, obtain_objects,
-                                [CT2, [], [Bound_object1], true, object_value]),
+                                [CT2, [], [BoundObject1], true, object_value]),
     ?assertMatch([6], Res1),
     pass.
