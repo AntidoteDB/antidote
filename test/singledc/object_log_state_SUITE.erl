@@ -20,9 +20,7 @@
 
 -module(object_log_state_SUITE).
 
--compile({parse_transform, lager_transform}).
-
--include("../include/antidote.hrl").
+-include("../../include/antidote.hrl").
 
 %% common_test callbacks
 -export([
@@ -37,15 +35,12 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
+
+-define(TBUCKET, test_utils:bucket(object_log_state_bucket)).
 
 
 init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
-    [{nodes, Nodes}|Config].
+    test_utils:init_single_dc(?MODULE, Config).
 
 end_per_suite(Config) ->
     Config.
@@ -60,31 +55,30 @@ end_per_testcase(Name, _) ->
 all() -> [object_log_state_test].
 
 object_log_state_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    FirstNode = hd(Nodes),
+    Node = proplists:get_value(node, Config),
     Type = antidote_crdt_set_aw,
     Key = object_log_state_test,
-    Bucket = object_log_state_bucket,
+    Bucket = ?TBUCKET,
     BoundObject = {Key, Type, Bucket},
 
-    CommitTime = add_set(FirstNode, BoundObject, lists:seq(1, 15), vectorclock:new()),
+    CommitTime = add_set(Node, BoundObject, lists:seq(1, 15), vectorclock:new()),
 
     %% Check the read is 15
-    {ok, [Val], _CT} = rpc:call(FirstNode, antidote, read_objects, [CommitTime, [], [BoundObject]]),
+    {ok, [Val], _CT} = rpc:call(Node, antidote, read_objects, [CommitTime, [], [BoundObject]]),
     ?assertEqual(lists:seq(1, 15), Val),
 
     %% Get the object state
-    {ok, [ReadResult1], _CT2} = rpc:call(FirstNode,
+    {ok, [ReadResult1], _CT2} = rpc:call(Node,
                       antidote, get_objects, [CommitTime, [], [BoundObject]]),
     ?assertEqual(ok, check_orset_state(lists:seq(1, 15), ReadResult1)),
 
-    CommitTime2 = add_set(FirstNode, BoundObject, lists:seq(16, 30), CommitTime),
+    CommitTime2 = add_set(Node, BoundObject, lists:seq(16, 30), CommitTime),
 
     %% Check the read is 30
-    {ok, [Val2], _CT3} = rpc:call(FirstNode, antidote, read_objects, [CommitTime2, [], [BoundObject]]),
+    {ok, [Val2], _CT3} = rpc:call(Node, antidote, read_objects, [CommitTime2, [], [BoundObject]]),
     ?assertEqual(lists:seq(1, 30), Val2),
 
-    {ok, [LogOps]} = rpc:call(FirstNode,
+    {ok, [LogOps]} = rpc:call(Node,
                   antidote, get_log_operations, [[{BoundObject, CommitTime}]]),
 
     ?assertEqual(ok, check_orset_ops(lists:seq(16, 30), LogOps, {Key, Bucket})).
