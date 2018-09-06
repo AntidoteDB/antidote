@@ -48,7 +48,7 @@
 -type antidote_crdt_counter_b_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
 -type antidote_crdt_counter_b_src_op() :: {antidote_crdt_counter_b_anon_op(), id()}.
--opaque id() :: term. %% A replica's identifier.
+-type id() :: term. %% A replica's identifier.
 
 %% @doc Return a new, empty `antidote_crdt_counter_b()'.
 -spec new() -> antidote_crdt_counter_b().
