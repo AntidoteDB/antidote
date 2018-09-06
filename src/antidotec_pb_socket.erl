@@ -49,7 +49,7 @@
 
 -export([start_link/2, 
          start_link/3,
-         start/2, 
+         start/2,
          start/3,
          stop/1,
          handle_call/3,
