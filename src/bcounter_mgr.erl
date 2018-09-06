@@ -45,7 +45,9 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--record(state, {req_queue, last_transfers, transfer_timer}).
+-record(state, {req_queue :: orddict:orddict(),
+                last_transfers :: orddict:orddict(),
+                transfer_timer :: reference()}).
 -define(LOG_UTIL, log_utilities).
 -define(DATA_TYPE, antidote_crdt_counter_b).
 
