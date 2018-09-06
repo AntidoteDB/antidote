@@ -42,13 +42,13 @@
 
 -export_type([antidote_crdt_counter_b/0, binary_antidote_crdt_counter_b/0, antidote_crdt_counter_b_op/0, id/0]).
 
--opaque antidote_crdt_counter_b() :: {orddict:orddict(), orddict:orddict()}.
+-type antidote_crdt_counter_b() :: {orddict:orddict(), orddict:orddict()}.
 -type binary_antidote_crdt_counter_b() :: binary().
 -type antidote_crdt_counter_b_op() :: antidote_crdt_counter_b_anon_op() | antidote_crdt_counter_b_src_op().
 -type antidote_crdt_counter_b_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
 -type antidote_crdt_counter_b_src_op() :: {antidote_crdt_counter_b_anon_op(), id()}.
--type id() :: term. %% A replica's identifier.
+-type id() :: term(). %% A replica's identifier.
 
 %% @doc Return a new, empty `antidote_crdt_counter_b()'.
 -spec new() -> antidote_crdt_counter_b().
