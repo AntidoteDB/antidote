@@ -24,11 +24,10 @@ For a more detailed description of the different data types, the [Antidote Docum
     | antidote_crdt_map_go          % Grow Only Map aka G-Map
     | antidote_crdt_map_rr.         % Recursive Resets Map aka RR-Map
 
-% Note: the crdt and effect types are not correct, the tags just help to find errors
 % The State of a CRDT:
--opaque crdt() :: ...
+-type crdt() :: ...
 % The downstream effect, which has to be applied at each replica
--opaque effect() :: ...
+-type effect() :: ...
 % The update operation, consisting of operation name and parameters
 % (e.g. {increment, 1} to increment a counter by one)
 -type update() :: {atom(), term()}.
