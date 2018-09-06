@@ -2,7 +2,8 @@ language: erlang
 otp_release:
   - 18.3
   - 19.1
-  - 20.1
+  - 20.3
+  - 21.0
 install:
   - mkdir -p ~/.config/rebar3/
   - echo "{plugins, [{rebar3_proper, \"0.9.0\"}]}." > ~/.config/rebar3/rebar.config
