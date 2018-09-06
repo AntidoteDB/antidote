@@ -134,8 +134,7 @@ equal(Set_awA, Set_awB) ->
     % Everything inside is ordered, so this should work
     Set_awA == Set_awB.
 
--include_lib("riak_dt/include/riak_dt_tags.hrl").
--define(TAG, ?DT_ORSET_TAG).
+-define(TAG, 76). %?DT_ORSET_TAG from riak_dt
 -define(V1_VERS, 1).
 
 -spec to_binary(antidote_crdt_set_aw()) -> binary_antidote_crdt_set_aw().

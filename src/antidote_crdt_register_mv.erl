@@ -124,7 +124,7 @@ to_binary(MVReg) ->
 %% @doc Decode binary `antidote_crdt_register_mv()'
 -spec from_binary(binary()) -> {ok, antidote_crdt_register_mv()} | {error, term()}.
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
-    {ok, riak_dt:from_binary(Bin)}.
+    {ok, antidote_crdt:from_binary(Bin)}.
 
 
 %% @doc The following operation verifies

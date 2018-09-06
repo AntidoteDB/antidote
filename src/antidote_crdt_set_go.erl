@@ -81,6 +81,6 @@ all_test() ->
     S0 = new(),
     {ok, Downstream} = downstream({add, a}, S0),
     {ok, S1} = update(Downstream, S0),
-    ?assertEqual(1, riak_dt_antidote_crdt_set_go:stat(element_count, S1)).
+    ?assertEqual(1, antidote_crdt_set_go:stat(element_count, S1)).
 
 -endif.

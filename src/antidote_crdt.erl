@@ -42,6 +42,9 @@
 
 -module(antidote_crdt).
 
+-include("antidote_crdt.hrl").
+
+-export([to_binary/1, from_binary/1, dict_to_orddict/1]).
 
 % The CRDTs supported by Antidote:
 -type typ() ::
@@ -57,29 +60,6 @@ antidote_crdt_counter_pn
 | antidote_crdt_register_mv
 | antidote_crdt_map_go
 | antidote_crdt_map_rr.
-
-% Note: the crdt and effect types are not correct, the tags just help to find errors
-% The State of a CRDT:
--opaque crdt() :: {antidote_crdt, state, term()}.
-% The downstream effect, which has to be applied at each replica
--opaque effect() :: {antidote_crdt, effect, term()}.
-% The update operation, consisting of operation name and parameters
-% (e.g. {increment, 1} to increment a counter by one)
--type update() :: {atom(), term()}.
-% Result of reading a CRDT (state without meta data)
--type value() :: term().
-
-% reason for an error
--type reason() :: term().
-
--export_type([
-  crdt/0,
-  update/0,
-  effect/0,
-  value/0,
-  typ/0
-]).
-
 
 -type internal_crdt() :: term().
 -type internal_effect() :: term().
@@ -160,3 +140,22 @@ require_state_downstream(Type, Update) ->
 is_operation(Type, Update) ->
   true = is_type(Type),
   Type:is_operation(Update).
+
+-spec to_binary(crdt()) -> binary().
+to_binary(Term) ->
+    Opts = case application:get_env(antidote_crdt, binary_compression, 1) of
+               true -> [compressed];
+               N when N >= 0, N =< 9 -> [{compressed, N}];
+               _ -> []
+           end,
+    term_to_binary(Term, Opts).
+
+-spec from_binary(binary()) -> crdt().
+from_binary(Binary) ->
+    binary_to_term(Binary).
+
+
+%% turns a dict into a sorted list of [{key, value}]
+-spec dict_to_orddict(dict:dict()) -> orddict:orddict().
+dict_to_orddict(Dict) ->
+    lists:sort(dict:to_list(Dict)).

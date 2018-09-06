@@ -1,4 +1,1 @@
-[{<<"riak_dt">>,
-  {git,"git://github.com/aletomsic/riak_dt",
-       {ref,"86cfe29db5495eaafdb241f168d27a29db90e4cf"}},
-  0}].
+[].
