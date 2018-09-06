@@ -1,5 +1,6 @@
+{"1.1.0",
 [{<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"lager">>,{pkg,<<"lager">>,<<"3.6.1">>},0},
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.6.2">>},0},
  {<<"meck">>,
   {git,"https://github.com/basho/meck.git",
        {ref,"dde759050eff19a1a80fd854d7375174b191665d"}},
@@ -11,4 +12,9 @@
  {<<"riak_pb">>,
   {git,"git://github.com/syncfree/riak_pb",
        {ref,"a0d45fdf5f09e96828cf3a4628ab6c7e2fe56bbc"}},
-  0}].
+  0}]}.
+[
+{pkg_hash,[
+ {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
+ {<<"lager">>, <<"2C72950A0E75FFD927DD35BC85EA30E7680A264C4BBD08B328250871AC456CC2">>}]}
+].
