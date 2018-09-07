@@ -25,28 +25,29 @@
 -define(FORCE_KILL_TIMER, 1500).
 -define(RIAK_SLEEP, 5000).
 
--export([at_init_testsuite/0,
+-export([
+    at_init_testsuite/0,
     pmap/2,
     bucket/1,
     init_single_dc/2,
     init_multi_dc/2,
-         %get_cluster_members/1,
-         connect_cluster/1, get_node_name/1,
-         descriptors/1,
-         web_ports/1,
-         plan_and_commit/1,
-         do_commit/1,
-         try_nodes_ready/3,
-         wait_until_nodes_ready/1,
-         is_ready/1,
-         wait_until_nodes_agree_about_ownership/1,
-         staged_join/2,
-         restart_nodes/2,
-         partition_cluster/2,
-         heal_cluster/2,
-         join_cluster/1,
-         get_suite_name/1,
-         set_up_clusters_common/1]).
+    connect_cluster/1,
+    get_node_name/1,
+    descriptors/1,
+    web_ports/1,
+    plan_and_commit/1,
+    do_commit/1,
+    try_nodes_ready/3,
+    wait_until_nodes_ready/1,
+    is_ready/1,
+    wait_until_nodes_agree_about_ownership/1,
+    staged_join/2,
+    restart_nodes/2,
+    partition_cluster/2,
+    heal_cluster/2,
+    join_cluster/1,
+    set_up_clusters_common/1
+]).
 
 %% ===========================================
 %% Node utilities
@@ -56,8 +57,7 @@
     start_node/2,
     kill_nodes/1,
     kill_and_restart_nodes/2,
-    brutal_kill_nodes/1,
-    distributed_init/0
+    brutal_kill_nodes/1
 ]).
 
 %% ===========================================
@@ -80,7 +80,6 @@ init_single_dc(Suite, Config) ->
 init_multi_dc(Suite, Config) ->
     ct:pal("[~p]", [Suite]),
 
-    %distributed_init(),
     at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common([{suite_name, ?MODULE} | Config]),
     Nodes = hd(Clusters),
@@ -99,15 +98,6 @@ at_init_testsuite() ->
 %% ===========================================
 %% Node utilities
 %% ===========================================
-
-distributed_init() -> 
-    %ct:pal("Initializing Modules!", []),
-    %CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
-    %CodePath2 = filelib:wildcard("/home/work/git/antidote/work/antidote/_build/default/lib/*/ebin"),
-    %CodePath3 = filelib:wildcard("/home/work/git/antidote/work/antidote/test/systests"),
-    %code:set_path(CodePath++CodePath2++CodePath3),
-    ok.
-
 
 start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
@@ -170,6 +160,7 @@ start_node(Name, Config) ->
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
+
 
 %% @doc Forces shutdown of nodes and restarts them again with given configuration
 -spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
@@ -251,6 +242,7 @@ partition_cluster(ANodes, BNodes) ->
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
 
+
 heal_cluster(ANodes, BNodes) ->
     GoodCookie = erlang:get_cookie(),
     pmap(fun({Node1, Node2}) ->
@@ -259,6 +251,7 @@ heal_cluster(ANodes, BNodes) ->
         end,
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
+
 
 connect_cluster(Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
@@ -300,37 +293,10 @@ descriptors(Clusters) ->
   end, Clusters).
 
 
-web_ports(Node) -> 
-   other_web_port(Node).
-
-other_web_port(Node) ->
-   NodeStr = atom_to_list(Node),
-   [Suite, _] = string:split(atom_to_list(Node), "dev"),
-
-   {match, [{NodeNumberIndex,_}]} = re:run(NodeStr, "\d|$"),
-   NodeNumber = [lists:nth(NodeNumberIndex, NodeStr)],
-
-   case NodeNumber of
-       "1" -> 
-           Port = os:getenv(Suite++"_DEV1_PORT", "10015"),
-           ct:log("Requesting port for other Suite ~p for node 1: ~p", [Suite, Port]), 
-           list_to_integer(Port);
-       "2" ->
-           Port = os:getenv(Suite++"_DEV2_PORT", "10025"),
-           ct:log("Requesting port for other Suite ~p for node 2: ~p", [Suite, Port]), 
-           list_to_integer(Port);
-       "3" ->
-           Port = os:getenv(Suite++"_DEV3_PORT", "10035"),
-           ct:log("Requesting port for other Suite ~p for node 3: ~p", [Suite, Port]), 
-           list_to_integer(Port);
-       "4" ->
-           Port = os:getenv(Suite++"_DEV4_PORT", "10045"),
-           ct:log("Requesting port for other Suite ~p for node 4: ~p", [Suite, Port]), 
-           list_to_integer(Port);
-       _ ->
-           ct:pal("Unknown Node! ~p", [Node])
-   end.
-           
+web_ports(dev1) -> 10015;
+web_ports(dev2) -> 10015;
+web_ports(dev3) -> 10015;
+web_ports(dev4) -> 10015.
 
 %% Build clusters
 join_cluster(Nodes) ->
@@ -369,6 +335,7 @@ join_cluster(Nodes) ->
     ok.
 
 
+
 %% @doc Have `Node' send a join request to `PNode'
 staged_join(Node, PNode) ->
     timer:sleep(100),
@@ -376,6 +343,7 @@ staged_join(Node, PNode) ->
     ct:log("[join] ~p to (~p): ~p", [Node, PNode, R]),
     ?assertEqual(ok, R),
     ok.
+
 
 plan_and_commit(Node) ->
     timer:sleep(100),
@@ -388,6 +356,8 @@ plan_and_commit(Node) ->
         {ok, _, _} ->
             do_commit(Node)
     end.
+
+
 do_commit(Node) ->
     ct:log("Committing"),
     case rpc:call(Node, riak_core_claimant, commit, []) of
@@ -406,7 +376,8 @@ do_commit(Node) ->
             ok;
         ok ->
             ok
-    end.
+    end
+.
 
 try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
       ct:log("Nodes not ready after initial plan/commit, retrying"),
@@ -428,6 +399,7 @@ wait_until_nodes_ready(Nodes) ->
     [?assertEqual(ok, time_utils:wait_until(Node, fun is_ready/1)) || Node <- Nodes],
     ok.
 
+
 %% @private
 is_ready(Node) ->
     case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
@@ -440,34 +412,28 @@ is_ready(Node) ->
             Other
     end.
 
+
 wait_until_nodes_agree_about_ownership(Nodes) ->
     ct:log("Wait until nodes agree about ownership ~p", [Nodes]),
     Results = [ time_utils:wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
 
+
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
-    SuiteName = get_suite_name(Config),
-
-    ct:log("Building cluster ~p", [SuiteName]),
+    ct:log("Building cluster"),
 
     StartDCs = fun(Nodes) ->
                       pmap(fun(N) -> start_node(N, Config) end, Nodes)
                   end,
 
-
-    Dev1 = list_to_atom(SuiteName ++ atom_to_list(dev1)),
-    Dev2 = list_to_atom(SuiteName ++ atom_to_list(dev2)),
-    Dev3 = list_to_atom(SuiteName ++ atom_to_list(dev3)),
-    Dev4 = list_to_atom(SuiteName ++ atom_to_list(dev4)),
     Clusters = pmap(
             fun(N) -> StartDCs(N) end,
-            [[Dev1, Dev2], [Dev3], [Dev4]]
+            [[dev1, dev2], [dev3], [dev4]]
         ),
 
 
    [Cluster1, Cluster2, Cluster3] = Clusters,
-   ct:log("Finished: ~p", [Clusters]),
    %% Do not join cluster if it is already done
    case riak_utils:owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
      Cluster1 ->
@@ -481,15 +447,6 @@ set_up_clusters_common(Config) ->
    ct:log("Cluster joined and connected: ~p  ~p  ~p", [Cluster1, Cluster2, Cluster3]),
    [Cluster1, Cluster2, Cluster3].
 
-get_suite_name(Config) -> 
-    case os:getenv("distributed") of
-        false -> 
-            ct:log("Using normal naming scheme!"),
-            "";
-        _ ->
-            ct:log("Using distributed naming scheme!"),
-            atom_to_list(proplists:get_value(suite_name, Config))
-   end.
 
 bucket(BucketBaseAtom) ->
     BucketRandomSuffix = [rand:uniform(127)],
