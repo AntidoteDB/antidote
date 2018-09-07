@@ -67,7 +67,8 @@
         dets_info/0,
         am_i_leader/0,
          update_send_history2/2,
-         update_send_history/2
+         update_send_history/2,
+         get_last_modified/1
 ]).
 % TODO to remove
 -export([remote_lock_request_es/4
@@ -162,14 +163,22 @@ dets_info() ->
 %% Local_Locks : orddict managing all transaction requesting and using locks 
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
-%% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
 -spec required([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
 required(Shared_Locks,Exclusive_Locks,TxId,Timestamp,Local_Locks) ->
-    DCID = dc_meta_data_utilities:get_my_dc_id(),
-    remote_lock_request_es(DCID,0,Shared_Locks,Exclusive_Locks), 
     _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
-
+%% Locks : locks reuqired for the txid
+%% TxId : transaction that requeires the specified locks
+%% Timestamp : timestamp of the request
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Returns the updated local_locks list
+%% Adds {TxId,{required,Locks,timestamp}} to local_locks
+%% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
+-spec required_remote([key()],[key()],{[key()],[key()]},txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
+required_remote(Shared_Locks,Exclusive_Locks,{Missing_Shared_Locks,Missing_Exclusive_Locks},TxId,Timestamp,Local_Locks) ->
+    DCID = dc_meta_data_utilities:get_my_dc_id(),
+    remote_lock_request_es(DCID,0,Missing_Shared_Locks,Missing_Exclusive_Locks), 
+    _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
 
 %% Shared_Locks : Shared locks used by the txid
@@ -256,8 +265,10 @@ check_if_used_for_shared_locks(Locks,Local_Locks) ->
             end
         end,
         [],Local_Locks).
+
+
 % Compiliation flag that determines if transactions should wait for the updates made using shared locks or not
--ifdef(WAIT_FOR_SHARED_LOCKS).
+-ifdef(WAIT_FOR_SHARED_LOCKS1).
 
 %% TxId : transaction whose locks are to be released
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -271,12 +282,49 @@ release_locks(TxId,Local_Locks) ->
             All_Locks = Shared_Locks ++ Exclusive_Locks,
             update_last_changed(All_Locks);
         error ->
-            lager:error("release_locks(~w,~w)~n",[TxId,Local_Locks]),
+            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
 
+%% Shared_Locks : Shared locks requested via get locks
+%% Exclusive_Locks : Exclusive locks requested via get locks
+%% Returns all requested locks if WAIT_FOR_SHARED_LOCKS is defined in lock_mgr_es.hrl
+%% Returns only the requested exclusive locks if WAIT_FOR_SHARED_LOCKS is NOT defined in lock_mgr_es.hrl
+-spec what_locks_to_wait_for([key()],[key()]) -> [key()].
+what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
+    _All_Locks = Shared_Locks ++ Exclusive_Locks.
+
 -else.
+-ifdef(WAIT_FOR_SHARED_LOCKS2).
+
+%% TxId : transaction whose locks are to be released
+%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (only for exclusive locks)
+%% Releases ownership and lock requests of all locks of the specified TxId
+%% Returns the updated lokal_locks list
+-spec release_locks(txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}].
+release_locks(TxId,Local_Locks) ->
+    case orddict:find(TxId,Local_Locks) of
+        {ok,{using,Shared_Locks,Exclusive_Locks}} ->
+            All_Locks = Shared_Locks ++ Exclusive_Locks,
+            update_last_changed(All_Locks);
+        error ->
+            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
+            ok
+    end,
+    _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
+
+%% Shared_Locks : Shared locks requested via get locks
+%% Exclusive_Locks : Exclusive locks requested via get locks
+%% Returns all requested locks if WAIT_FOR_SHARED_LOCKS is defined in lock_mgr_es.hrl
+%% Returns only the requested exclusive locks if WAIT_FOR_SHARED_LOCKS is NOT defined in lock_mgr_es.hrl
+-spec what_locks_to_wait_for([key()],[key()]) -> [key()].
+what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
+    Exclusive_Locks.
+
+-else.
+%-ifdef(WAIT_FOR_SHARED_LOCKS3).
 
 %% TxId : transaction whose locks are to be released
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -292,10 +340,20 @@ release_locks(TxId,Local_Locks) ->
                 _ -> update_last_changed(Exclusive_Locks)
             end;
         error ->
-            lager:error("release_locks(~w,~w)~n",[TxId,Local_Locks]),
+            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
+
+%% Shared_Locks : Shared locks requested via get locks
+%% Exclusive_Locks : Exclusive locks requested via get locks
+%% Returns all requested locks if WAIT_FOR_SHARED_LOCKS is defined in lock_mgr_es.hrl
+%% Returns only the requested exclusive locks if WAIT_FOR_SHARED_LOCKS is NOT defined in lock_mgr_es.hrl
+-spec what_locks_to_wait_for([key()],[key()]) -> [key()].
+what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
+    Exclusive_Locks.
+
+-endif.
 -endif.
 
 %% Local_Locks : orddict managing all transaction requesting and using locks 
@@ -390,7 +448,8 @@ create_dets_ref_lock_entry(Lock) ->
             true -> AllDCIds;
             false -> [MyDCId|AllDCIds]
         end,
-    {ok,Now} = get_snapshot_time(),
+    %{ok,Now} = get_snapshot_time(),
+    Now = dict:from_list([]),
     _New_Dets_Ref_Table_Entry =
         {Lock,lists:foldl(fun(DCId_From,AccIn1)->
             [{DCId_From,lists:foldl(fun(DCId_To,AccIn2)->
@@ -447,12 +506,14 @@ send_lock(Lock,Amount,To)->
                                                   false -> New_Lock_Parts - 1
                                               end
                                      end,
-                    {Lock,Send_History,Snapshot} = create_dets_ref_lock_entry(Lock),
-                    dets:insert(?DETS_FILE_NAME,{Lock,Send_History,Snapshot}),
-                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
+                    {Lock,Send_History,_Snapshot} = create_dets_ref_lock_entry(Lock),
+                    %TODO Check if dict:from_list([]) works as intended. The receiving DC should not have to wait for a
+                    % snapshot without introducing any other unwanted interactions.
+                    dets:insert(?DETS_FILE_NAME,{Lock,Send_History,dict:from_list([])}),
+                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),   
                     update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send),
                     New_Lock_Send_History = get_send_history_of(Lock),
-                    remote_send_lock_history(Lock,New_Lock_Send_History,Snapshot,MyDCId,To,0),
+                    remote_send_lock_history(Lock,New_Lock_Send_History,dict:from_list([]),MyDCId,To,0),
                     ok;
                 false ->
                     New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
@@ -506,11 +567,11 @@ update_dets_ref_send_entry(Lock,From,To,Additional_Amount) ->
                             end
                     end;
                 []->
-                    {ok,Now} = get_snapshot_time(),
-                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],Now});
+                    %{ok,Now} = get_snapshot_time(),
+                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],dict:from_list([])});
                 {error,_Reason} ->
-                    {ok,Now} = get_snapshot_time(),
-                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],Now})
+                    %{ok,Now} = get_snapshot_time(),
+                    dets:insert(?DETS_FILE_NAME,{Lock,[{From,[{To,Additional_Amount}]}],dict:from_list([])})
     end.
 %% Old_Send_History : Send history of a specific lock to be updated
 %% New_Send_History : Send history of the same lock to update the other one
@@ -761,7 +822,10 @@ am_i_leader() ->
 
 %% Locks : list of locks
 %% Returns a list of the snapshot times the specified locks were released the last time as exclusive locks
+
 -spec get_last_modified([key()]) -> [snapshot_time()].
+get_last_modified([])->
+    [dict:from_list([])|[]];
 get_last_modified(Locks)->
     %{ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     lists:foldl(
@@ -851,6 +915,7 @@ remote_lock_request_es(MyDCId, Key, Shared_Locks,Exclusive_Locks) ->
 %% sends a message to the speciefed other DC containing the lock information
 -spec remote_send_lock_history(key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time(),dcid(),dcid(),key())-> ok.
 remote_send_lock_history(Lock,Send_History, Last_Changed,MyDCId, RemoteId, Key) ->
+    lager:info("remote_send_lock_history : ~w,~w,~w},state)~n",[Lock,RemoteId,MyDCId]),
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks_es,
         {remote_send_lock_history, {Lock,Send_History, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
@@ -868,7 +933,7 @@ request_response_es(_BinaryRep, _RequestCacheEntry) -> ok.
 
 %% Releases all locks currently owned by the specified transaction.
 handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
-        lager:info("handle_cast({release_lock,~w},state)~n",[TxId]),
+        %lager:info("handle_cast({release_lock,~w},state)~n",[TxId]),
         New_Local_Locks = release_locks(TxId,Local_Locks),
         {noreply, State#state{local_locks=New_Local_Locks}};
 %TODO
@@ -909,22 +974,22 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Shared_Locks,Exclusive_Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    lager:info("handle_call({get_locks,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
+    lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
     New_Shared_Locks = Shared_Locks--Exclusive_Locks,
     case using(Shared_Locks,Exclusive_Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started missing_locks-- ~n",[TxId,Locks]),
-            New_Local_Locks2=required(Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks2=required_remote(New_Shared_Locks,Exclusive_Locks,Missing_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished missing_locks-- ~n",[TxId,Locks]),
             {reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
         {locks_in_use, Transactions_Using_The_Locks} ->
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Started locks_in_use-- ~n",[TxId,Locks]),
-            New_Local_Locks3=required(Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
+            New_Local_Locks3=required(New_Shared_Locks,Exclusive_Locks, TxId, erlang:timestamp(), Local_Locks),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished locks_in_use-- ~n",[TxId,Locks]),
             {reply, {locks_in_use, Transactions_Using_The_Locks} , State#state{local_locks=New_Local_Locks3}};
         New_Lokal_Locks1 ->
             % get the list of snapshots the locks were released the last time
-            Snapshot_Times = get_last_modified(Exclusive_Locks++New_Shared_Locks),
+            Snapshot_Times = get_last_modified(what_locks_to_wait_for(New_Shared_Locks,Exclusive_Locks)),
             %lager:info("handle_call({get_locks,~w,~w},from,state) --Finished ok-- ~n",[TxId,Locks]),
             {reply, {ok,Snapshot_Times}, State#state{local_locks=New_Lokal_Locks1}}
     end.
@@ -983,14 +1048,14 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                         MyDCId = dc_meta_data_utilities:get_my_dc_id(),
                         case MyDCId < DCID of
                             true -> [{Lock,Amount, Timestamp} | New_Lock_Amount_Timestamp_List];
-                            false-> send_lock(Lock,Amount,DCID),
+                            false-> send_lock(Lock,Amount + ?ADDITIONAL_LOCK_PARTS_SEND,DCID),
                                     New_Lock_Amount_Timestamp_List
                         end;
                     {1,1} when (Amount /= all) ->
-                        send_lock(Lock,Amount,DCID),
+                        send_lock(Lock,Amount + ?ADDITIONAL_LOCK_PARTS_SEND,DCID),
                         New_Lock_Amount_Timestamp_List;
                     {1,0} when (Amount /= all) ->
-                        send_lock(Lock,Amount,DCID),
+                        send_lock(Lock,Amount + ?ADDITIONAL_LOCK_PARTS_SEND,DCID),
                         New_Lock_Amount_Timestamp_List;
                     {1,_} when (Amount == all)->
                         [{Lock,Amount, Timestamp} | New_Lock_Amount_Timestamp_List];
@@ -1002,12 +1067,15 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                                     New_Lock_Amount_Timestamp_List
                         end;
                     {0,1} when (Amount /= all) ->
-                        send_lock(Lock,Amount,DCID),
+                        send_lock(Lock,Amount + ?ADDITIONAL_LOCK_PARTS_SEND,DCID),
                         New_Lock_Amount_Timestamp_List;
                     {0,1} when (Amount == all) ->   %Since exclusive lock requests are prioritized above shared lock requests
                         send_lock(Lock,Amount,DCID),
                         New_Lock_Amount_Timestamp_List;
-                    {0,0} ->
+                    {0,0} when (Amount /= all)->
+                        send_lock(Lock,Amount + ?ADDITIONAL_LOCK_PARTS_SEND,DCID),
+                        New_Lock_Amount_Timestamp_List;
+                    {0,0} when (Amount == all)->
                         send_lock(Lock,Amount,DCID),
                         New_Lock_Amount_Timestamp_List;
                     _ ->

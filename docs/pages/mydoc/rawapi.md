@@ -7,14 +7,14 @@ permalink: rawapi.html
 folder: mydoc
 ---
 
-This page describes the native Erlang API of Antidote. Clients can invoke these functions via RPC. 
+This page describes the native Erlang API of Antidote. Clients can invoke these functions via RPC.
 A more convenient but restricted way for client applications to interact with Antidote is the [protocol buffer interface](/api.html).
 
 ## CRDTs
 
-Antidote provides a library of CRDTs. 
-The interface of these CRDTs specify the operations and the parameters that can be used for inspection and modification of shared objects. 
-In the following, we specify the supported `{operation(), op_param()}` pair for each of the supported CRDTs. 
+Antidote provides a library of CRDTs.
+The interface of these CRDTs specify the operations and the parameters that can be used for inspection and modification of shared objects.
+In the following, we specify the supported `{operation(), op_param()}` pair for each of the supported CRDTs.
 The first element in the tuple specifies the update operation, and the second item indicates the corresponding parameters.
 
 ##### antidote_crdt_counter_pn #####
@@ -57,14 +57,14 @@ The first element in the tuple specifies the update operation, and the second it
 
 ## Transactions
 
-A unit of operation in Antidote is a transaction. 
+A unit of operation in Antidote is a transaction.
 A client should first start a transaction, then read and/or update several objects, and finally commit the transaction.
 
 There are two types of transactions: interactive transactions and static transactions.
 
 ### Interactive transactions ###
 
-With an interactive transaction, a client can execute several updates and reads before committing the transactions. 
+With an interactive transaction, a client can execute several updates and reads before committing the transactions.
 The interface of interactive transaction is:
 
 ```erlang
@@ -91,14 +91,14 @@ The interface of interactive transaction is:
      {ok, [CounterVal]} = rpc:call(Node, antidote, read_objects, [[CounterObj], TxId]),
      ok = rpc:call(Node, antidote, update_objects, [[{CounterObj, increment, 1}], TxId]),
      {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-     
+
      %% Start a new transaction
      {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
 ```
 
 ### Static transactions ###
 Static transactions consist of a single bulk operation. There are two different types:
-* A client can issue a single call to update multiple objects atomically. 
+* A client can issue a single call to update multiple objects atomically.
 
 ```erlang
      type bound_object() = {key(), crdt_type(), bucket()}.
@@ -125,3 +125,28 @@ It is not possible to read and update in the same transaction.
     {ok, Result, CT2} = rpc:call(Node, antidote, read_objects, [CT1, [], [CounterObj, SetObj]]),
     [CounterVal, SetVal] = Result.
 ```
+
+## Cluster management
+
+An Antidote data center (DC) is a cluster of multiple antidote nodes. Antidote deployment can have multiple DCs where each DCs is a full replica. The cluster management API provides functions to create DCs and connect them.
+
+#### Example ####
+If 6 antidote nodes have already started, we can create two DCs with 3 nodes each as follows:
+
+```erlang
+     rpc:call('antidote@node1', create_dc, [['antidote@node1', 'antidote@node2', 'antidote@node3']]),
+     rpc:call('antidote@node4', create_dc, [['antidote@node4', 'antidote@node5', 'antidote@node6']]).
+```
+If there is only one node in a DC, you can skip above step. Do not add a node to 2 different DCs.
+
+To connect two DCs:
+
+```erlang
+     {ok, Descriptor1} = rpc:call(AnyNodeFromDC1, get_connection_descriptor, []),
+     {ok, Descriptor2} = rpc:call(AnyNodeFromDC2, get_connection_descriptor, []),
+     Descriptors = [Descriptor1, Descriptor2],
+     rpc:call('antidote@node1', subscribe_updates_from, [Descriptors]),
+     rpc:call('antidote@node4', subscribe_updates_from, [Descriptors]).
+```
+
+Every DC must subscribe from every other DCs. If there are 3 DCs, execute `subscribe_updates_from` on each DC with the same `Descriptors` list.

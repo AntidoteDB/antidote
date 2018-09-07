@@ -67,7 +67,7 @@
  {<<"riak_ensemble">>,{pkg,<<"riak_ensemble_ng">>,<<"2.4.0">>},1},
  {<<"riak_pb">>,
   {git,"https://github.com/SyncFree/riak_pb",
-       {ref,"02cf57d0fb2896da49df07ac96785bd4c7ee0ff6"}},
+       {ref,"2c4ffc9c5a52ca5c8b3c4f2079fbc509b5259e37"}},
   0},
  {<<"riak_sysmon">>,{pkg,<<"riak_sysmon">>,<<"2.1.5">>},1},
  {<<"setup">>,{pkg,<<"setup">>,<<"1.7.0">>},2},

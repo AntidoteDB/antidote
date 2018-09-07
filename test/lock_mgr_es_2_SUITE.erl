@@ -50,7 +50,8 @@
          shared_locks_asynchroneous_test2/1,
          shared_locks_asynchroneous_test3/1,
          shared_locks_asynchroneous_test4/1,
-         different_key_types_test1/1
+         different_key_types_test1/1,
+         locks_and_exclusive_locks_together_test1/1
         ]).
 
 -export([
@@ -107,7 +108,8 @@ all() -> [
          shared_locks_asynchroneous_test2,
          shared_locks_asynchroneous_test3,
          shared_locks_asynchroneous_test4,
-         different_key_types_test1
+         different_key_types_test1,
+         locks_and_exclusive_locks_together_test1
         ].
 % One dc (leader) tries to get the shared lock of a new lock
 single_dc_sl_test1(Config) ->
@@ -345,9 +347,9 @@ shared_locks_asynchroneous_test2(Config) ->
     {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
     {ok, [0]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId]),
     {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,5,Update,self(),11),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,5,Update,self(),22),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,5,Update,self(),33),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),11),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),22),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),33),
     ok = transaction_asynchroneous_helper3(11),
     ok = transaction_asynchroneous_helper3(22),
     ok = transaction_asynchroneous_helper3(33),
@@ -370,15 +372,15 @@ shared_locks_asynchroneous_test3(Config) ->
     {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
     {ok, [0]} = rpc:call(Node1, antidote, read_objects, [[Object],TxId]),
     {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,55,Update,self(),110),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,55,Update,self(),220),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,55,Update,self(),330),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,55,Update,self(),111),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,55,Update,self(),221),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,55,Update,self(),331),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,55,Update,self(),112),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,55,Update,self(),222),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,55,Update,self(),332),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),110),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),220),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),330),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),111),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),221),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),331),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),112),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),222),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),332),
     ok = transaction_asynchroneous_helper3(110),
     ok = transaction_asynchroneous_helper3(220),
     ok = transaction_asynchroneous_helper3(330),
@@ -408,18 +410,18 @@ shared_locks_asynchroneous_test4(Config) ->
     {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Shared_Locks}]]),
     {ok, [0]} = rpc:call(Node2, antidote, read_objects, [[Object],TxId]),
     {ok, _Clock3} = rpc:call(Node2, antidote, commit_transaction, [TxId]),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,25,Update,self(),110),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,25,Update,self(),220),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,25,Update,self(),330),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,Shared_Locks,1,25,Update,self(),440),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,25,Update,self(),111),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,25,Update,self(),221),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,25,Update,self(),331),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,Shared_Locks,1,25,Update,self(),441),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,25,Update,self(),112),
-    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,25,Update,self(),222),
-    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,25,Update,self(),332),
-    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,Shared_Locks,1,25,Update,self(),442),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),110),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),220),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),330),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,Shared_Locks,1,100,Update,self(),440),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),111),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),221),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),331),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,Shared_Locks,1,100,Update,self(),441),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,[],10,100,Update,self(),112),
+    transaction_asynchroneous_in_sequence_helper1(Node2,Shared_Locks,[],10,100,Update,self(),222),
+    transaction_asynchroneous_in_sequence_helper1(Node3,Shared_Locks,[],10,100,Update,self(),332),
+    transaction_asynchroneous_in_sequence_helper1(Node1,Shared_Locks,Shared_Locks,1,100,Update,self(),442),
     ok = transaction_asynchroneous_helper3(110),
     ok = transaction_asynchroneous_helper3(220),
     ok = transaction_asynchroneous_helper3(330),
@@ -468,8 +470,12 @@ different_key_types_test1(Config) ->
     {ok, _Clock8} = rpc:call(Node1, antidote, commit_transaction, [TxId8]).
     
     
-
-
+% Tests if exclusive locks and regular locks can be acquired at the same time.
+locks_and_exclusive_locks_together_test1(Config) ->
+    [Node1, Node2,Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    Locks = [locks_and_exclusive_locks_together_test1_key_1,locks_and_exclusive_locks_together_test1_test_key_2,locks_and_exclusive_locks_together_test1_test_key_3,locks_and_exclusive_locks_together_test1_test_key_4],
+    {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Locks},{locks,Locks}]]),
+    {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId]).
 
 
 
@@ -522,8 +528,8 @@ transaction_asynchroneous_helper2(Node,Shared_Locks,Exclusive_Locks,Retries,Call
 transaction_asynchroneous_helper3(Id)->
     receive 
         {ok,Id}->ok;
-        {error,Error_Msg,Id} -> {error,Error_Msg}
-    after 30000 -> error
+        {error,Error_Msg,Id} -> Msg = atom_to_list(Error_Msg),?assertError(Msg,false)
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
 % Asynchroneously starts a transaction on Node requesting the specified locks. Then it directly commits that transactions.
 % This is done "Repetitions" times.

@@ -93,9 +93,9 @@ all() -> [
          asynchronous_test_4,
          asynchronous_test_5,
          a_lot_of_locks_per_transaction_1,
-         a_lot_of_locks_per_transaction_2,
-         cluster_failure_test_1,
-         cluster_failure_test_2
+         a_lot_of_locks_per_transaction_2%,
+         %cluster_failure_test_1,
+         %cluster_failure_test_2
         ].
 
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used
@@ -368,11 +368,11 @@ asynchronous_test_1(Config) ->
                                 {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
                                 {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
                                 ?assertEqual(300,Res3)
-                        after 10000 -> error
+                        after 300000 -> ?assertError("The test case took too long and was timed out",false)
                         end
-            after 10000 -> error
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 10000 -> error
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
     
     
@@ -413,11 +413,11 @@ asynchronous_test_2(Config) ->
                                 {ok, [Res3]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
                                 {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
                                 ?assertEqual(300,Res3)
-                        after 10000 -> error
+                        after 300000 -> ?assertError("The test case took too long and was timed out",false)
                         end
-            after 10000 -> error
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 10000 -> error
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
 
 asynchronous_test_helper(Node,_,_,0,Clocks,Caller,_,Id)->
@@ -471,11 +471,11 @@ asynchronous_test_3(Config) ->
                                 {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
                                 ?assertEqual(300,Res3)
 
-                        after 30000 -> error
+                        after 300000 -> ?assertError("The test case took too long and was timed out",false)
                         end
-            after 30000 -> error
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 30000 -> error
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
 
 
@@ -514,11 +514,11 @@ asynchronous_test_4(Config) ->
                                 {ok, [[Res3]|[]]} = rpc:call(Node3, antidote, read_objects, [[Object],TxId3]),
                                 {ok, _} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
                                 ?assertEqual(300,Res3)
-                        after 30000 -> error
+                        after 300000 -> ?assertError("The test case took too long and was timed out",false)
                         end
-            after 30000 -> error
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 30000 -> error
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
 
 
@@ -608,11 +608,11 @@ helper_receive_result({Node1,Id1},{Node2,Id2},{Node3,Id3},_Info) ->
                         {done,Node3,Id3,Clocks3} ->
                             C={Node3,Clocks3},
                             {A,B,C}
-                    after 30000 -> error
+                    after 300000 -> ?assertError("The test case took too long and was timed out",false)
                     end
-            after 30000 -> error
+            after 300000 -> ?assertError("The test case took too long and was timed out",false)
             end
-    after 30000 -> error
+    after 300000 -> ?assertError("The test case took too long and was timed out",false)
     end.
     
 
@@ -648,7 +648,7 @@ a_lot_of_locks_per_transaction_1(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(100,"eghjrwwqd"),
+    Keys1 = generate_lock_helper(50,"eghjrwwqd"),
     Object1 = {es_a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,10,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,10,[],self(),0,2]),
@@ -666,7 +666,7 @@ a_lot_of_locks_per_transaction_2(Config) ->
     Node2 = hd(hd(tl(Nodes))),
     Node3 = hd(hd(tl(tl(Nodes)))),
     % asynchronous_test_4
-    Keys1 = generate_lock_helper(500,"asiuiopdf"),
+    Keys1 = generate_lock_helper(100,"asiuiopdf"),
     Object1 = {es_a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,20,[],self(),0,1]),
     spawn(lock_mgr_es_SUITE,asynchronous_test_helper2,[Node2,Keys1,Object1,20,[],self(),0,2]),

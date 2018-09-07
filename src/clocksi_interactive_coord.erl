@@ -99,7 +99,7 @@
     receive_prepared/3,
     execute_op/3,
     start_tx/3,
-
+    wait_for_clock/1,
     committing_2pc/3,
     committing/3,
     committing_single/3,
@@ -107,6 +107,12 @@
     get_locks/3,
     get_locks/4,
     release_locks/2
+]).
+
+%% for lock manager
+-export([
+    get_locks_helper/4,
+    get_locks_helper_es/5
 ]).
 
 %%%===================================================================
@@ -377,27 +383,69 @@ finish_op(From, Key, Result) ->
 %% @doc Initialize the state.
 %% #Locks
 init([From, ClientClock, Properties, StayAlive]) ->
-    lager:info("clocksi_interactive_coord_11111(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, false, false, Properties),
 
     Locks = lists:keyfind(locks,1,Properties),
     Shared_Locks = lists:keyfind(shared_locks,1,Properties),
     Exclusive_Locks = lists:keyfind(exclusive_locks,1,Properties),
-    State = if
-        ((Locks == false) and (Shared_Locks == false) and (Exclusive_Locks == false)) ->
+    State = case {Locks,Shared_Locks,Exclusive_Locks} of
+        {false,false,false} ->
             start_tx_internal(From, ClientClock, Properties, BaseState);
-        true ->
-            Locks1 = case Locks of false -> []; {locks,A} -> A end,
-            Shared_Locks1 = case Shared_Locks of false -> []; {shared_locks,B} -> B end,
-            Exclusive_Locks1 = case Exclusive_Locks of false -> []; {exclusive_locks,C} -> C end,
-            start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,Locks1,Shared_Locks1,Exclusive_Locks1)
+        {{locks,A},{shared_locks,B},{exclusive_locks,C}} when (is_list(A) and is_list(B) and is_list(C))  ->
+            case ((A ++ B ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,{shared_locks,B},{exclusive_locks,C}} when (is_list(B) and is_list(C))  ->
+            case ((B ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},false,{exclusive_locks,C}} when (is_list(A) and is_list(C))  ->
+            case ((A ++ C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},{shared_locks,B},false} when (is_list(A) and is_list(B))  ->
+            case ((A ++ B) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,B,[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {{locks,A},false,false} when (is_list(A))  ->
+            case ((A) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,A,[],[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,{shared_locks,B},false} when (is_list(B))  ->
+            case ((B) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],B,[]);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end;
+        {false,false,{exclusive_locks,C}} when (is_list(C))  ->
+            case ((C) == []) of
+                false ->
+                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,[],[],C);
+                true ->
+                    start_tx_internal(From, ClientClock, Properties, BaseState)
+            end
     end,
     {ok, execute_op, State};
 
 %% @doc Initialize static transaction with Operations.
 %% #Locks
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
-    lager:info("clocksi_interactive_coord_22222(Properties: ~w, StayAlive: ~w)~n",[Properties,StayAlive]),
     BaseState = init_state(StayAlive, true, true, Properties),
 
     Locks = lists:keyfind(locks,1,Properties),
@@ -829,25 +877,20 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
         {ok,Transaction,TransactionId} ->
             case IsStatic of
                 true ->
-                    %lager:info("start_tx_internal- ok",[]),
                     ok;
                 false ->
-                    %lager:info("start_tx_internal- {ok, TransactionId}  Msg Send",[]),
                     From ! {ok, TransactionId}
             end,
             % a new transaction was started, increment metrics
             ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
             State#coord_state{transaction = Transaction, num_to_read = 0, properties = Properties, transactionid = TransactionId};
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
-            %lager:info("start_tx_internal- {error,Missing_Locks}  Msg Send",[]),
             From ! {error,Missing_Locks},
             {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))};
         {locks_in_use,Tx_Using_The_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
-            %lager:info("start_tx_internal- {error,Tx_Using_The_Locks}  Msg Send",[]),
             From ! {error,Tx_Using_The_Locks},
             {stop, "Transaction using the locks: "++lists:flatten(io_lib:format("~p",[Tx_Using_The_Locks]))};   %%TODO
         {lock_not_available_or_in_use,Error_Info}->
-            %lager:info("start_tx_internal- {error,lock_not_available_or_in_use}  Msg Send",[]),
             From ! {error,Error_Info},
             {stop, "Transaction using the locks ore are missing: "++lists:flatten(io_lib:format("~p",[Error_Info]))}   %%TODO
     end.
@@ -867,7 +910,11 @@ get_locks(Timeout,TransactionId,Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL),
                     NewTimeout1 = Timeout-1,
                     get_locks(NewTimeout1, TransactionId, Locks);
-                false -> {locks_in_use,Tx_Using_The_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId, Locks);
+                        false-> {locks_in_use,Tx_Using_The_Locks}
+                    end
             end;
         {missing_locks, Missing_Locks} ->
             case Timeout > 0 of
@@ -875,8 +922,32 @@ get_locks(Timeout,TransactionId,Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL),
                     NewTimeout2 = Timeout-1,
                     get_locks(NewTimeout2, TransactionId, Locks);
-                false -> {locks_not_available,Missing_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId, Locks);
+                        false-> {locks_not_available,Missing_Locks}
+                    end
             end
+    end.
+get_locks_extra(TransactionId,Locks)->
+    timer:sleep(?GET_LOCKS_FINAL_TRY_WAIT),
+    Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
+    case Result of
+        {ok,Snapshot_Time} -> {ok,Snapshot_Time};
+        {locks_in_use,Tx_Using_The_Locks} ->
+            {locks_in_use,Tx_Using_The_Locks};
+        {missing_locks, Missing_Locks} ->
+            {locks_not_available,Missing_Locks}
+    end.
+get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks)->
+    timer:sleep(?GET_LOCKS_FINAL_TRY_WAIT_ES),
+    Result = ?LOCK_MGR_ES:get_locks(Shared_Locks,Exclusive_Locks, TransactionId),
+    case Result of
+        {ok,Snapshot_Time} -> {ok,Snapshot_Time};
+        {locks_in_use,Tx_Using_The_Locks} ->
+            {locks_in_use,Tx_Using_The_Locks};
+        {missing_locks, Missing_Locks} ->
+            {locks_not_available,Missing_Locks}
     end.
 
 %% @doc This function tries to aquire the specified exclusive and hared locks, if this fails it will retry after GET_LOCKS_INTERVALms
@@ -893,7 +964,11 @@ get_locks(Timeout,TransactionId,Shared_Locks,Exclusive_Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL_ES),
                     NewTimeout1 = Timeout-1,
                     get_locks(NewTimeout1, TransactionId, Shared_Locks,Exclusive_Locks);
-                false -> {locks_in_use,Tx_Using_The_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks);
+                        false-> {locks_in_use,Tx_Using_The_Locks}
+                    end
             end;
         {missing_locks, Missing_Locks} ->
             case Timeout > 0 of
@@ -901,16 +976,22 @@ get_locks(Timeout,TransactionId,Shared_Locks,Exclusive_Locks) ->
                     timer:sleep(?GET_LOCKS_INTERVAL_ES),
                     NewTimeout2 = Timeout-1,
                     get_locks(NewTimeout2, TransactionId, Shared_Locks,Exclusive_Locks);
-                false -> {locks_not_available,Missing_Locks}
+                false ->
+                    case ?GET_LOCKS_FINAL_TRY_OPTION_ES of
+                        true -> get_locks_extra(TransactionId,Shared_Locks,Exclusive_Locks);
+                        false-> {locks_not_available,Missing_Locks}
+                    end
             end
     end.
+
+
 
 get_locks_helper(Timeout, TransactionId,Locks,Caller) ->
     Return_Value = get_locks(Timeout, TransactionId, Locks),
     Caller ! {locks,Return_Value}.
 get_locks_helper_es(Timeout, TransactionId,Shared_Locks,Exclusive_Locks,Caller) ->
-    Return_Value = get_locks(Timeout, TransactionId, Shared_Locks,Exclusive_Locks),
-    Caller ! {es_locks,Return_Value}.
+    Return_Value2 = get_locks(Timeout, TransactionId, Shared_Locks,Exclusive_Locks),
+    Caller ! {es_locks,Return_Value2}.
 
 -spec release_locks(lock_mgr | lock_mgr_es, txid()) -> ok.
 release_locks(lock_mgr, TransactionId) ->
@@ -939,7 +1020,6 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-    lager:debug("create_transaction_record_with_locks: Locks: ~p, Shared_Locks: ~p, Exclusive_Locks: ~p", [Locks,Shared_Locks,Exclusive_Locks]),
     case {Locks,Shared_Locks,Exclusive_Locks} of
         {_,[],[]}->
             case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
@@ -974,8 +1054,8 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                     {locks_in_use,Tx_Using_The_Locks}
             end;
         _->
-            spawn(clocksi_interactive_coord,get_locks_helper(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks, self())),
-            spawn(clocksi_interactive_coord,get_locks_helper_es(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TransactionId, Shared_Locks, Exclusive_Locks, self())),
+            spawn(clocksi_interactive_coord,get_locks_helper,[?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks, self()]),
+            spawn(clocksi_interactive_coord,get_locks_helper_es,[?How_LONG_TO_WAIT_FOR_LOCKS_ES, TransactionId, Shared_Locks, Exclusive_Locks, self()]),
             Result1 = receive
                 {locks,Result_1} ->
                     Result_1
@@ -995,15 +1075,20 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                         properties = Properties},
                     {ok,Transaction, TransactionId};
                 {{locks_not_available,Missing_Locks},{ok,_}} ->
+                    ?LOCK_MGR_ES:release_locks(TransactionId),
                     {locks_not_available,Missing_Locks};
                 {{locks_in_use,Tx_Using_The_Locks},{ok,_}} ->
+                    ?LOCK_MGR_ES:release_locks(TransactionId),
                     {locks_in_use,Tx_Using_The_Locks};
                 {{ok,_},{locks_not_available,Missing_Locks}} ->
+                    ?LOCK_MGR:release_locks(TransactionId),
                     {locks_not_available,Missing_Locks};
                 {{ok,_},{locks_in_use,Tx_Using_The_Locks}} ->
+                    ?LOCK_MGR:release_locks(TransactionId),
                     {locks_in_use,Tx_Using_The_Locks};
                 {{_,Error_Info1},{_,Error_Info2}}->
                     {lock_not_available_or_in_use,{Error_Info1,Error_Info2}}
+
             end
     end.
 
@@ -1321,6 +1406,7 @@ wait_for_clock(Clock) ->
             {ok, VecSnapshotTime};
         false ->
             %% wait for snapshot time to catch up with Client Clock
+            lager:info("clocksi_coord ~p ms sleep",[10]),
             timer:sleep(10),
             wait_for_clock(Clock)
     end.
