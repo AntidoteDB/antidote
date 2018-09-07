@@ -8,7 +8,7 @@
   1},
  {<<"riak_pb">>,
   {git,"git://github.com/syncfree/riak_pb",
-       {ref,"e78b31c9f40a1de808e255a3619e3a90d7e13c6c"}},
+       {ref,"c0bb7a89401d58c8d786e8af9ab30efcd3e6e092"}},
   0}]}.
 [
 {pkg_hash,[
