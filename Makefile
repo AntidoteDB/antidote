@@ -32,7 +32,7 @@ rel:
 relclean:
 	rm -rf _build/default/rel
 
-reltest: test rel
+reltest: rel
 	test/release_test.sh
 
 # style checks
