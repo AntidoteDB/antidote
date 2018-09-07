@@ -6,7 +6,7 @@
   0},
  {<<"antidote_pb">>,
   {git,"https://github.com/syncfree/antidote_pb",
-       {ref,"d5b0ee7b74749ca786be50d3923ceacc5da3b3bd"}},
+       {ref,"7e4e9be3568cb947418971f6a889e55de1c03269"}},
   0},
  {<<"basho_stats">>,{pkg,<<"basho_stats">>,<<"1.0.3">>},1},
  {<<"bear">>,{pkg,<<"bear">>,<<"0.8.5">>},2},
