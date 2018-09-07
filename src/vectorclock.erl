@@ -163,9 +163,9 @@ vectorclock_test() ->
 
 
 vectorclock_lt_test() ->
-  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a,1}, {b, 1}])), true),
-  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a,1}])), false),
-  ?assertEqual(lt(from_list([{a, 2}]), from_list([{a,1}])), false).
+  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a, 1}, {b, 1}])), true),
+  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a, 1}])), false),
+  ?assertEqual(lt(from_list([{a, 2}]), from_list([{a, 1}])), false).
 
 vectorclock_max_test() ->
   V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
