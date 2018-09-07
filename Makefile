@@ -1,5 +1,5 @@
 REBAR = $(shell pwd)/rebar3
-ePHONY: rel test relgentlerain
+.PHONY: rel test relgentlerain
 
 all: compile
 
@@ -32,7 +32,7 @@ rel:
 relclean:
 	rm -rf _build/default/rel
 
-reltest: rel
+reltest: test rel
 	test/release_test.sh
 
 # style checks
