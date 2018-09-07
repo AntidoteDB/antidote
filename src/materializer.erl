@@ -39,7 +39,7 @@ create_snapshot(Type) ->
 
 %% @doc Applies an downstream effect to a snapshot of a crdt.
 %%      This function yields an error if the crdt does not have a corresponding update operation.
--spec update_snapshot(type(), snapshot(), effect()) -> {ok, snapshot()} | {error, {unexpected_operation, effect(), type()}}.
+-spec update_snapshot(type(), snapshot(), effect()) -> {ok, snapshot()} | {error, reason()}.
 update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
@@ -70,7 +70,7 @@ check_operations([Op | Rest]) ->
         true ->
             check_operations(Rest);
         false ->
-            {error, {type_check, Op}}
+            {error, {type_check_failed, Op}}
     end.
 
 %% @doc Check that an operation is correctly typed.
