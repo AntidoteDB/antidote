@@ -993,10 +993,10 @@ get_locks_helper_es(Timeout, TransactionId,Shared_Locks,Exclusive_Locks,Caller) 
     Return_Value2 = get_locks(Timeout, TransactionId, Shared_Locks,Exclusive_Locks),
     Caller ! {es_locks,Return_Value2}.
 
--spec release_locks(lock_mgr | lock_mgr_es, txid()) -> ok.
-release_locks(lock_mgr, TransactionId) ->
+-spec release_locks(locks | es_locks, txid()) -> ok.
+release_locks(locks, TransactionId) ->
     ?LOCK_MGR:release_locks(TransactionId);
-release_locks(lock_mgr_es, TransactionId) ->
+release_locks(es_locks, TransactionId) ->
     ?LOCK_MGR_ES:release_locks(TransactionId).
 
 %% @doc TODO

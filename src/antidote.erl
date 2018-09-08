@@ -216,7 +216,7 @@ get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
 get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
     clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
 
--spec release_locks(lock_mgr | lock_mgr_es, txid()) -> ok.
+-spec release_locks(locks | es_locks, txid()) -> ok.
 release_locks(Type, TxId) ->
     clocksi_interactive_coord:release_locks(Type, TxId).
 

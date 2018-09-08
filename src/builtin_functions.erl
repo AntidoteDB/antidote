@@ -66,12 +66,10 @@ assert_visibility(State, Rule, Versions, SourceTable, TxId) ->
     Policy = table_utils:policy(SourceTable),
     ExplicitState = find_last(State, Rule, ignore) =/= d,
     case table_crps:dep_level(Policy) of
-        ?REMOVE_WINS ->
-            ExplicitState andalso check_versions(Versions, TxId);
-        ?ADD_WINS ->
-            ExplicitState andalso check_versions(Versions, TxId);
-        _Other ->
-            ExplicitState
+        undefined ->
+            ExplicitState;
+        _Else ->
+            ExplicitState andalso check_versions(Versions, TxId)
     end.
 
 check_versions([[Version, TName] | Versions], TxId) ->
@@ -106,11 +104,6 @@ assert_visibility({Key, Version}, TableName, TxId) ->
                     ?REMOVE_WINS -> is_visible(RefData, Table, TxId);
                     _ -> true
                 end
-                %is_visible(RefData, Table, TxId)
-                %RefRule = table_crps:get_rule(Policy),
-                %RefState = record_utils:lookup_value({?STATE_COL, ?STATE_COL_DT}, RefData),
-                %find_last(RefState, RefRule, ignore) =/= d
-                %true
         end,
 
     %lager:info("{~p, ~p}: ~p", [Key, Version, FinalRes]),
