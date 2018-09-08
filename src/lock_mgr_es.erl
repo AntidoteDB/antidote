@@ -3,7 +3,7 @@
 
 % This module is supporting the strongly consistent transaction offered by antidote.
 % One instance of this module is running on every DC, which are created on startup of Antidote.
-% lock_mgr_es persistently stores which lock is owned by its DC, which lock are requested/currently 
+% lock_mgr_es persistently stores which lock is owned by its DC, which lock are requested/currently
 % in use by transactions started on this DC and which locks are requested by other lock_mgr_es(and
 % their respective DC).
 % The functionality exported by this module are get_locks/2 and release_locks/1 which are used
@@ -15,7 +15,7 @@
 % When a lock is acquired as exclusive no other transaction may use that lock at that time
 % (not as shared nor as exclusive)
 % Multiple transactoins may use the same lock as shared at the same time across multiple DCs
-% as long as no transaction has the exclusive lock. 
+% as long as no transaction has the exclusive lock.
 % -----------
 % Interactions with other modules:
 % clocksi_interactive_coord - This module manages transactions (also those using locks) and
@@ -50,7 +50,7 @@
         ]).
 
 % functions used for inter-dc-communictaion
--export([  
+-export([
         request_response_es/2,
         send_locks_remote_es/1,
         request_locks_remote_es/1
@@ -160,7 +160,7 @@ dets_info() ->
 %% Locks : locks reuqired for the txid
 %% TxId : transaction that requeires the specified locks
 %% Timestamp : timestamp of the request
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
 -spec required([key()],[key()],txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
@@ -170,21 +170,21 @@ required(Shared_Locks,Exclusive_Locks,TxId,Timestamp,Local_Locks) ->
 %% Locks : locks reuqired for the txid
 %% TxId : transaction that requeires the specified locks
 %% Timestamp : timestamp of the request
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Returns the updated local_locks list
 %% Adds {TxId,{required,Locks,timestamp}} to local_locks
 %% Sends remote_lock_request_es(MyDCID,0,Shared_Locks,Exclusive_Locks) messages to all other DCs.
 -spec required_remote([key()],[key()],{[key()],[key()]},txid(),erlang:timestamp(),[{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}]) -> [{txid(),{atom(),[key()],[key()],erlang:timestamp()}|{atom(),[key()],[key()]}}].
 required_remote(Shared_Locks,Exclusive_Locks,{Missing_Shared_Locks,Missing_Exclusive_Locks},TxId,Timestamp,Local_Locks) ->
     DCID = dc_meta_data_utilities:get_my_dc_id(),
-    remote_lock_request_es(DCID,0,Missing_Shared_Locks,Missing_Exclusive_Locks), 
+    remote_lock_request_es(DCID,0,Missing_Shared_Locks,Missing_Exclusive_Locks),
     _New_Local_Locks=orddict:store(TxId,{required,Shared_Locks,Exclusive_Locks,Timestamp},Local_Locks).
 
 
 %% Shared_Locks : Shared locks used by the txid
 %% Exclusive_Locks : Exclusive locks used by the txid
 %% TxId : transaction that uses the locks
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Returns the updated lokal_locks list if all specified locks are owned by this DC and not in use by another transaction.
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Returns {locks_in_use,[{txid(),[locks]}]} if all locks are owned by this DC but are used by another Transaction
@@ -206,23 +206,23 @@ using(Shared_Locks,Exclusive_Locks,TxId,Local_Locks) ->
                 end,
                 [],Exclusive_Locks),
         case {Missing_Locks_Shared,Missing_Locks_Exclusive} of
-                {[],[]} -> 
+                {[],[]} ->
                     case {check_if_used_for_exclusive_locks(Exclusive_Locks++Shared_Locks,Local_Locks),check_if_used_for_shared_locks(Exclusive_Locks, Local_Locks)} of
                         {[],[]} ->
                             _New_Local_Locks = orddict:store(TxId,{using,Shared_Locks,Exclusive_Locks},Local_Locks);
-                        Used_As_Exclusive_Locks_List -> 
+                        Used_As_Exclusive_Locks_List ->
                             {locks_in_use, Used_As_Exclusive_Locks_List}
                     end;
-                Missing_Locks_Lists -> 
+                Missing_Locks_Lists ->
                     {missing_locks,Missing_Locks_Lists}
         end.
 
 %% Locks : Locks to check
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Returns [{txid(),[locks]}] for all transactions that currently use the exclusive locks specified by Locks (only the intersection is returned)
 -spec check_if_used_for_exclusive_locks([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
 check_if_used_for_exclusive_locks(Locks,Local_Locks) ->
-    _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
+    _Used_Locks = lists:foldl(fun(Elem,AccIn) ->
         case Elem of
             {_TxId,{required,_Shared_Locks_required,_Exclusive_Locks_required,_Timestamp}} ->
                 AccIn;
@@ -242,11 +242,11 @@ check_if_used_for_exclusive_locks(Locks,Local_Locks) ->
         end,
         [],Local_Locks).
 %% Locks : Locks to check
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Returns [{txid(),[locks]}] for all transactions that currently use the shared locks specified by Locks (only the intersection is returned)
 -spec check_if_used_for_shared_locks([key()],[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),[key()]}].
 check_if_used_for_shared_locks(Locks,Local_Locks) ->
-    _Used_Locks = lists:foldl(fun(Elem,AccIn) -> 
+    _Used_Locks = lists:foldl(fun(Elem,AccIn) ->
         case Elem of
             {_TxId,{required,_Shared_Locks_required,_Exclusive_Locks_required,_Timestamp}} ->
                 AccIn;
@@ -271,7 +271,7 @@ check_if_used_for_shared_locks(Locks,Local_Locks) ->
 -ifdef(WAIT_FOR_SHARED_LOCKS1).
 
 %% TxId : transaction whose locks are to be released
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (for exclusive and shared locks)
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
@@ -282,7 +282,7 @@ release_locks(TxId,Local_Locks) ->
             All_Locks = Shared_Locks ++ Exclusive_Locks,
             update_last_changed(All_Locks);
         error ->
-            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
+            %lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
@@ -299,7 +299,7 @@ what_locks_to_wait_for(Shared_Locks,Exclusive_Locks)->
 -ifdef(WAIT_FOR_SHARED_LOCKS2).
 
 %% TxId : transaction whose locks are to be released
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (only for exclusive locks)
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
@@ -310,7 +310,7 @@ release_locks(TxId,Local_Locks) ->
             All_Locks = Shared_Locks ++ Exclusive_Locks,
             update_last_changed(All_Locks);
         error ->
-            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
+            %lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
@@ -327,7 +327,7 @@ what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
 %-ifdef(WAIT_FOR_SHARED_LOCKS3).
 
 %% TxId : transaction whose locks are to be released
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Updates dets_ref by updating the last_changed entry of all locks used by the specified TxId (only for exclusive locks)
 %% Releases ownership and lock requests of all locks of the specified TxId
 %% Returns the updated lokal_locks list
@@ -340,7 +340,7 @@ release_locks(TxId,Local_Locks) ->
                 _ -> update_last_changed(Exclusive_Locks)
             end;
         error ->
-            lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
+            %lager:error("release_locks(~w,~w) failed since the locks were not used~",[TxId,Local_Locks]),
             ok
     end,
     _New_Local_Locks=orddict:filter(fun(Key,_Value) -> Key=/=TxId end,Local_Locks).
@@ -356,7 +356,7 @@ what_locks_to_wait_for(_Shared_Locks,Exclusive_Locks)->
 -endif.
 -endif.
 
-%% Local_Locks : orddict managing all transaction requesting and using locks 
+%% Local_Locks : orddict managing all transaction requesting and using locks
 %% Timeout : timeout value in ms
 %% Removes lock requests that are older than the specified timeout value form local_locks
 %% Returns the updated lokal_locks list
@@ -390,7 +390,7 @@ requested(Locks, DcId, Timestamp, Lock_Requests) ->
                                                           end,Corresponding_Lock_Requests,Locks),
                         orddict:store(DcId,Updated_Lock_Reuqests,Lock_Requests);
                 error ->
-                        New_Lock_Request_List = lists:foldl(fun({Lock,Amount},AccIn)-> lists:keystore(Lock,1,AccIn,{Lock,Amount,Timestamp}) 
+                        New_Lock_Request_List = lists:foldl(fun({Lock,Amount},AccIn)-> lists:keystore(Lock,1,AccIn,{Lock,Amount,Timestamp})
                                                             end,[],Locks),
                         orddict:store(DcId,New_Lock_Request_List,Lock_Requests)
         end.
@@ -462,7 +462,7 @@ create_dets_ref_lock_entry(Lock) ->
 lock_part_amount() ->
     Other_DC_IDs = [dc_meta_data_utilities:get_my_dc_id() | other_dcs_list()],
     round(length(Other_DC_IDs)*?LOCK_PART_TO_DC_FACTOR) + ?LOCK_PART_TO_DC_OFFSET.
-    
+
 
 %% Lock : lock to send to another dc
 %% Amount : amount of lock parts to send
@@ -510,7 +510,7 @@ send_lock(Lock,Amount,To)->
                     %TODO Check if dict:from_list([]) works as intended. The receiving DC should not have to wait for a
                     % snapshot without introducing any other unwanted interactions.
                     dets:insert(?DETS_FILE_NAME,{Lock,Send_History,dict:from_list([])}),
-                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),   
+                    update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                     update_dets_ref_send_entry(Lock, MyDCId, To, Amount_To_Send),
                     New_Lock_Send_History = get_send_history_of(Lock),
                     remote_send_lock_history(Lock,New_Lock_Send_History,dict:from_list([]),MyDCId,To,0),
@@ -666,16 +666,16 @@ count_lock_parts(Lock,DC_ID) ->
                         false ->
                             error; %TODO New DC Added to the DDB
                          {DC_ID,Send_To_Information}->
-                            lists:foldl(fun({To,Amount},Acc) -> 
+                            lists:foldl(fun({To,Amount},Acc) ->
                                                 case To of
                                                     DC_ID -> Acc;
                                                     _ ->Acc+Amount
-                                                end 
+                                                end
                                         end,0,Send_To_Information)
                     end,
-                    Total_Received = lists:foldl(fun({_From,To_List},Acc) -> 
+                    Total_Received = lists:foldl(fun({_From,To_List},Acc) ->
                                                 Acc+case lists:keyfind(DC_ID,1,To_List) of
-                                                        false -> 
+                                                        false ->
                                                             error; %TODO New DC added to the DDB
                                                         {DC_ID,Amount}->
                                                             Amount
@@ -693,7 +693,7 @@ count_lock_parts(Lock,DC_ID) ->
                                         true -> New_Lock_Parts;
                                         false -> 0
                                     end;
-                                false -> 
+                                false ->
                                     New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
                                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     0
@@ -715,16 +715,16 @@ check_lock_shared(Lock) ->
                         false ->
                             error; %TODO New DC Added to the DDB
                          {MyDCId,Send_To_Information}->
-                            lists:foldl(fun({To,Amount},Acc) -> 
+                            lists:foldl(fun({To,Amount},Acc) ->
                                                 case To of
                                                     MyDCId -> Acc;
                                                     _ ->Acc+Amount
-                                                end 
+                                                end
                                         end,0,Send_To_Information)
                     end,
-                    Total_Received = lists:foldl(fun({_From,To_List},Acc) -> 
+                    Total_Received = lists:foldl(fun({_From,To_List},Acc) ->
                                                 Acc+case lists:keyfind(MyDCId,1,To_List) of
-                                                        false -> 
+                                                        false ->
                                                             error; %TODO New DC added to the DDB
                                                         {MyDCId,Amount}->
                                                             Amount
@@ -738,7 +738,7 @@ check_lock_shared(Lock) ->
                                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                                     true;
-                                false -> 
+                                false ->
                                     New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
                                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     false
@@ -760,27 +760,27 @@ check_lock_exclusive(Lock) ->
                         false ->
                             error; %TODO New DC Added to the DDB
                          {MyDCId,Send_To_Information}->
-                            lists:foldl(fun({To,Amount},Acc) -> 
+                            lists:foldl(fun({To,Amount},Acc) ->
                                                 case To of
                                                     MyDCId -> Acc;
                                                     _ ->Acc+Amount
-                                                end 
+                                                end
                                         end,0,Send_To_Information)
                     end,
-                    Total_Received = lists:foldl(fun({_From,To_List},Acc) -> 
+                    Total_Received = lists:foldl(fun({_From,To_List},Acc) ->
                                                 Acc+case lists:keyfind(MyDCId,1,To_List) of
-                                                        false -> 
+                                                        false ->
                                                             error; %TODO New DC added to the DDB
                                                         {MyDCId,Amount}->
                                                             Amount
                                                 end end,0,Lock_Information),
-                    Total_Generated = lists:foldl(fun({From,To_List},Acc) -> 
+                    Total_Generated = lists:foldl(fun({From,To_List},Acc) ->
                                                   Acc+  case lists:keyfind(From,1,To_List) of
-                                                            false -> 
+                                                            false ->
                                                                 error; %TODO New DC added to the DDB
                                                             {From,Amount}->
                                                                 Amount
-                                                        end 
+                                                        end
                                                   end,0,Lock_Information),
                     _Has_Lock = (Total_Generated == (Total_Received - Total_Send)) and (Total_Generated > 0);
                 [] ->
@@ -791,7 +791,7 @@ check_lock_exclusive(Lock) ->
                                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     update_dets_ref_send_entry(Lock, MyDCId, MyDCId, New_Lock_Parts),
                                     true;
-                                false -> 
+                                false ->
                                     New_Dets_Ref_Entry = create_dets_ref_lock_entry(Lock),
                                     dets:insert(?DETS_FILE_NAME,New_Dets_Ref_Entry),
                                     false
@@ -804,7 +804,7 @@ check_lock_exclusive(Lock) ->
 %% The leader may create locks
 %% Uses the ordering of orddict to decide the leader (the first key)
 -spec am_i_leader() -> boolean().
-am_i_leader() ->  
+am_i_leader() ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
     AllDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
@@ -812,7 +812,7 @@ am_i_leader() ->
                              end, [], OtherDCDescriptors),
     Ordd = orddict:new(),
     OrddAllDCIDs = lists:foldl(fun(Id, DCIDs) -> orddict:store(Id,0,DCIDs) end, Ordd, AllDCIds),
-    case OrddAllDCIDs of 
+    case OrddAllDCIDs of
         []->
             true;
         _ ->
@@ -894,7 +894,7 @@ remote_lock_request_es(MyDCId, Key, Shared_Locks,Exclusive_Locks) ->
     Other_DCs_List = other_dcs_list(),
     Locks = [{Key1,1} || Key1 <- Shared_Locks] ++ [{Key2,all} || Key2 <- Exclusive_Locks],
     spawn(fun()->   %TODO
-    lists:foldl( 
+    lists:foldl(
         fun(RemoteId,AccIn) ->
             BinaryMsg = term_to_binary({request_locks_es,
             {remote_lock_request_es, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
@@ -915,7 +915,7 @@ remote_lock_request_es(MyDCId, Key, Shared_Locks,Exclusive_Locks) ->
 %% sends a message to the speciefed other DC containing the lock information
 -spec remote_send_lock_history(key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time(),dcid(),dcid(),key())-> ok.
 remote_send_lock_history(Lock,Send_History, Last_Changed,MyDCId, RemoteId, Key) ->
-    lager:info("remote_send_lock_history : ~w,~w,~w},state)~n",[Lock,RemoteId,MyDCId]),
+    %lager:info("remote_send_lock_history : ~w,~w,~w},state)~n",[Lock,RemoteId,MyDCId]),
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({send_locks_es,
         {remote_send_lock_history, {Lock,Send_History, Last_Changed,MyDCId, RemoteId}}, LocalPartition, MyDCId, RemoteId}),
@@ -940,7 +940,7 @@ handle_cast({release_locks,TxId}, #state{local_locks=Local_Locks}=State) ->
 %% Takes a Lock, amount(number of times this lock was send to this DC by From), the senders DCID and the DCID of this DC
 %% Stores in dets_ref how often the sender send the Lock to this DC
 handle_cast({remote_send_lock_history, {Lock,Send_History,Snapshot,From,MyDCID1}}, State) ->
-        lager:info("handle_cast({remote_send_lock_history,~w,~w,~w,~w,~w},state)~n",[Lock,Send_History,Snapshot,From,MyDCID1]),
+        %lager:info("handle_cast({remote_send_lock_history,~w,~w,~w,~w,~w},state)~n",[Lock,Send_History,Snapshot,From,MyDCID1]),
         MyDCID2 = dc_meta_data_utilities:get_my_dc_id(),
         case MyDCID1 == MyDCID2 of
                 true ->
@@ -953,7 +953,7 @@ handle_cast({remote_send_lock_history, {Lock,Send_History,Snapshot,From,MyDCID1}
 %% Adds {dcid,[{lock,timestamp}]} to lock_requests to remember which DC requested which Locks
 %% Adds a timestamp to filter too old requests
 handle_cast({remote_lock_request_es, {Locks, Sender}}, #state{lock_requests=Lock_Requests}=State) ->
-    lager:info("handle_cast({remote_lock_request_es,~w,~w},from,state)~n",[Locks,Sender]),
+    %lager:info("handle_cast({remote_lock_request_es,~w,~w},from,state)~n",[Locks,Sender]),
     Timestamp = erlang:timestamp(),
     New_Lock_Requests = requested(Locks, Sender, Timestamp, Lock_Requests),
         {noreply, State#state{lock_requests=New_Lock_Requests}}.
@@ -974,7 +974,7 @@ handle_call({dets_info}, _From, State) ->
 %% If at least one lock is not owned by this DC then {missing_locks, Missing_Locks} is returned and it automatically requests the missing locks from other DCs.
 %% If at al the requested lock are currently in use by other transactions of this dc {locks_in_use,Transactions_Using_The_Locks} is returned.
 handle_call({get_locks,TxId,Shared_Locks,Exclusive_Locks}, _From, #state{local_locks=Local_Locks}=State) ->
-    lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
+    %lager:info("handle_call({get_locks_es,~w,~w,~w},from,state)~n",[TxId,Shared_Locks,Exclusive_Locks]),
     New_Shared_Locks = Shared_Locks--Exclusive_Locks,
     case using(Shared_Locks,Exclusive_Locks, TxId, Local_Locks) of
         {missing_locks, Missing_Locks} ->
@@ -1009,12 +1009,12 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                 {In_Use,Required} = orddict:fold(
                     fun(_TxId,Value2,{AccIn,AccInRequired}) ->
                         case Value2 of
-                            {using,Shared_Lock_List,Exclusive_Lock_List} -> 
+                            {using,Shared_Lock_List,Exclusive_Lock_List} ->
                                 case lists:member(Lock,Exclusive_Lock_List) of
                                     true -> {all,AccInRequired};
                                     false ->
                                         case lists:member(Lock,Shared_Lock_List) of
-                                            true -> 
+                                            true ->
                                                 case AccIn of
                                                     all -> {all,AccInRequired};
                                                     _ -> {1,AccInRequired}
@@ -1023,12 +1023,12 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                                                 {AccIn,AccInRequired}
                                         end
                                     end;
-                            {required,Shared_Lock_List2,Exclusive_Lock_List2,_Timestamp2} -> 
+                            {required,Shared_Lock_List2,Exclusive_Lock_List2,_Timestamp2} ->
                                 case lists:member(Lock,Exclusive_Lock_List2) of
                                     true -> {AccIn,all};
                                     false ->
                                         case lists:member(Lock,Shared_Lock_List2) of
-                                            true -> 
+                                            true ->
                                                 case AccInRequired of
                                                     all -> {AccIn,all};
                                                     _ -> {AccIn,1}
@@ -1079,7 +1079,7 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
                         send_lock(Lock,Amount,DCID),
                         New_Lock_Amount_Timestamp_List;
                     _ ->
-                        [{Lock,Amount, Timestamp} | New_Lock_Amount_Timestamp_List]  
+                        [{Lock,Amount, Timestamp} | New_Lock_Amount_Timestamp_List]
                 end
             end,[],Lock_Amount_Timestamp_List),
         case Updated_Lock_Amount_Timestamp_List of
