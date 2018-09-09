@@ -69,6 +69,8 @@ init(_Args) ->
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
+    QueryOptimizer = ?CHILD(query_optimizer, worker, []),
+    IndexManager = ?CHILD(index_manager, worker, []),
 
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
     LockManager = ?CHILD(lock_mgr, worker, []),
@@ -139,5 +141,7 @@ init(_Args) ->
        BCounterManager,
        LockManager,
        LockManager_es,
+       QueryOptimizer,
+       IndexManager,
        LogResponseReaderSup,
        Elli]}}.

@@ -86,7 +86,7 @@ build_keys_from_table([{AtomKey, RawKey} | Keys], Table, TxId, Acc) ->
     BoundKey =
         case PartCol of
             [_] ->
-                Index = indexing:read_index(primary, TName, TxId),
+                {ok, Index} = index_manager:read_index(primary, TName, TxId),
                 {_, BObj} = lists:keyfind(RawKey, 1, Index),
                 BObj;
             undefined ->

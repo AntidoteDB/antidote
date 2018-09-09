@@ -62,7 +62,7 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
             _ ->
                 lists:append(UpdAcc, [])
         end
-                end, [], Updates).
+    end, [], Updates).
 
 % Uncomment to use with following 3 hooks
 %%fill_pindex(Key, Bucket) ->
@@ -168,7 +168,7 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                     % A table exists
                     TableName = table_utils:name(Table),
 
-                    PIdxName = indexing:generate_pindex_key(TableName),
+                    {ok, PIdxName} = index_manager:generate_index_key(primary, TableName),
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
                     PIdxUpdate = create_pindex_update(ObjBoundKey, Updates, Table, PIdxKey, Transaction),
@@ -194,7 +194,7 @@ fill_index(ObjUpdate, Table, Transaction) ->
 
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 %[PrimaryKey] = table_utils:primary_key_name(NewTable),
-                PIndexObject = indexing:read_index(primary, TableName, Transaction),
+                {ok, PIndexObject} = index_manager:read_index(primary, TableName, Transaction),
                 %SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
 
                 IdxUpds = lists:map(fun({RawKey, BoundKey}) ->
@@ -230,15 +230,15 @@ build_index_updates([Update | Updates], ObjBoundKey, Table, Acc) ->
     TName = table_utils:name(Table),
     {{Col, CRDT}, {_CRDTOper, Val} = IndexValOp} = Update,
     NewAcc =
-        case indexing:lookup_index(Col, Indexes) of
-            [] ->
+        case index_manager:lookup_index(Col, Indexes) of
+            {ok, []} ->
                 Acc;
-            Idxs ->
+            {ok, Idxs} ->
                 AuxUpdates = lists:map(fun(Idx) ->
                     BObjOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ObjBoundKey),
                     EntryOp = [{bound_obj, ?FIELD_BOBJ_DT, BObjOp}, {index_val, CRDT, IndexValOp}],
 
-                    ?INDEX_UPD(TName, indexing:index_name(Idx), {Val, CRDT}, {Key, EntryOp})
+                    ?INDEX_UPD(TName, index_manager:index_name(Idx), {Val, CRDT}, {Key, EntryOp})
                 end, Idxs),
                 lists:append(Acc, AuxUpdates)
         end,
@@ -256,7 +256,7 @@ create_sindex_updates(Updates, _TxId) when is_list(Updates) ->
     lists:foldl(fun(Update, AccList) ->
         ?INDEX_UPD(TableName, IndexName, {_Value, _Type}, {PkValue, Op}) = Update,
 
-        DBIndexName = indexing:generate_sindex_key(TableName, IndexName),
+        {ok, DBIndexName} = index_manager:generate_index_key(secondary, TableName, IndexName),
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
 
         %{{K, T, B}, UpdateOp, Upd} = crdt_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op}),
