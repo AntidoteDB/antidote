@@ -52,23 +52,7 @@
 
 %% TODO support more than one table per filter, for supporting join queries
 query(Filter, TxId) when is_list(Filter) ->
-    gen_server:call(?MODULE, {query, Filter, TxId}, infinity).
-
-filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
-    gen_server:call(?MODULE, {filter_record, Filter, TxId}, infinity).
-
-%% ====================================================================
-%% gen_server functions
-%% ====================================================================
-
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-init([]) ->
-    lager:info("Started Query Optimizer at node ~p", [node()]),
-    {ok, #state{}}.
-
-handle_call({query, Filter, TxId}, _From, State) ->
+    %gen_server:call(?MODULE, {query, Filter, TxId}, infinity).
     %lager:info("==> Received query: ~p", [Filter]),
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
@@ -103,10 +87,12 @@ handle_call({query, Filter, TxId}, _From, State) ->
                 %lager:info("==> Final result: ~p", [ApplyProjection]),
                 {ok, ApplyProjection}
         end,
-    {reply, Result, State};
-handle_call({filter_record, ObjKey, Filter, TxId}, _From, State) ->
-    {_Key, _Type, Bucket} = ObjKey,
-    [Object] = querying_utils:read_keys(value, ObjKey, TxId),
+    {ok, Result}.
+
+filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
+    %gen_server:call(?MODULE, {filter_record, Filter, TxId}, infinity).
+    {_Key, _Type, Bucket} = ObjectKey,
+    [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
     Table = table_utils:table_metadata(Bucket, TxId),
     TCols = table_utils:column_names(Table),
     Result =
@@ -117,8 +103,25 @@ handle_call({filter_record, ObjKey, Filter, TxId}, _From, State) ->
             {ok, Projection} ->
                 {ok, apply_projection(Projection, Object)}
         end,
+    {ok, Result}.
 
-    {reply, {ok, Result}, State}.
+%% ====================================================================
+%% gen_server functions
+%% ====================================================================
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+init([]) ->
+    lager:info("Started Query Optimizer at node ~p", [node()]),
+    {ok, #state{}}.
+
+handle_call({query, Filter, TxId}, _From, State) ->
+    Result = query(Filter, TxId),
+    {reply, Result, State};
+handle_call({filter_record, ObjKey, Filter, TxId}, _From, State) ->
+    Result = filter_record(ObjKey, Filter, TxId),
+    {reply, Result, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.

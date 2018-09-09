@@ -62,14 +62,33 @@ table_name(?INDEX(_IndexName, TableName, _Attributes)) -> TableName.
 attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 
 read_index(primary, TableName, TxId) ->
-    gen_server:call(?MODULE, {read_index, primary, TableName, TxId}, infinity);
+    %gen_server:call(?MODULE, {read_index, primary, TableName, TxId}, infinity);
+    IName = pindex_key(TableName),
+    ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
+    {ok, IdxObj};
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    gen_server:call(?MODULE, {read_index, secondary, {TableName, IndexName}, TxId}, infinity).
+    %gen_server:call(?MODULE, {read_index, secondary, {TableName, IndexName}, TxId}, infinity).
+    %% The secondary index is identified by the notation #2i_<IndexName>, where
+    %% <IndexName> = <table_name>.<index_name>
+
+    FullIName = sindex_key(TableName, IndexName),
+    ObjKeys = querying_utils:build_keys(FullIName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
+    {ok, IdxObj}.
 
 read_index_function(primary, TableName, {Function, Args}, TxId) ->
-    gen_server:call(?MODULE, {read_function, primary, TableName, {Function, Args}, TxId}, infinity);
+    %gen_server:call(?MODULE, {read_function, primary, TableName, {Function, Args}, TxId}, infinity);
+    IName = pindex_key(TableName),
+    ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+    {ok, IdxObj};
 read_index_function(secondary, {TableName, IndexName}, {Function, Args}, TxId) ->
-    gen_server:call(?MODULE, {read_function, secondary, {TableName, IndexName}, {Function, Args}, TxId}, infinity).
+    %gen_server:call(?MODULE, {read_function, secondary, {TableName, IndexName}, {Function, Args}, TxId}, infinity).
+    FullIName = sindex_key(TableName, IndexName),
+    ObjKeys = querying_utils:build_keys(FullIName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+    {ok, IdxObj}.
 
 generate_index_key(primary, TableName) ->
     gen_server:call(?MODULE, {generate_index_key, primary, TableName}, infinity).
@@ -86,7 +105,8 @@ lookup_index(ColumnName, Indexes) ->
     gen_server:call(?MODULE, {lookup_index, ColumnName, Indexes}, infinity).
 
 create_index_hooks(Updates) ->
-    gen_server:call(?MODULE, {index_hooks, Updates}, infinity).
+    %gen_server:call(?MODULE, {index_hooks, Updates}, infinity).
+    {ok, index_triggers:create_index_hooks(Updates, ignore)}.
 
 %% ====================================================================
 %% gen_server functions
@@ -100,31 +120,20 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({read_index, primary, TName, TxId}, _From, State) ->
-    IName = pindex_key(TName),
-    ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
-    {reply, {ok, IdxObj}, State};
+    Result = read_index(primary, TName, TxId),
+    {reply, Result, State};
 
 handle_call({read_index, secondary, {TName, IName}, TxId}, _From, State) ->
-    %% The secondary index is identified by the notation #2i_<IndexName>, where
-    %% <IndexName> = <table_name>.<index_name>
-
-    FullIName = sindex_key(TName, IName),
-    ObjKeys = querying_utils:build_keys(FullIName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
-    {reply, {ok, IdxObj}, State};
+    Result = read_index(secondary, {TName, IName}, TxId),
+    {reply, Result, State};
 
 handle_call({read_function, primary, TName, {Function, Args}, TxId}, _From, State) ->
-    IName = pindex_key(TName),
-    ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
-    {reply, {ok, IdxObj}, State};
+    Result = read_index_function(primary, TName, {Function, Args}, TxId),
+    {reply, Result, State};
 
 handle_call({read_function, secondary, {TName, IName}, {Function, Args}, TxId}, _From, State) ->
-    FullIName = sindex_key(TName, IName),
-    ObjKeys = querying_utils:build_keys(FullIName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
-    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
-    {reply, {ok, IdxObj}, State};
+    Result = read_index_function(secondary, {TName, IName}, {Function, Args}, TxId),
+    {reply, Result, State};
 
 handle_call({generate_index_key, primary, TName}, _From, State) ->
     {reply, {ok, pindex_key(TName)}, State};
@@ -145,7 +154,8 @@ handle_call({get_database_keys, IndexedValues, IndexObj}, _From, State) ->
     {reply, {ok, PKeys}, State};
 
 handle_call({index_hooks, Updates}, _From, State) ->
-    {reply, {ok, index_triggers:create_index_hooks(Updates, ignore)}, State}.
+    %{reply, {ok, index_triggers:create_index_hooks(Updates, ignore)}, State}.
+    {reply, create_index_hooks(Updates), State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
