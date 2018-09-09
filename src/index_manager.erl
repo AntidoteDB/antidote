@@ -64,7 +64,7 @@ attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 read_index(primary, TableName, TxId) ->
     gen_server:call(?MODULE, {read_index, primary, TableName, TxId}, infinity);
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    gen_server:call(?MODULE, {read_index, primary, {TableName, IndexName}, TxId}, infinity).
+    gen_server:call(?MODULE, {read_index, secondary, {TableName, IndexName}, TxId}, infinity).
 
 read_index_function(primary, TableName, {Function, Args}, TxId) ->
     gen_server:call(?MODULE, {read_function, primary, TableName, {Function, Args}, TxId}, infinity);
