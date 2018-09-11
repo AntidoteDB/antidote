@@ -1,8 +1,8 @@
 Antidote
 ============
-[![Build Status](https://travis-ci.org/antidotedb/antidote.svg?branch=master)](https://travis-ci.org/antidotedb/antidote)
+[![Build Status](https://travis-ci.org/AntidoteDB/antidote.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote)
 
-Welcome to the Antidote repository, the reference platform of the [SyncFree European Project](https://syncfree.lip6.fr/)
+Welcome to the Antidote repository, the reference platform of the [SyncFree European Project](https://syncfree.lip6.fr/) and the [LightKone European Project](https://www.lightkone.eu/)
 
 You will find all information in the documentation at [http://antidotedb.eu](http://antidotedb.eu).
 
