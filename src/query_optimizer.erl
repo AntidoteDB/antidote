@@ -85,7 +85,7 @@ query(Filter, TxId) when is_list(Filter) ->
 
                 ApplyProjection = apply_projection(ProjectionCols, ResultToList),
                 %lager:info("==> Final result: ~p", [ApplyProjection]),
-                {ok, ApplyProjection}
+                ApplyProjection
         end,
     {ok, Result}.
 
