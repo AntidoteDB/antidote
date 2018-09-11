@@ -1,5 +1,5 @@
 # Erlang client for Antiodote
-[![Build Status](https://travis-ci.org/SyncFree/antidote_pb.svg?branch=master)](https://travis-ci.org/SyncFree/antidote_pb)
+[![Build Status](https://travis-ci.org/AntidoteDB/antidote_pb.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote_pb)
 
 ## Interface for transactions
      
