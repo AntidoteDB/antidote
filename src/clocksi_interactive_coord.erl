@@ -691,7 +691,7 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-    Transaction = #transaction{snapshot_time = LocalClock,
+    Transaction = #transaction{snapshot_time_local = LocalClock,
         vec_snapshot_time = SnapshotTime,
         txn_id = TransactionId,
         properties = Properties},
@@ -787,7 +787,7 @@ prepare_2pc(State = #coord_state{
     updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
     case UpdatedPartitions of
         [] ->
-            SnapshotTime = Transaction#transaction.snapshot_time,
+            SnapshotTime = Transaction#transaction.snapshot_time_local,
             case FullCommit of
                 false ->
                     {committing_2pc, State#coord_state{state = committing, commit_time = SnapshotTime},
@@ -1049,7 +1049,7 @@ prepare(State = #coord_state{
 }) ->
     case UpdatedPartitions of
         [] ->
-            SnapshotTime = Transaction#transaction.snapshot_time,
+            SnapshotTimeLocal = Transaction#transaction.snapshot_time_local,
             case NumToRead of
                 0 ->
                     case FullCommit of
@@ -1057,8 +1057,8 @@ prepare(State = #coord_state{
                             reply_to_client(State#coord_state{state = committed_read_only});
 
                         false ->
-                            {committing, State#coord_state{state = committing, commit_time = SnapshotTime},
-                                [{reply, From, {ok, SnapshotTime}}]}
+                            {committing, State#coord_state{state = committing, commit_time = SnapshotTimeLocal},
+                                [{reply, From, {ok, SnapshotTimeLocal}}]}
                     end;
                 _ ->
                     {receive_prepared, State#coord_state{state = prepared}}
@@ -1263,5 +1263,3 @@ wait_for_clock_test() ->
     ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime2)).
 
 -endif.
-
-

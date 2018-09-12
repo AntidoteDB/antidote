@@ -160,7 +160,7 @@
 -type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}].
 
 -record(transaction, {
-    snapshot_time :: snapshot_time(),
+    snapshot_time_local :: clock_time(),
     vec_snapshot_time :: snapshot_time(),
     properties :: txn_properties(),
     txn_id :: txid()
@@ -185,7 +185,7 @@
 -type effect() :: term().
 
 -type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
--type snapshot_time() :: vectorclock:vectorclock().
+-type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
 

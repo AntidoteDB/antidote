@@ -19,8 +19,6 @@
 %% -------------------------------------------------------------------
 -module(bcountermgr_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([init_per_suite/1,
          end_per_suite/1,
@@ -29,7 +27,7 @@
          all/0]).
 
 %% tests
--export([new_bcounter_test/1,
+-export([
          test_dec_success/1,
          test_dec_fail/1,
          test_dec_multi_success0/1,
@@ -39,43 +37,42 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_counter_b).
--define(BUCKET, bcountermgr_bucket).
+-define(BUCKET, test_utils:bucket(bcountermgr_bucket)).
 -define(RETRY_COUNT, 10).
 
 
-init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+    Clusters = proplists:get_value(clusters, Config),
     Nodes = lists:flatten(Clusters),
 
-    %Ensure that write operations are certified
-    test_utils:pmap(fun(Node) ->
-        rpc:call(Node, application, set_env, [antidote, txn_cert, true])
-                    end, Nodes),
+     % Ensure that write operations are certified
+     test_utils:pmap(fun(Node) ->
+                             rpc:call(Node, application, set_env, [antidote, txn_cert, true]) 
+                     end, Nodes),
 
-    %Check that indeed transactions certification is turned on
-    {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
-
-    [{nodes, Nodes},
-     {clusters, Clusters}|Config].
+     % Check that indeed transactions certification is turned on
+     {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
+     
+     Config.
 
 
 end_per_suite(Config) ->
     Config.
 
+
 init_per_testcase(_Case, Config) ->
     Config.
+
 
 end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
+
 all() -> [
-         new_bcounter_test,
          test_dec_success,
          test_dec_fail,
          test_dec_multi_success0,
@@ -83,59 +80,70 @@ all() -> [
          conditional_write_test_run
         ].
 
-%% Tests creating a new `bcounter()'.
-new_bcounter_test(Config) ->
-    Clusters = proplists:get_value(clusters, Config),
-    [Node1 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Key = bcounter1_mgr,
-    check_read(Node1, Key, 0).
 
 test_dec_success(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter2_mgr,
-    {ok, _} = execute_op(Node1, increment, Key, 10, Actor),
-    {ok, CommitTime} = execute_op(Node1, decrement, Key, 4, Actor),
-    check_read(Node2, Key, 6, CommitTime).
+
+    {ok, _} = execute_op(Node1, increment, Key, 10, Actor, Bucket),
+    {ok, CommitTime} = execute_op(Node1, decrement, Key, 4, Actor, Bucket),
+
+    % FIXME why is this not working?
+    %{Value, _} = antidote_utils:read_b_counter_commit(Node2, Key, Bucket, CommitTime),
+    %?assertEqual(6, Value).
+    check_read(Node2, Key, 6, CommitTime, Bucket).
+
 
 test_dec_fail(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter3_mgr,
-    {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
-    _ForcePropagation = read_si(Node2, Key, CommitTime),
-    Result0 = execute_op_success(Node2, decrement, Key, 5, Actor, 0),
+
+    {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor, Bucket),
+    _ForcePropagation = read_si(Node2, Key, CommitTime, Bucket),
+    Result0 = execute_op_success(Node2, decrement, Key, 5, Actor, 0, Bucket),
     ?assertEqual({error, no_permissions}, Result0).
 
+
 test_dec_multi_success0(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter4_mgr,
-    {ok, _} = execute_op(Node1, increment, Key, 10, Actor),
-    {ok, CommitTime} = execute_op(Node2, decrement, Key, 5, Actor),
-    check_read(Node1, Key, 5, CommitTime).
+
+    {ok, _} = execute_op(Node1, increment, Key, 10, Actor, Bucket),
+    {ok, CommitTime} = execute_op(Node2, decrement, Key, 5, Actor, Bucket),
+    check_read(Node1, Key, 5, CommitTime, Bucket).
+
 
 test_dec_multi_success1(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter5_mgr,
-    {ok, _} = execute_op(Node1, increment, Key, 10, Actor),
-    {ok, _} = execute_op(Node2, decrement, Key, 5, Actor),
-    {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor),
-    check_read(Node1, Key, 5).
+
+    {ok, _} = execute_op(Node1, increment, Key, 10, Actor, Bucket),
+    {ok, _} = execute_op(Node2, decrement, Key, 5, Actor, Bucket),
+    {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor, Bucket),
+    check_read(Node1, Key, 5, Bucket).
+
 
 conditional_write_test_run(Config) ->
+    Bucket = ?BUCKET,
     Nodes = proplists:get_value(nodes, Config),
     [Node1, Node2 | _OtherNodes] = Nodes,
     Type = antidote_crdt_counter_b,
     Key = bcounter6_mgr,
-    BObj = {Key, Type, ?BUCKET},
+    BObj = {Key, Type, Bucket},
 
-    {ok, AfterIncrement} = execute_op(Node1, increment, Key, 10, r1),
+    {ok, AfterIncrement} = execute_op(Node1, increment, Key, 10, r1, Bucket),
 
     %% Start a transaction on the first node and perform a read operation.
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [AfterIncrement, []]),
@@ -154,17 +162,21 @@ conditional_write_test_run(Config) ->
     CommitResult = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
     ?assertMatch({error, {aborted, _}}, CommitResult),
     %% Test that the failed transaction didn't affect the `bcounter()'.
-    check_read(Node1, Key, 7, AfterTxn2).
+    check_read(Node1, Key, 7, AfterTxn2, Bucket).
 
-execute_op(Node, Op, Key, Amount, Actor) ->
-    execute_op_success(Node, Op, Key, Amount, Actor, ?RETRY_COUNT).
+
+%% TODO move to antidote_utils
+
+execute_op(Node, Op, Key, Amount, Actor, Bucket) ->
+    execute_op_success(Node, Op, Key, Amount, Actor, ?RETRY_COUNT, Bucket).
+
 
 %%Auxiliary functions.
-execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
-    lager:info("Execute OP ~p", [Key]),
+execute_op_success(Node, Op, Key, Amount, Actor, Try, Bucket) ->
+    ct:log("Execute OP ~p", [Key]),
     Result = rpc:call(Node, antidote, update_objects,
                       [ignore, [],
-                       [{{Key, ?TYPE, ?BUCKET}, Op, {Amount, Actor} }]
+                       [{{Key, ?TYPE, Bucket}, Op, {Amount, Actor} }]
                       ]
                      ),
     case Result of
@@ -172,16 +184,18 @@ execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
         Error when Try == 0 -> Error;
         _ ->
             timer:sleep(1000),
-            execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
+            execute_op_success(Node, Op, Key, Amount, Actor, Try -1, Bucket)
     end.
 
-read_si(Node, Key, CommitTime) ->
-    lager:info("Read si ~p", [Key]),
-    rpc:call(Node, antidote, read_objects, [CommitTime, [], [{Key, ?TYPE, ?BUCKET}]]).
 
-check_read(Node, Key, Expected, CommitTime) ->
-    {ok, [Obj], _CT} = read_si(Node, Key, CommitTime),
+read_si(Node, Key, CommitTime, Bucket) ->
+    ct:log("Read si ~p", [Key]),
+    rpc:call(Node, antidote, read_objects, [CommitTime, [], [{Key, ?TYPE, Bucket}]]).
+
+
+check_read(Node, Key, Expected, CommitTime, Bucket) ->
+    {ok, [Obj], _CT} = read_si(Node, Key, CommitTime, Bucket),
     ?assertEqual(Expected, ?TYPE:permissions(Obj)).
 
-check_read(Node, Key, Expected) ->
-  check_read(Node, Key, Expected, ignore).
+check_read(Node, Key, Expected, Bucket) ->
+  check_read(Node, Key, Expected, ignore, Bucket).

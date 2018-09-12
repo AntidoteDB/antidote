@@ -20,8 +20,6 @@
 
 -module(log_recovery_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([
          init_per_suite/1,
@@ -35,13 +33,11 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
+
+-define(BUCKET, test_utils:bucket(log_recovery_bucket)).
 
 init_per_suite(Config) ->
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
-    [{nodes, Nodes}|Config].
+    test_utils:init_single_dc(?MODULE, Config).
 
 end_per_suite(Config) ->
     Config.
@@ -54,51 +50,54 @@ end_per_testcase(_, _) ->
 
 all() -> [read_pncounter_log_recovery_test].
 
+
 %% First we remember the initial time of the counter (with value 0).
 %% After 15 updates, we kill the nodes
 %% We then restart the nodes, and read the value
 %% being sure that all 15 updates were loaded from the log
 read_pncounter_log_recovery_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    FirstNode = hd(Nodes),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
+    Type = antidote_crdt_counter_pn,
+    Key = log_value_test,
+    Obj = {Key, Type, Bucket},
 
-    case rpc:call(FirstNode, application, get_env, [antidote, enable_logging]) of
+    case rpc:call(Node, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
+            ct:pal("Logging not enabled!"),
             pass;
         _ ->
-            Type = antidote_crdt_counter_pn,
-            Key = log_value_test,
-            Obj = {Key, Type, bucket},
+            {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+            increment_counter(Node, Obj, 15),
 
-            {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
-            increment_counter(FirstNode, Obj, 15),
             %% value from old snapshot is 0
-            {ok, [ReadResult1]} = rpc:call(FirstNode,
+            {ok, [ReadResult1]} = rpc:call(Node,
                 antidote, read_objects, [[Obj], TxId]),
             ?assertEqual(0, ReadResult1),
+
             %% read value in txn is 15
-            {ok, [ReadResult2], CommitTime} = rpc:call(FirstNode,
+            {ok, [ReadResult2], CommitTime} = rpc:call(Node,
                 antidote, read_objects, [ignore, [], [Obj]]),
 
             ?assertEqual(15, ReadResult2),
 
-            ct:print("Killing and restarting the nodes"),
+            ct:log("Killing and restarting the nodes"),
             %% Shut down the nodes
             Nodes = test_utils:kill_and_restart_nodes(Nodes, Config),
-            ct:print("Vnodes are started up"),
-            lager:info("Nodes: ~p", [Nodes]),
+            ct:log("Vnodes are started up"),
 
             %% Read the value again
-            {ok, [ReadResult3], _CT} = rpc:call(FirstNode, antidote, read_objects,
+            {ok, [ReadResult3], _CT} = rpc:call(Node, antidote, read_objects,
                 [CommitTime, [], [Obj]]),
             ?assertEqual(15, ReadResult3),
-            lager:info("read_pncounter_log_recovery_test finished"),
+
             pass
     end.
 
 
 
-%% Auxiliary method o increment a counter N times.
+%% Auxiliary method to increment a counter N times.
 increment_counter(_FirstNode, _Key, 0) ->
     ok;
 increment_counter(FirstNode, Obj, N) ->

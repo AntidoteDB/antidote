@@ -20,17 +20,15 @@
 
 -module(multiple_dcs_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
--export([%% suite/0,
+-export([
          init_per_suite/1,
          end_per_suite/1,
          init_per_testcase/2,
          end_per_testcase/2,
          all/0]).
 
--export([multiple_writes/3,
+-export([multiple_writes/4,
          replicated_set_test/1,
          simple_replication_test/1,
          failure_test/1,
@@ -39,15 +37,13 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, multiple_dcs_bucket).
+-define(BUCKET, test_utils:bucket(multiple_dcs_bucket)).
 
-init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = lists:flatten(Clusters),
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+    Nodes = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
 
     %Ensure that the clocksi protocol is used
     test_utils:pmap(fun(Node) ->
@@ -57,64 +53,74 @@ init_per_suite(Config) ->
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
 
-    [{clusters, Clusters}|Config].
+    Config.
+
 
 end_per_suite(Config) ->
     Config.
 
+
 init_per_testcase(_Case, Config) ->
     Config.
+
 
 end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-all() ->
-    [simple_replication_test,
-     failure_test,
-     blocking_test,
-     parallel_writes_test,
-     replicated_set_test].
+
+all() -> [
+    simple_replication_test,
+    failure_test,
+    blocking_test,
+    parallel_writes_test,
+    replicated_set_test
+].
+
 
 simple_replication_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-
     Key = simple_replication_test_dc,
     Type = antidote_crdt_counter_pn,
 
-    update_counters(Node1, [Key], [1], ignore, static),
-    update_counters(Node1, [Key], [1], ignore, static),
-    {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
+    update_counters(Node1, [Key], [1], ignore, static, Bucket),
+    update_counters(Node1, [Key], [1], ignore, static, Bucket),
+    {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
 
-    check_read_key(Node1, Key, Type, 3, CommitTime, static),
-    lager:info("Done append in Node1"),
+    check_read_key(Node1, Key, Type, 3, CommitTime, static, Bucket),
+    ct:log("Done append in Node1"),
 
-    check_read_key(Node3, Key, Type, 3, CommitTime, static),
-    check_read_key(Node2, Key, Type, 3, CommitTime, static),
-    lager:info("Done first round of read, I am gonna append"),
+    check_read_key(Node3, Key, Type, 3, CommitTime, static, Bucket),
+    check_read_key(Node2, Key, Type, 3, CommitTime, static, Bucket),
+    ct:log("Done first round of read, I am gonna append"),
 
-    {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static),
+    {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static, Bucket),
 
-    {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
-    lager:info("Done append in Node3"),
-    lager:info("Done waiting, I am gonna read"),
+    {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static, Bucket),
+    ct:log("Done append in Node3"),
+    ct:log("Done waiting, I am gonna read"),
 
     SnapshotTime = CommitTime3,
-    check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
-    check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
-    check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
+    check_read_key(Node1, Key, Type, 5, SnapshotTime, static, Bucket),
+    check_read_key(Node2, Key, Type, 5, SnapshotTime, static, Bucket),
+    check_read_key(Node3, Key, Type, 5, SnapshotTime, static, Bucket),
     pass.
 
+
 parallel_writes_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Key = parallel_writes_test,
     Type = antidote_crdt_counter_pn,
     Pid = self(),
-    spawn(?MODULE, multiple_writes, [Node1, Key, Pid]),
-    spawn(?MODULE, multiple_writes, [Node2, Key, Pid]),
-    spawn(?MODULE, multiple_writes, [Node3, Key, Pid]),
+
+    spawn(?MODULE, multiple_writes, [Node1, Key, Pid, Bucket]),
+    spawn(?MODULE, multiple_writes, [Node2, Key, Pid, Bucket]),
+    spawn(?MODULE, multiple_writes, [Node3, Key, Pid, Bucket]),
+
     Result = receive
         {ok, CT1} ->
             receive
@@ -130,10 +136,10 @@ parallel_writes_test(Config) ->
                                                  end,
                                                  CT1, CT2)),
 
-                        check_read_key(Node1, Key, Type, 15, Time, static),
-                        check_read_key(Node2, Key, Type, 15, Time, static),
-                        check_read_key(Node3, Key, Type, 15, Time, static),
-                        lager:info("Parallel reads passed"),
+                        check_read_key(Node1, Key, Type, 15, Time, static, Bucket),
+                        check_read_key(Node2, Key, Type, 15, Time, static, Bucket),
+                        check_read_key(Node3, Key, Type, 15, Time, static, Bucket),
+                        ct:log("Parallel reads passed"),
                         pass
                     end
             end
@@ -141,18 +147,21 @@ parallel_writes_test(Config) ->
     ?assertEqual(Result, pass),
     pass.
 
-multiple_writes(Node, Key, ReplyTo) ->
-    update_counters(Node, [Key], [1], ignore, static),
-    update_counters(Node, [Key], [1], ignore, static),
-    update_counters(Node, [Key], [1], ignore, static),
-    update_counters(Node, [Key], [1], ignore, static),
-    {ok, CommitTime} = update_counters(Node, [Key], [1], ignore, static),
+
+multiple_writes(Node, Key, ReplyTo, Bucket) ->
+    update_counters(Node, [Key], [1], ignore, static, Bucket),
+    update_counters(Node, [Key], [1], ignore, static, Bucket),
+    update_counters(Node, [Key], [1], ignore, static, Bucket),
+    update_counters(Node, [Key], [1], ignore, static, Bucket),
+    {ok, CommitTime} = update_counters(Node, [Key], [1], ignore, static, Bucket),
     ReplyTo ! {ok, CommitTime}.
+
 
 %% Test: when a DC is disconnected for a while and connected back it should
 %%  be able to read the missing updates. This should not affect the causal
 %%  dependency protocol
 failure_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
@@ -162,29 +171,29 @@ failure_test(Config) ->
             Type = antidote_crdt_counter_pn,
             Key = multiplde_dc_failure_test,
 
-            update_counters(Node1, [Key], [1], ignore, static),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
 
-            %% Simulate failure of NODE3 by stoping the receiver
+            %% Simulate failure of NODE3 by stopping the receiver
             {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
             {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
             ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
 
-            update_counters(Node1, [Key], [1], ignore, static),
+            update_counters(Node1, [Key], [1], ignore, static, Bucket),
             %% Induce some delay
             rpc:call(Node3, antidote, read_objects,
                  [ignore, [], [{Key, Type, ?BUCKET}]]),
 
-            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
-            check_read_key(Node1, Key, Type, 3, CommitTime, static),
-            lager:info("Done append in Node1"),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
+            check_read_key(Node1, Key, Type, 3, CommitTime, static, Bucket),
+            ct:log("Done append in Node1"),
 
             %% NODE3 comes back
             [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs_sync, [[D1, D2]]),
-            check_read_key(Node2, Key, Type, 3, CommitTime, static),
-            lager:info("Done read from Node2"),
-            check_read_key(Node3, Key, Type, 3, CommitTime, static),
-            lager:info("Done Read in Node3"),
+            check_read_key(Node2, Key, Type, 3, CommitTime, static, Bucket),
+            ct:log("Done read from Node2"),
+            check_read_key(Node3, Key, Type, 3, CommitTime, static, Bucket),
+            ct:log("Done Read in Node3"),
             pass
     end.
 
@@ -193,6 +202,7 @@ failure_test(Config) ->
 %% can be blocked depending on the timing of transactions
 %% going between 3 DCs
 blocking_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Type = antidote_crdt_counter_pn,
@@ -204,13 +214,13 @@ blocking_test(Config) ->
     timer:sleep(5000),
 
     %% Perform some transactions at DC1 and DC2
-    {ok, CommitTime1} = update_counters(Node1, [Key], [1], ignore, static),
-    {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static),
+    {ok, CommitTime1} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
+    {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static, Bucket),
 
-    %% Besure you can read the updates at DC1 and DC2
+    %% Be sure you can read the updates at DC1 and DC2
     CommitTime3 = vectorclock:max([CommitTime1, CommitTime2]),
-    check_read_key(Node1, Key, Type, 2, CommitTime3, static),
-    check_read_key(Node2, Key, Type, 2, CommitTime3, static),
+    check_read_key(Node1, Key, Type, 2, CommitTime3, static, Bucket),
+    check_read_key(Node2, Key, Type, 2, CommitTime3, static, Bucket),
 
     timer:sleep(1000),
 
@@ -218,37 +228,38 @@ blocking_test(Config) ->
     ok = rpc:call(Node3, inter_dc_manager, drop_ping, [false]),
     timer:sleep(5000),
 
-    check_read_key(Node3, Key, Type, 2, CommitTime3, static),
-    lager:info("Blocking test passed!").
+    check_read_key(Node3, Key, Type, 2, CommitTime3, static, Bucket),
+    ct:log("Blocking test passed!").
 
 
 replicated_set_test(Config) ->
+    Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key1 = replicated_set_test,
     Type = antidote_crdt_set_aw,
 
-    lager:info("Writing 100 elements to set!!!"),
+    ct:log("Writing 100 elements to set"),
 
     %% add 100 elements to the set on Node 1 while simultaneously reading on Node2
     CommitTimes = lists:map(fun(N) ->
-                                lager:info("Writing ~p to set", [N]),
-                                {ok, CommitTime} = update_sets(Node1, [Key1], [{add, N}], ignore),
+                                ct:log("Writing ~p to set", [N]),
+                                {ok, CommitTime} = update_sets(Node1, [Key1], [{add, N}], ignore, Bucket),
                                 timer:sleep(200),
                                 CommitTime
                             end, lists:seq(1, 100)),
 
     LastCommitTime = lists:last(CommitTimes),
-    lager:info("last commit time was ~p.", [LastCommitTime]),
+    ct:log("last commit time was ~p.", [LastCommitTime]),
 
     %% now read on Node2
-    check_read_key(Node2, Key1, Type, lists:seq(1, 100), LastCommitTime, static),
+    check_read_key(Node2, Key1, Type, lists:seq(1, 100), LastCommitTime, static, Bucket),
     pass.
 
 %% internal
-check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
-    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
+check_read_key(Node, Key, Type, Expected, Clock, TxId, Bucket) ->
+    check_read(Node, [{Key, Type, Bucket}], [Expected], Clock, TxId).
 
 check_read(Node, Objects, Expected, Clock, TxId) ->
     case TxId of
@@ -262,9 +273,9 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
             {ok, Res}
     end.
 
-update_counters(Node, Keys, IncValues, Clock, TxId) ->
+update_counters(Node, Keys, IncValues, Clock, TxId, Bucket) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, Bucket}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),
@@ -278,9 +289,9 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
             ok
     end.
 
-update_sets(Node, Keys, Ops, Clock) ->
+update_sets(Node, Keys, Ops, Clock, Bucket) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-                                {{Key, antidote_crdt_set_aw, ?BUCKET}, Op, Param}
+                                {{Key, antidote_crdt_set_aw, Bucket}, Op, Param}
                         end,
                         lists:zip(Keys, Ops)
                        ),

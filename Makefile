@@ -13,7 +13,9 @@ distclean: clean relclean
 	$(REBAR) clean --all
 
 cleantests:
-	rm -f test/*.beam
+	rm -f test/utils/*.beam
+	rm -f test/singledc/*.beam
+	rm -f test/multidc/*.beam
 	rm -rf logs/
 
 shell:

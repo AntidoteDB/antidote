@@ -20,8 +20,6 @@
 
 -module(commit_hooks_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([
          init_per_suite/1,
@@ -39,15 +37,12 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
+
+-define(BUCKET, test_utils:bucket(commit_hooks_bucket)).
 
 
 init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
-    [{nodes, Nodes}|Config].
+    test_utils:init_single_dc(?MODULE, Config).
 
 end_per_suite(Config) ->
     Config.
@@ -59,62 +54,59 @@ end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-all() -> [register_hook_test,
-          execute_hook_test,
-          execute_post_hook_test,
-          execute_prehooks_static_txn_test,
-          execute_posthooks_static_txn_test].
+all() -> [
+    register_hook_test,
+    execute_hook_test,
+    execute_post_hook_test,
+    execute_prehooks_static_txn_test,
+    execute_posthooks_static_txn_test
+].
+
 
 register_hook_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
 
-    Bucket = hook_bucket,
-    Response=rpc:call(Node, antidote, register_pre_hook,
-                    [Bucket, hooks_module, hooks_function]),
+    Response = rpc:call(Node, antidote, register_pre_hook, [Bucket, hooks_module, hooks_function]),
     ?assertMatch({error, _}, Response),
 
-    ok=rpc:call(Node, antidote_hooks, register_post_hook,
-                [Bucket, antidote_hooks, test_commit_hook]),
-    Result1 = rpc:call(Node, antidote_hooks, get_hooks,
-                       [post_commit, Bucket]),
+    ok = rpc:call(Node, antidote_hooks, register_post_hook, [Bucket, antidote_hooks, test_commit_hook]),
+    Result1 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
     ?assertMatch({antidote_hooks, test_commit_hook}, Result1),
-    ok=rpc:call(Node, antidote, unregister_hook,
-                [post_commit, Bucket]),
-    Result2 = rpc:call(Node, antidote_hooks, get_hooks,
-                       [post_commit, Bucket]),
+
+    ok = rpc:call(Node, antidote, unregister_hook, [post_commit, Bucket]),
+    Result2 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
     ?assertMatch(undefined, Result2).
+
 
 %% Test pre-commit hook
 execute_hook_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    Bucket = hook_bucket1,
-    ok = rpc:call(Node, antidote, register_pre_hook,
-                  [Bucket, antidote_hooks, test_increment_hook]),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
+    BoundObject = {hook_key, antidote_crdt_counter_pn, Bucket},
 
-    Bound_object = {hook_key, antidote_crdt_counter_pn, Bucket},
+    ok = rpc:call(Node, antidote, register_pre_hook, [Bucket, antidote_hooks, test_increment_hook]),
+
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ct:print("Txid ~p", [TxId]),
-    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
+    ct:log("Txid ~p", [TxId]),
+    ok = rpc:call(Node, antidote, update_objects, [[{BoundObject, increment, 1}], TxId]),
     {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
-    Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),
+    Res = rpc:call(Node, antidote, read_objects, [[BoundObject], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ?assertMatch({ok, [2]}, Res).
 
+
 %% Test post-commit hook
 execute_post_hook_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    Bucket = hook_bucket2,
-    ok = rpc:call(Node, antidote, register_post_hook,
-                   [Bucket, antidote_hooks, test_post_hook]),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
+    BoundObject = {post_hook_key, antidote_crdt_counter_pn, Bucket},
 
-    Bound_object = {post_hook_key, antidote_crdt_counter_pn, Bucket},
+    ok = rpc:call(Node, antidote, register_post_hook, [Bucket, antidote_hooks, test_post_hook]),
     {ok, TxId} =  rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
+    ok = rpc:call(Node, antidote, update_objects, [[{BoundObject, increment, 1}], TxId]),
     {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
     CommitCount = {post_hook_key, antidote_crdt_counter_pn, commitcount},
@@ -124,29 +116,27 @@ execute_post_hook_test(Config) ->
     ?assertMatch({ok, [1]}, Res).
 
 execute_prehooks_static_txn_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    Bucket = hook_bucket3,
-    ok = rpc:call(Node, antidote, register_pre_hook,
-                  [Bucket, antidote_hooks, test_increment_hook]),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
+    BoundObject = {prehook_key, antidote_crdt_counter_pn, Bucket},
 
-    Bound_object = {prehook_key, antidote_crdt_counter_pn, Bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+    ok = rpc:call(Node, antidote, register_pre_hook, [Bucket, antidote_hooks, test_increment_hook]),
+
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject, increment, 1}]]),
 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
-    Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),
+    Res = rpc:call(Node, antidote, read_objects, [[BoundObject], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ?assertMatch({ok, [2]}, Res).
 
 execute_posthooks_static_txn_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    Bucket = hook_bucket4,
-    ok = rpc:call(Node, antidote, register_post_hook,
-                  [Bucket, antidote_hooks, test_post_hook]),
+    Node = proplists:get_value(node, Config),
+    Bucket = ?BUCKET,
+    BoundObject = {posthook_static_key, antidote_crdt_counter_pn, Bucket},
 
-    Bound_object = {posthook_static_key, antidote_crdt_counter_pn, Bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+    ok = rpc:call(Node, antidote, register_post_hook, [Bucket, antidote_hooks, test_post_hook]),
+
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject, increment, 1}]]),
 
     CommitCount = {posthook_static_key, antidote_crdt_counter_pn, commitcount},
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),

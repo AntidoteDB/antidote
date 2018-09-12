@@ -22,8 +22,6 @@
 
 -module(gr_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([
          init_per_suite/1,
@@ -33,25 +31,19 @@
          all/0]).
 
 %% tests
--export([read_write_test/1,
-         read_multiple_test/1,
-         replication_test/1]).
+-export([ replication_test/1 ]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, gr_bucket).
+-define(BUCKET, test_utils:bucket(gr_bucket)).
 
-init_per_suite(Config) ->
-    ct:print("Starting test suite ~p", [?MODULE]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = lists:flatten(Clusters),
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+
+    Nodes = proplists:get_value(nodes, Config),
     %Ensure that the gentlerain protocol is used
-    test_utils:pmap(fun(Node) ->
-        rpc:call(Node, application, set_env,
-        [antidote, txn_prot, gr]) end, Nodes),
+    test_utils:pmap(fun(Node) -> rpc:call(Node, application, set_env, [antidote, txn_prot, gr]) end, Nodes),
 
     %Check that indeed gentlerain is running
     {ok, gr} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
@@ -62,7 +54,7 @@ init_per_suite(Config) ->
     %rt:wait_until(hd(Nodes1), fun wait_init:check_replication_complete/1),
     %rt:wait_until(hd(Nodes2), fun wait_init:check_replication_complete/1),
 
-    [{nodes, Nodes}|Config].
+    Config.
 
 end_per_suite(Config) ->
     Config.
@@ -74,28 +66,8 @@ end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-all() -> [read_write_test,
-          read_multiple_test,
-          replication_test].
+all() -> [ replication_test ].
 
-read_write_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    Bound_object = {gr_rw_key, antidote_crdt_counter_pn, bucket},
-    {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Bound_object]]),
-    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
-    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Bound_object]]),
-    ?assertMatch([1], Res).
-
-read_multiple_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node = hd(Nodes),
-    O1 = {gr_read_mult_key1, antidote_crdt_counter_pn, bucket},
-    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{O1, increment, 1}]]),
-    O2 = {o2, antidote_crdt_counter_pn, bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{O2, increment, 1}]]),
-    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1, O2]]),
-    ?assertMatch([1, 1], Res).
 
 replication_test(Config) ->
     [Node1, Node2 | _] = proplists:get_value(nodes, Config),
@@ -108,7 +80,7 @@ replication_test(Config) ->
     {ok, CT2} = rpc:call(Node2, antidote, update_objects, [ignore, [], [{O2, increment, 1}]]),
     %% Read r1 from DC2, with dependency to first write
     {ok, [Res1], _} = rpc:call(Node2, antidote, read_objects, [ignore, [], [O1]]),
-    lager:info("Read r1 from DC2: ~p", [Res1]), %% Result could be 0 or 1, there is no guarantee
+    ct:log("Read r1 from DC2: ~p", [Res1]), %% Result could be 0 or 1, there is no guarantee
     {ok, Res2, _} = rpc:call(Node2, antidote, read_objects, [CT2, {}, [O1, O2]]),
     %% Since CT1 < CT2, any snapshot that includes second write must include first write
     ?assertMatch([1, 1], Res2).

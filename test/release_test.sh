@@ -9,9 +9,6 @@ cd "$SCRIPTDIR/.."
 # Start Antidote
 ./_build/default/rel/antidote/bin/env start
 
-# Wait for ports to be available for tcp connections
-sleep 1
-
 # Execute test transaction
 ./test/release_test.escript
 
