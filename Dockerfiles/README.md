@@ -9,10 +9,10 @@
 Start a local node with the command
 
 ```
-docker run -d --name antidote -p "8087:8087" mweber/antidotedb
+docker run -d --name antidote -p "8087:8087" antidotedb/antidote
 ```
 
-This should fetch the Antidote image automatically. For updating to the latest version use the command `docker pull mweber/antidotedb`.
+This should fetch the Antidote image automatically. For updating to the latest version use the command `docker pull antidotedb/antidote`.
 
 Wait until Antidote is ready. The current log can be inspected with `docker logs antidote`. Wait until the log message `Application antidote started on node 'antidote@127.0.0.1'` appears.
 
