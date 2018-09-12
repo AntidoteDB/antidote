@@ -424,11 +424,13 @@ internal_data_test1(Config) ->
     Locks = [<<"internal_data_test1_key1">>,<<"internal_data_test1_key2">>,<<"internal_data_test1_key3">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    
     Lock_Info2 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    [{_,{using,Locks}}] = Lock_Info2,
+    
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
-    _Disconnected = antidotec_pb_socket:stop(Pid).
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    [{_,{using,Locks}}] = Lock_Info2.
 
 %% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
 internal_data_test2(Config) ->
@@ -437,12 +439,11 @@ internal_data_test2(Config) ->
     Locks = [<<"internal_data_test2_key1">>,<<"internal_data_test2_key2">>,<<"internal_data_test2_key3">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,Locks}}] = Lock_Info1,
     Lock_Info2 = rpc:call(Node2, lock_mgr, local_locks_info, []),
-    [{_,{using,Locks}}] = Lock_Info2,
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
-    _Disconnected = antidotec_pb_socket:stop(Pid).
-
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    [{_,{using,Locks}}] = Lock_Info2.
 
 %% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
 internal_data_test3(Config) ->
@@ -451,11 +452,13 @@ internal_data_test3(Config) ->
     Locks = [<<"internal_data_test3_key1">>,<<"internal_data_test3_key2">>,<<"internal_data_test3_key3">>],
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{exclusive_locks,Locks},{locks,Locks},{shared_locks,Locks}]),
     Lock_Info1 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    
     Lock_Info2 = rpc:call(Node3, lock_mgr, local_locks_info, []),
-    [{_,{using,Locks}}] = Lock_Info2,
+    
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
-    _Disconnected = antidotec_pb_socket:stop(Pid).
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    [{_,{using,Locks,Locks}}] = Lock_Info1,
+    [{_,{using,Locks}}] = Lock_Info2.
 
 %% Tests the internal data of lock_mgr_es and lock_mgr when using pb interface
 internal_data_test4(Config) ->
@@ -464,31 +467,30 @@ internal_data_test4(Config) ->
     Locks = [<<"internal_data_test4_key1">>,<<"internal_data_test4_key2">>,<<"internal_data_test4_key3">>],
     {ok, TxId1} = antidotec_pb:start_transaction(Pid1, ignore, [{shared_locks,Locks}]),
     Lock_Info11 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,[]}}] = Lock_Info11,
     Lock_Info21 = rpc:call(Node3, lock_mgr, local_locks_info, []),
-    [] = Lock_Info21,
-    
     {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
     {ok, TxId2} = antidotec_pb:start_transaction(Pid2, ignore, [{shared_locks,Locks}]),
     Lock_Info12 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,[]}}] = Lock_Info12,
     Lock_Info22 = rpc:call(Node2, lock_mgr, local_locks_info, []),
-    [] = Lock_Info22,
-    
     {ok, Pid3} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     {ok, TxId3} = antidotec_pb:start_transaction(Pid3, ignore, [{shared_locks,Locks}]),
     Lock_Info13 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    [{_,{using,Locks,[]}}] = Lock_Info13,
     Lock_Info23 = rpc:call(Node1, lock_mgr, local_locks_info, []),
-    [] = Lock_Info23,
-    
-    
     {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId1),
     _Disconnected = antidotec_pb_socket:stop(Pid1),
     {ok, _} = antidotec_pb:commit_transaction(Pid2, TxId2),
     _Disconnected = antidotec_pb_socket:stop(Pid2),
     {ok, _} = antidotec_pb:commit_transaction(Pid3, TxId3),
-    _Disconnected = antidotec_pb_socket:stop(Pid3).
+    _Disconnected = antidotec_pb_socket:stop(Pid3),
+
+    [{_,{using,Locks,[]}}] = Lock_Info11,
+    [] = Lock_Info21,
+    [{_,{using,Locks,[]}}] = Lock_Info12,
+    [] = Lock_Info22,
+    [{_,{using,Locks,[]}}] = Lock_Info13,
+    [] = Lock_Info23.
+    
+    
 
 % Tests the speed of the lock_mgr_es function get_locks()
 % While acquiring a single lock

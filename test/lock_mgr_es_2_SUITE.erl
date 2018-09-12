@@ -117,10 +117,10 @@ single_dc_sl_test1(Config) ->
     Keys =[single_dc_sl_test1_key_1],
     {ok, TxId} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    {TxId,{using,Keys,[]}} = lists:keyfind(TxId,1,Lock_Info1),
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId,{using,Keys,[]}} = lists:keyfind(TxId,1,Lock_Info1),
     false = lists:keyfind(TxId,1,Lock_Info2).
 
 % One dc (not leader) tries to get the shared lock of a new lock
@@ -129,10 +129,10 @@ single_dc_sl_test2(Config) ->
     Keys =[single_dc_sl_test2_key_1],
     {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId,{using,Keys,[]}} = lists:keyfind(TxId,1,Lock_Info1),
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId,{using,Keys,[]}} = lists:keyfind(TxId,1,Lock_Info1),
     false = lists:keyfind(TxId,1,Lock_Info2).
 
 % One dc (leader) gets the exclusive lock and then tries to get the shared lock while holding the exclusive one
@@ -141,12 +141,12 @@ lock_already_exclusive_test1(Config) ->
     Keys =[lock_already_exclusive_test1_key_1],
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     {error,{error,{[{TxId1,Missing_Keys0}],[]}}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
-    Missing_Keys0=Keys,
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    Missing_Keys0=Keys,
+    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 
@@ -156,11 +156,11 @@ lock_already_exclusive_test2(Config) ->
     Keys =[lock_already_exclusive_test2_key_1],
     {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     {error,{error,{[{TxId1,Keys}],[]}}} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 % One dc (not leader) gets the exclusive lock and then another dc (not leader) tries to get the shared lock
@@ -169,10 +169,11 @@ lock_already_exclusive_test3(Config) ->
     Keys =[lock_already_exclusive_test3_key_1],
     {ok, TxId1} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {error,{error,{Keys,[]}}} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     {ok, _Clock} = rpc:call(Node3, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
+    {TxId1,{using,[],Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     Lock_Info2 = rpc:call(Node3, lock_mgr_es, local_locks_info, []),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
@@ -182,12 +183,13 @@ lock_already_shared_test1(Config) ->
     Keys =[lock_already_shared_test1_key_1],
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {error,{error,{[],[{TxId1,Missing_Keys0}]}}} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Missing_Keys0=Keys,
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 
@@ -197,12 +199,13 @@ lock_already_shared_test2(Config) ->
     Keys =[lock_already_shared_test2_key_1],
     {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {error,{error,{[],[{TxId1,Missing_Keys0}]}}} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     Missing_Keys0=Keys,
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 % One dc (not leader) gets the shared lock and then another dc (not leader) tries to get the exclusive lock
@@ -211,11 +214,12 @@ lock_already_shared_test3(Config) ->
     Keys =[lock_already_shared_test3_key_1],
     {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {error,{error,{[],Keys}}} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,[]}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 %One dc (leader) gets the shared and exclusive lock at the same time for one transaction
@@ -224,10 +228,11 @@ lock_shared_and_exclusive_test1(Config)->
     Keys =[lock_shared_and_exclusive_test1_key_1],
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys},{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 %One dc (not leader) gets the shared and exclusive lock at the same time for one transaction
@@ -236,10 +241,11 @@ lock_shared_and_exclusive_test2(Config)->
     Keys =[lock_shared_and_exclusive_test2_key_1],
     {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys},{exclusive_locks,Keys}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys,Keys}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 %One dc (leader) gets the shared and exclusive locks with a non empty intersection at the same time for one transaction
@@ -249,10 +255,11 @@ lock_shared_and_exclusive_test3(Config)->
     Keys2 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_5,lock_shared_and_exclusive_test3_key_6],
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{shared_locks,Keys1},{exclusive_locks,Keys2}]]),
     Lock_Info1 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {ok, _Clock} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node1, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 %One dc (not leader) gets the shared and exclusive locks with a non empty intersection at the same time for one transaction
@@ -262,10 +269,11 @@ lock_shared_and_exclusive_test4(Config)->
     Keys2 =[lock_shared_and_exclusive_test3_key_1,lock_shared_and_exclusive_test3_key_2,lock_shared_and_exclusive_test3_key_5,lock_shared_and_exclusive_test3_key_6],
     {ok, TxId1} = rpc:call(Node2, antidote, start_transaction, [ignore, [{shared_locks,Keys1},{exclusive_locks,Keys2}]]),
     Lock_Info1 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
-    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
+    
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId1]),
     % checks if all locks are released
     Lock_Info2 = rpc:call(Node2, lock_mgr_es, local_locks_info, []),
+    {TxId1,{using,Keys1,Keys2}} = lists:keyfind(TxId1,1,Lock_Info1),
     false = lists:keyfind(TxId1,1,Lock_Info2).
 
 %Multiple dcs acquire and release a set of locks in a predefined order
@@ -566,11 +574,12 @@ check_value_helper(Node,Shared_Locks,Exclusive_Locks,Retries,Object,Value)->
     case rpc:call(Node, antidote, start_transaction, [ignore, [{shared_locks,Shared_Locks},{exclusive_locks,Exclusive_Locks}]]) of
         {ok,TxId}->
             {ok, [Val1]} = rpc:call(Node, antidote, read_objects, [[Object],TxId]),
-            ?assertEqual(Value, Val1),
             case rpc:call(Node, antidote, commit_transaction, [TxId]) of
                 {ok, _Clock3}->
+                    ?assertEqual(Value, Val1),
                     ok;
                 _ ->
+                    ?assertEqual(Value, Val1),
                     check_value_helper(Node,Shared_Locks,Exclusive_Locks,Retries-1,Object,Value)
             end;
         {error,_}->
