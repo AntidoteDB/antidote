@@ -2,7 +2,7 @@ REBAR ?= $(shell pwd)/rebar3
 
 compile-utils: compile
 	for filename in "test/utils/*.erl" ; do \
-		erlc -pa _build/default/lib/lager/ebin/ -o test/utils $$filename ; \
+		erlc -o test/utils $$filename ; \
 	done
 
 test:

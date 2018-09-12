@@ -4,6 +4,7 @@ Antidote Testing
 * [Unit Tests](#unit-tests)
 * [System Tests](#system-tests)
 * [Release Tests](#release-tests)
+* [Test Logging](#test-logging)
 * [Utility Functions](#utility-functions)
 
 Unit Tests
@@ -11,7 +12,7 @@ Unit Tests
 
 EUnit is used for unit testing. 
 Unit tests reside in the module they are testing and test the module in isolation. 
-The basic test skeleton should be encapsulated in an TEST block.
+The basic test skeleton should be encapsulated in a TEST block.
 
 
 ```
@@ -82,15 +83,27 @@ The fixed test setup is as follows:
 Release Tests
 -------------
 
+`make reltest` tests the antidote release executable.
+
+
+Test Logging
+-------------
+
+To log messages in a test suite, use the function `ct:log`. If a message should be visibile in the printed log (e.g. in travis), then `ct:pal` or `ct:print` can be used. `lager` should not be used for logging in system tests.
+
+
 Utility Functions
 -----------------
 
-There are multiple help functions already implemented for common functionality.
-Most common functions include:
+There are multiple help functions already implemented for common functionality in the `test/utils` folder. They are separated by functionality into the following files:
 
-* Modify test setup
-  * Kill/Restart node(s) `test_utils:brutal_kill_nodes`, `test_utils:restart_nodes`
-  * Partition/Heal node(s) `test_utils:partition_cluster`, `test_utils:heal_cluster`
-
+* `antidote_utils`
+  * Functions to manipulate antidote data types
+* `riak_utils`
+  * Riak cluster management. Useful for multi-dc tests.
+* `time_utils`
+  * Time-based helper functions
+* `test_utils`
+  * Test initialization and other helper functions which do not fit into the other categories
 
 
