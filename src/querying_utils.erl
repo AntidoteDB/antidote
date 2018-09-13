@@ -37,13 +37,16 @@
 
 -include("antidote.hrl").
 -include("querying.hrl").
+-include("lock_mgr.hrl").
+-include("lock_mgr_es.hrl").
 
 %% API
 -export([build_keys/3, build_keys_from_table/3,
     read_keys/3, read_keys/2,
     read_function/3, read_function/2,
     write_keys/2, write_keys/1,
-    start_transaction/0, commit_transaction/1]).
+    start_transaction/0, commit_transaction/1,
+    get_locks/3, get_locks/4, release_locks/2]).
 
 -export([to_atom/1,
     to_list/1,
@@ -83,7 +86,7 @@ build_keys_from_table([{AtomKey, RawKey} | Keys], Table, TxId, Acc) ->
     BoundKey =
         case PartCol of
             [_] ->
-                Index = indexing:read_index(primary, TName, TxId),
+                {ok, Index} = index_manager:read_index(primary, TName, TxId),
                 {_, BObj} = lists:keyfind(RawKey, 1, Index),
                 BObj;
             undefined ->
@@ -169,6 +172,57 @@ start_transaction() ->
 
 commit_transaction(TxId) ->
     cure:commit_transaction(TxId).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%            Locks             %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+get_locks(default, Locks, TxId) ->
+    get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
+get_locks(Timeout, Locks, TxId) ->
+    Res = clocksi_interactive_coord:get_locks(Timeout, TxId, Locks),
+    case Res of
+        {ok, _} -> ok;
+        {missing_locks, Keys} ->
+            ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
+            throw(lists:flatten(ErrorMsg));
+        {locks_in_use, {UsedExclusive, _UsedShared}} ->
+            FilterNotThisTx =
+                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedExclusive),
+            case FilterNotThisTx of
+                [] -> ok;
+                _ ->
+                    ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
+                    throw(lists:flatten(ErrorMsg))
+            end
+    end.
+
+get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
+    get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
+get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
+    Res = clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks),
+    case Res of
+        {ok, _} -> ok;
+        {missing_locks, Keys} ->
+            ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
+            throw(lists:flatten(ErrorMsg));
+        {locks_in_use, {UsedExclusive, _UsedShared}} ->
+            FilterNotThisTx =
+                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedExclusive),
+            case FilterNotThisTx of
+                [] -> ok;
+                _ ->
+                    ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
+                    throw(lists:flatten(ErrorMsg))
+            end
+    end.
+
+release_locks(Type, TxId) ->
+    clocksi_interactive_coord:release_locks(Type, TxId).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%          Utilities           %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 to_atom(Term) when is_list(Term) ->
     list_to_atom(Term);

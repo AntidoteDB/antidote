@@ -98,17 +98,20 @@ fi
 
 export RELX_REPLACE_OS_VARS=true
 
-echo "MESOS_TASK_ID: ${MESOS_TASK_ID}"
-echo "PORT0: ${PORT0}"
-echo "PORT1: ${PORT1}"
-echo "PORT2: ${PORT2}"
-echo "PORT3: ${PORT3}"
-echo "PORT4: ${PORT4}"
-echo "PORT5: ${PORT5}"
+# Print task id and ports only if assigned
+[[ -z "${MESOS_TASK_ID}" ]] || echo "MESOS_TASK_ID: ${MESOS_TASK_ID}"
+[[ -z "${PORT0}" ]] || echo "PORT0: ${PORT0}"
+[[ -z "${PORT1}" ]] || echo "PORT0: ${PORT1}"
+[[ -z "${PORT2}" ]] || echo "PORT0: ${PORT2}"
+[[ -z "${PORT3}" ]] || echo "PORT0: ${PORT3}"
+[[ -z "${PORT4}" ]] || echo "PORT0: ${PORT4}"
+[[ -z "${PORT5}" ]] || echo "PORT0: ${PORT5}"
+
 echo "NODE_NAME: ${NODE_NAME}"
 echo "COOKIE: ${COOKIE}"
 echo "IP: ${IP}"
 echo "HOSTNAME: ${HOSTNAME}"
 
+# Execute antidote release script
 RELNAME="`dirname \"$0\"`"/antidote
 exec ${RELNAME} "$@"

@@ -128,11 +128,13 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 %% Handle an instruction to ask a remote DC.
 handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
+    %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--Start--~n",[RequestType,PDCID,BinaryRequest,Func]),
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
     %% If socket found
     %% Find the socket that is responsible for this partition
     {ok, DCPartitionDict} ->
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case--~n",[RequestType,PDCID,BinaryRequest,Func]),
         {SendPartition, Socket} = case dict:find(Partition, DCPartitionDict) of
                                       {ok, Soc} ->
                                           {Partition, Soc};
@@ -146,12 +148,21 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State
         VersionBinary = ?MESSAGE_VERSION,
         ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
         FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case 2 --~n",[RequestType,PDCID,BinaryRequest,Func]),
         ok = erlzmq:send(Socket, FullRequest),
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case 3 --~n",[RequestType,PDCID,BinaryRequest,Func]),
         RequestEntry = #request_cache_entry{request_type=RequestType, req_id_binary=ReqIdBinary,
                                             func=Func, pdcid={DCID, SendPartition}, binary_req=FullRequest},
-        {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case almost finisched--~n",[RequestType,PDCID,BinaryRequest,Func]),
+
+        Req_Sent = req_sent(ReqIdBinary, RequestEntry, State),
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case finisched--~n",[RequestType,PDCID,BinaryRequest,Func]),
+        {reply, ok,Req_Sent };
     %% If socket not found
-    _ -> {reply, unknown_dc, State}
+    _ ->
+        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--unknown--~n",[RequestType,PDCID,BinaryRequest,Func]),
+        {reply, unknown_dc, State}
+
     end.
 
 close_dc_sockets(DCPartitionDict) ->
@@ -163,6 +174,7 @@ close_dc_sockets(DCPartitionDict) ->
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=Table}) ->
+    %lager:info("handle_info(zmq)--start--~n",[]),
     <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>>
     = binary_utilities:check_message_version(BinaryMsg),
     %% Be sure this is a request from this socket
@@ -179,6 +191,7 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
         [] ->
             lager:error("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
+    %lager:info("handle_info(zmq)--End--~n",[]),
     {noreply, State}.
 
 terminate(_Reason, State) ->

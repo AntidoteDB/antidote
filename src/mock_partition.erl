@@ -52,7 +52,9 @@
     get_stable_snapshot/0,
     inc/2,
     inc/1,
-    dec/1
+    dec/1,
+    get_locks/2,
+    get_locks/3
 ]).
 
 %% States
@@ -166,6 +168,18 @@ inc(_, _) -> ok.
 dec(_) -> ok.
 inc(_) -> ok.
 
+
+
+% added for lock tests
+
+get_locks([a,b], _TransactionId) ->
+    {ok,[dict:new()]};
+get_locks([b,c], _TransactionId) ->
+    {missing_locks, [b,c]}.
+get_locks(_,[a,b], _TransactionId) ->
+    {ok,[dict:new()]};
+get_locks(_,[b,c], _TransactionId) ->
+    {missing_locks, {[],[b,c]}}.
 %%%===================================================================
 %%% STATE FUNCTIONS
 %%%===================================================================

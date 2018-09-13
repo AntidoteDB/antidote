@@ -123,6 +123,14 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
             ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
+		    <<?LOCK_MGR_REQUEST, RequestBinary/binary>> ->
+            ok = inter_dc_query_response:request_locks(RequestBinary, QueryState(?LOCK_MGR_REQUEST));
+        <<?LOCK_MGR_SEND, RequestBinary/binary>> ->
+            ok = inter_dc_query_response:send_locks(RequestBinary, QueryState(?LOCK_MGR_SEND));
+        <<?LOCK_MGR_ES_REQUEST, RequestBinary/binary>> ->
+            ok = inter_dc_query_response:request_locks_es(RequestBinary, QueryState(?LOCK_MGR_ES_REQUEST));
+        <<?LOCK_MGR_ES_SEND, RequestBinary/binary>> ->
+            ok = inter_dc_query_response:send_locks_es(RequestBinary, QueryState(?LOCK_MGR_ES_SEND));
         %% TODO: Handle other types of requests
         _ ->
             ErrorBinary = term_to_binary(bad_request),

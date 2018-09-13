@@ -27,6 +27,7 @@
 %%%-------------------------------------------------------------------
 
 -module(query_optimizer).
+-behaviour(gen_server).
 
 -include("querying.hrl").
 
@@ -34,58 +35,109 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-record(state, {}).
+
 %% API
--export([query_filter/2,
-         get_partial_object/2,
-         get_partial_object/3,
-         get_partial_object/5]).
+-export([query/2,
+    filter_record/3]).
+
+%% gen_server API
+-export([init/1,
+    start_link/0,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3]).
 
 %% TODO support more than one table per filter, for supporting join queries
-query_filter(Filter, TxId) when is_list(Filter) ->
+query(Filter, TxId) when is_list(Filter) ->
+    %gen_server:call(?MODULE, {query, Filter, TxId}, infinity).
     %lager:info("==> Received query: ~p", [Filter]),
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
     TCols = table_utils:column_names(Table),
     Projection = projection(Filter),
 
-    case validate_projection(Projection, TCols) of
-        {error, Msg} ->
-            %lager:info("==> An error occurred: ~p", [Msg]),
-            {error, Msg};
-        {ok, ProjectionCols} ->
-            Conditions = conditions(Filter),
+    Result =
+        case validate_projection(Projection, TCols) of
+            {error, Msg} ->
+                %lager:info("==> An error occurred: ~p", [Msg]),
+                {error, Msg};
+            {ok, ProjectionCols} ->
+                Conditions = conditions(Filter),
 
-            FilteredResult =
-                case Conditions of
-                    [] ->
-                        Index = indexing:read_index(primary, TableName, TxId),
-                        Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
-                        Records = read_records(Keys, TxId),
-                        prepare_records(table_utils:column_names(Table), Table, Records);
-                    _Else ->
-                        apply_filter(Conditions, Table, TxId)
-                end,
-            ResultToList =
-                case is_list(FilteredResult) of
-                    false -> sets:to_list(FilteredResult);
-                    true -> FilteredResult
-                end,
+                FilteredResult =
+                    case Conditions of
+                        [] ->
+                            {ok, Index} = index_manager:read_index(primary, TableName, TxId),
+                            Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
+                            Records = read_records(Keys, TxId),
+                            prepare_records(table_utils:column_names(Table), Table, Records);
+                        _Else ->
+                            apply_filter(Conditions, Table, TxId)
+                    end,
+                ResultToList =
+                    case is_list(FilteredResult) of
+                        false -> sets:to_list(FilteredResult);
+                        true -> FilteredResult
+                    end,
 
-            ApplyProjection = apply_projection(ProjectionCols, ResultToList),
-            %lager:info("==> Final result: ~p", [ApplyProjection]),
-            {ok, ApplyProjection}
-    end.
+                ApplyProjection = apply_projection(ProjectionCols, ResultToList),
+                %lager:info("==> Final result: ~p", [ApplyProjection]),
+                ApplyProjection
+        end,
+    {ok, Result}.
 
-get_partial_object(Key, Type, Bucket, Filter, TxId) ->
-    ObjectKey = querying_utils:build_keys(Key, Type, Bucket),
+filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
+    %gen_server:call(?MODULE, {filter_record, Filter, TxId}, infinity).
+    {_Key, _Type, Bucket} = ObjectKey,
     [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
-    {ok, apply_projection(Filter, Object)}.
-get_partial_object(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
-    [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
-    {ok, apply_projection(Filter, Object)}.
-get_partial_object(Object, Filter) when is_list(Object) ->
-    {ok, apply_projection(Filter, Object)}.
+    Table = table_utils:table_metadata(Bucket, TxId),
+    TCols = table_utils:column_names(Table),
+    Result =
+        case validate_projection(Filter, TCols) of
+            {error, Msg} ->
+                %lager:info("==> An error occurred: ~p", [Msg]),
+                {error, Msg};
+            {ok, Projection} ->
+                {ok, apply_projection(Projection, Object)}
+        end,
+    {ok, Result}.
 
+%% ====================================================================
+%% gen_server functions
+%% ====================================================================
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+init([]) ->
+    lager:info("Started Query Optimizer at node ~p", [node()]),
+    {ok, #state{}}.
+
+handle_call({query, Filter, TxId}, _From, State) ->
+    Result = query(Filter, TxId),
+    {reply, Result, State};
+handle_call({filter_record, ObjKey, Filter, TxId}, _From, State) ->
+    Result = filter_record(ObjKey, Filter, TxId),
+    {reply, Result, State}.
+
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
 table(Filter) ->
     {_, [TableName]} = lists:keyfind(tables, 1, Filter),
     TableName.
@@ -96,9 +148,6 @@ conditions(Filter) ->
     {_, Conditions} = lists:keyfind(conditions, 1, Filter),
     Conditions.
 
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
 apply_filter(Conditions, Table, TxId) ->
     case ?is_disjunction(Conditions) of
         true ->
@@ -180,7 +229,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
 
 iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:name(Table),
-    Index = indexing:read_index(primary, TableName, TxId),
+    {ok, Index} = index_manager:read_index(primary, TableName, TxId),
     Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
     Data = read_records(Keys, TxId),
     PreparedData = prepare_records(table_utils:column_names(Table), Table, Data),
@@ -399,7 +448,8 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
                         [BObj] = querying_utils:build_keys_from_table({AtomVal, Val}, Table, TxId),
                         {Val, BObj};
                     secondary ->
-                        indexing:read_index_function(IndexType, IndexName, {get, Val}, TxId)
+                        {ok, Index} = index_manager:read_index_function(IndexType, IndexName, {get, Val}, TxId),
+                        Index
                 end,
             case Res of
                 {error, _} -> [];
@@ -407,7 +457,7 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             end;
         notequality ->
             {_, Excluded} = Range,
-            Aux = indexing:read_index(IndexType, IndexName, TxId),
+            {ok, Aux} = index_manager:read_index(IndexType, IndexName, TxId),
 
             lists:filter(fun({IdxVal, _}) ->
                 %% inequality predicate
@@ -415,7 +465,7 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             end, Aux);
         range ->
             {{LeftBound, RightBound}, Excluded} = Range,
-            Index = indexing:read_index_function(IndexType, IndexName,
+            {ok, Index} = index_manager:read_index_function(IndexType, IndexName,
                 {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
 
             lists:filter(fun({IdxCol, _}) ->

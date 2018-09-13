@@ -24,6 +24,8 @@
 
 -include("antidote.hrl").
 -include("querying.hrl").
+-include("lock_mgr.hrl").
+-include("lock_mgr_es.hrl").
 
 %% API for applications
 -export([ start/0, stop/0,
@@ -44,7 +46,10 @@
           get_objects/3,
           get_log_operations/1,
           get_default_txn_properties/0,
-          get_txn_property/2
+          get_txn_property/2,
+          get_locks/3,
+          get_locks/4,
+          release_locks/2
         ]).
 
 %% Public API
@@ -123,7 +128,7 @@ unregister_hook(Prefix, Bucket) ->
 start_transaction(Clock, Properties) ->
     cure:start_transaction(Clock, Properties, false).
 
--spec abort_transaction(TxId::txid()) -> {error, reason()}.
+-spec abort_transaction(TxId::txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
     cure:abort_transaction(TxId).
 
@@ -157,7 +162,7 @@ read_objects(Clock, Properties, Objects) ->
 
 -spec query_objects(filter(), txid()) -> {ok, [term()]} | {error, reason()}.
 query_objects(Filter, TxId) ->
-    query_optimizer:query_filter(Filter, TxId).
+    query_optimizer:query(Filter, TxId).
 
 %%%%%%%%%%%%%%%% END OF QUERY ZONE %%%%%%%%%%%%%%%
 
@@ -176,7 +181,8 @@ update_objects(Updates, TxId) ->
             %ok = indexing:create_index_hooks(Updates),
             %cure:update_objects(Updates, TxId);
 
-            NewUpdates = lists:append(Updates, index_triggers:create_index_hooks(Updates, ignore)),
+            {ok, AddUpdates} = index_manager:create_index_hooks(Updates),
+            NewUpdates = lists:append(Updates, AddUpdates),
             %triggers:create_triggers(Updates),
             cure:update_objects(NewUpdates, TxId);
         {error, Reason} ->
@@ -192,12 +198,29 @@ update_objects(Clock, Properties, Updates) ->
             %ok = indexing:create_index_hooks(Updates, TxId),
             %cure:update_objects(Clock, Properties, Updates);
 
-            NewUpdates = lists:append(Updates, index_triggers:create_index_hooks(Updates, ignore)),
+            {ok, AddUpdates} = index_manager:create_index_hooks(Updates),
+            NewUpdates = lists:append(Updates, AddUpdates),
             %triggers:create_triggers(Updates),
             cure:update_objects(Clock, Properties, NewUpdates);
         {error, Reason} ->
             {error, Reason}
     end.
+
+-spec get_locks(default | integer(), [key()], txid()) -> {ok,snapshot_time()} | {locks_not_available,[key()]} | {missing_locks, [{txid(),[key()]}]}.
+get_locks(default, Locks, TxId) ->
+    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
+get_locks(Timeout, Locks, TxId) ->
+    clocksi_interactive_coord:get_locks(Timeout, TxId, Locks).
+
+-spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
+    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
+get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
+    clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
+
+-spec release_locks(locks | es_locks, txid()) -> ok.
+release_locks(Type, TxId) ->
+    clocksi_interactive_coord:release_locks(Type, TxId).
 
 %%% Internal function %%
 %%% ================= %%
