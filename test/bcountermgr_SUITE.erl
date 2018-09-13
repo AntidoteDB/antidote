@@ -42,19 +42,20 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_counter_b).
--define(BUCKET, bcounter_bucket).
--define(RETRY_COUNT, 5).
+-define(BUCKET, bcountermgr_bucket).
+-define(RETRY_COUNT, 10).
 
 
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
 
     %Ensure that write operations are certified
     test_utils:pmap(fun(Node) ->
-        rpc:call(Node, application, set_env,
-        [antidote, txn_cert, true]) end, Nodes),
+        rpc:call(Node, application, set_env, [antidote, txn_cert, true])
+                    end, Nodes),
 
     %Check that indeed transactions certification is turned on
     {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
@@ -69,7 +70,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [
@@ -159,7 +161,7 @@ execute_op(Node, Op, Key, Amount, Actor) ->
 
 %%Auxiliary functions.
 execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
-    ct:print("Execute OP ~p", [Key]),
+    lager:info("Execute OP ~p", [Key]),
     Result = rpc:call(Node, antidote, update_objects,
                       [ignore, [],
                        [{{Key, ?TYPE, ?BUCKET}, Op, {Amount, Actor} }]
@@ -174,7 +176,7 @@ execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
     end.
 
 read_si(Node, Key, CommitTime) ->
-    ct:print("Read si  ~p", [Key]),
+    lager:info("Read si ~p", [Key]),
     rpc:call(Node, antidote, read_objects, [CommitTime, [], [{Key, ?TYPE, ?BUCKET}]]).
 
 check_read(Node, Key, Expected, CommitTime) ->

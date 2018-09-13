@@ -41,9 +41,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(BUCKET, "inter_dc_repl").
+-define(BUCKET, inter_dc_repl_bucket).
 
 init_per_suite(Config) ->
+    ct:print("Starting test suite ~p", [?MODULE]),
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
@@ -64,7 +65,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() -> [simple_replication_test,
@@ -84,7 +86,6 @@ simple_replication_test(Config) ->
     check_read_key(Node1, Key, Type, 3, CommitTime, static),
 
     check_read_key(Node2, Key, Type, 3, CommitTime, static),
-    lager:info("Simple replication test passed!"),
     pass.
 
 multiple_keys_test(Config) ->
@@ -100,7 +101,6 @@ multiple_keys_test(Config) ->
 
     multiple_reads(Node1, Key, Type, 1, 10, 10, CommitTime),
     multiple_reads(Node2, Key, Type, 1, 10, 10, CommitTime),
-    lager:info("Multiple key read-write test passed!"),
     pass.
 
 multiple_writes(Node, PreKey, _Type, Start, End, _Actor)->
@@ -137,7 +137,6 @@ causality_test(Config) ->
     {ok, CommitTime3} = update_sets(Node2, [Key], [{remove, first}], CommitTime2),
     %% Read result
     check_read_key(Node2, Key, Type, [second], CommitTime3, static),
-    lager:info("Causality test passed!"),
     pass.
 
 %% This tests checks reads are atomic when replicated to other DCs
@@ -163,7 +162,7 @@ atomicity_test(Config) ->
                        %% Read until all writes are read and make sure reads see atomic snapshots
                        Delay = 100,
                        Retry = 360000 div Delay, %wait for max 1 min
-                       ok = test_utils:wait_until_result(fun() ->
+                       ok = time_utils:wait_until_result(fun() ->
                                                       atomic_read_txn(Node2, Key1, Key2, Key3, Type)
                                                     end,
                                                     10,

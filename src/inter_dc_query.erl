@@ -162,7 +162,7 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State
     _ ->
         %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--unknown--~n",[RequestType,PDCID,BinaryRequest,Func]),
         {reply, unknown_dc, State}
-
+        
     end.
 
 close_dc_sockets(DCPartitionDict) ->

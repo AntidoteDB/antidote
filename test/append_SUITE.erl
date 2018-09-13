@@ -17,14 +17,6 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc log_test: Test that perform NumWrites increments to the key:key1.
-%%      Each increment is sent to a random node of the cluster.
-%%      Test normal behavior of the logging layer
-%%      Performs a read to the first node of the cluster to check whether all the
-%%      increment operations where successfully applied.
-%%  Variables:  N:  Number of nodes
-%%              Nodes: List of the nodes that belong to the built cluster
-%%
 
 -module(append_SUITE).
 
@@ -63,7 +55,8 @@ end_per_suite(Config) ->
 init_per_testcase(_Case, Config) ->
     Config.
 
-end_per_testcase(_, _) ->
+end_per_testcase(Name, _) ->
+    ct:print("[ OK ] ~p", [Name]),
     ok.
 
 all() ->
@@ -75,15 +68,15 @@ all() ->
 append_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    ct:print("Starting write operation 1"),
+    lager:info("Starting write operation 1"),
     increment_counter(Node, append_key1),
 
-    ct:print("Starting write operation 2"),
+    lager:info("Starting write operation 2"),
     increment_counter(Node, append_key2),
 
-    ct:print("Starting read operation 1"),
+    lager:info("Starting read operation 1"),
     read_counter(Node, append_key1, 1),
-    ct:print("Starting read operation 2"),
+    lager:info("Starting read operation 2"),
     read_counter(Node, append_key2, 1).
 
 append_failure_test(Config) ->
@@ -93,10 +86,10 @@ append_failure_test(Config) ->
 
     %% Identify preference list for a given key.
     Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [Key]),
-    ct:print("Preference list: ~p", [Preflist]),
+    lager:info("Preference list: ~p", [Preflist]),
 
     NodeList = [Node || {_Index, Node} <- Preflist],
-    ct:print("Responsible nodes for key: ~p", [NodeList]),
+    lager:info("Responsible nodes for key: ~p", [NodeList]),
 
     {A, _} = lists:split(1, NodeList),
     First = hd(A),
