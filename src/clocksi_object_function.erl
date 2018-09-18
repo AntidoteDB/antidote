@@ -62,10 +62,11 @@ sync_execute_object_function(Transaction, IndexNode, Key, Type, ReadFun, WriteSe
             {ok, S} ->
                 S;
             error ->
-                case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                    {ok, S}->
+                Args = {IndexNode, Transaction, WriteSet, Key, Type},
+                case gen_statem:call(querying_utils, {read_async, Args}) of %clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                    {ok, S} ->
                         S;
-                    {error, Reason1}->
+                    {error, Reason1} ->
                         {error, {exec_object_function_failed, Reason1}}
                 end
         end,

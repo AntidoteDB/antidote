@@ -27,6 +27,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(querying_utils).
+-behavior(gen_statem).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -40,7 +41,15 @@
 -include("lock_mgr.hrl").
 -include("lock_mgr_es.hrl").
 
+-record(state, {
+    from :: undefined | {pid(), term()} | pid(),
+    meta :: term()
+}).
+
 %% API
+%% API
+-export([start_link/0]).
+
 -export([build_keys/3, build_keys_from_table/3,
     read_keys/3, read_keys/2,
     read_function/3, read_function/2,
@@ -56,6 +65,21 @@
     is_list_of_lists/1,
     replace/3,
     first_occurrence/2]).
+
+%% gen_statem callbacks
+-export([
+    init/1,
+    code_change/4,
+    callback_mode/0,
+    terminate/3,
+    stop/1
+]).
+
+%% states
+-export([
+    execute/3,
+    receive_read_async/3
+]).
 
 build_keys([], _Types, _Bucket) -> [];
 build_keys(Keys, Types, Bucket) when is_list(Keys) and is_list(Types) ->
@@ -136,12 +160,25 @@ read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, UpdatedPartitions})
         WriteSet = get_write_set(Partition, UpdatedPartitions),
 
         case clocksi_object_function:sync_execute_object_function(
-            TxId, Partition, Key, Type, {Function, Args}, WriteSet, ReadSet) of
+            TxId, Partition, {Key, Bucket}, Type, {Function, Args}, WriteSet, ReadSet) of
             {ok, {Key, Type, _, _, Value}} ->
                 Value;
             {error, Reason} ->
                 {error, Reason}
         end
+        %Args = {Partition, TxId, WriteSet, Key, Type},
+        %case gen_statem:call(?MODULE, {read_async, Args}) of
+        %    {ok, Snapshot} ->
+        %        case Type:is_operation({Function, Args}) of
+        %            true ->
+        %                Value = Type:value({Function, Args}, Snapshot),
+        %                Value;
+        %            false ->
+        %                {error, {function_not_supported, {Function, Args}}}
+        %        end;
+        %    {error, Reason} ->
+        %        {error, Reason}
+        %end
     end, ObjKeys);
 read_function(ObjKey, Range, TxId) ->
     read_function([ObjKey], Range, TxId).
@@ -287,6 +324,47 @@ first_occurrence(Predicate, [Elem | List]) ->
 first_occurrence(_Predicate, []) -> undefined.
 
 %% ====================================================================
+%% gen_statem functions
+%% ====================================================================
+
+start_link() ->
+    gen_statem:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+init([]) ->
+    State = #state{},
+    {ok, execute, State}.
+
+execute({call, Sender}, {Op, Args}, State) ->
+    case execute_util(Op, Args, Sender, State) of
+        {receive_read_async, NewState} ->
+            {next_state, receive_read_async, NewState}
+    end.
+
+execute_util(read_async, Args, Sender, _State) ->
+    {Partition, Transaction, WriteSet, Key, Type} = Args,
+    ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+    {receive_read_async, #state{from = Sender, meta = WriteSet}}.
+
+receive_read_async(cast, Response, _State = #state{from = Sender, meta = WriteSet}) ->
+    case Response of
+        {ok, {_, Key, Type, Snapshot}} ->
+            Updates2 = clocksi_vnode:reverse_and_filter_updates_per_key(WriteSet, Key),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            {next_state, execute, #state{from = undefined},
+                [{reply, Sender, {ok, Snapshot2}}]};
+        {error, Reason} ->
+            {next_state, execute, #state{from = undefined},
+                [{reply, Sender, {error, Reason}}]}
+    end.
+
+code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+terminate(_Reason, _SN, _SD) -> ok.
+callback_mode() -> state_functions.
+
+stop(Pid) -> gen_statem:stop(Pid).
+
+%% ====================================================================
 %% Internal functions
 %% ====================================================================
 
@@ -336,7 +414,9 @@ read_data_item({Key, Type, Bucket}, {Transaction, ReadSet, UpdatedPartitions}) -
             Partition = ?LOG_UTIL:get_key_partition(SendKey),
             WriteSet = get_write_set(Partition, UpdatedPartitions),
 
-            {ok, Snapshot} = clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
+            Args = {Partition, Transaction, WriteSet, SendKey, Type},
+
+            {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}),% clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
             {ok, Snapshot};
         {ok, State} ->
             {ok, State}

@@ -91,9 +91,11 @@ read_index_function(secondary, {TableName, IndexName}, {Function, Args}, TxId) -
     {ok, IdxObj}.
 
 generate_index_key(primary, TableName) ->
-    gen_server:call(?MODULE, {generate_index_key, primary, TableName}, infinity).
+    %gen_server:call(?MODULE, {generate_index_key, primary, TableName}, infinity).
+    {ok, pindex_key(TableName)}.
 generate_index_key(secondary, TableName, IndexName) ->
-    gen_server:call(?MODULE, {generate_index_key, secondary, TableName, IndexName}, infinity).
+    %gen_server:call(?MODULE, {generate_index_key, secondary, TableName, IndexName}, infinity).
+    {ok, sindex_key(TableName, IndexName)}.
 
 get_indexed_values(IndexObj) ->
     gen_server:call(?MODULE, {get_indexed_values, IndexObj}, infinity).
@@ -102,7 +104,8 @@ get_database_keys(IndexedValues, IndexObj) ->
     gen_server:call(?MODULE, {get_database_keys, IndexedValues, IndexObj}, infinity).
 
 lookup_index(ColumnName, Indexes) ->
-    gen_server:call(?MODULE, {lookup_index, ColumnName, Indexes}, infinity).
+    %gen_server:call(?MODULE, {lookup_index, ColumnName, Indexes}, infinity).
+    {ok, lookup_index(ColumnName, Indexes, [])}.
 
 create_index_hooks(Updates) ->
     %gen_server:call(?MODULE, {index_hooks, Updates}, infinity).
@@ -136,14 +139,16 @@ handle_call({read_function, secondary, {TName, IName}, {Function, Args}, TxId}, 
     {reply, Result, State};
 
 handle_call({generate_index_key, primary, TName}, _From, State) ->
-    {reply, {ok, pindex_key(TName)}, State};
+    Result = generate_index_key(primary, TName),
+    {reply, Result, State};
 
 handle_call({generate_index_key, secondary, TName, IName}, _From, State) ->
-    {reply, {ok, sindex_key(TName, IName)}, State};
+    Result = generate_index_key(secondary, TName, IName),
+    {reply, Result, State};
 
 handle_call({lookup_index, CName, Indexes}, _From, State) ->
-    Index = lookup_index(CName, Indexes, []),
-    {reply, {ok, Index}, State};
+    Result = lookup_index(CName, Indexes),
+    {reply, Result, State};
 
 handle_call({get_indexed_values, IndexObj}, _From, State) ->
     IValues = indexed_values(IndexObj),

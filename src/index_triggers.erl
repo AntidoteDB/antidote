@@ -190,12 +190,13 @@ fill_index(ObjUpdate, Table, Transaction) ->
         Indexes when is_list(Indexes) ->
             lists:foldl(fun(Index, Acc) ->
                 % A new index was created
-                %lager:info("A new index was created"),
+                %lager:info("A new index was created: ~p", Indexes),
 
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
                 %[PrimaryKey] = table_utils:primary_key_name(NewTable),
                 {ok, PIndexObject} = index_manager:read_index(primary, TableName, Transaction),
                 %SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
+                %lager:info("Primary index: ~p", [PIndexObject]),
 
                 IdxUpds = lists:map(fun({RawKey, BoundKey}) ->
                     case record_utils:record_data(BoundKey, Transaction) of
