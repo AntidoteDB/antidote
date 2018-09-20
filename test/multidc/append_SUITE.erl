@@ -40,7 +40,7 @@
 -define(BUCKET, test_utils:bucket(append_bucket)).
 
 init_per_suite(Config) ->
-    test_utils:init_single_dc(?MODULE, Config).
+    test_utils:init_multi_dc(?MODULE, Config).
 
 
 end_per_suite(Config) ->
