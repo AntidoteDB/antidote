@@ -70,10 +70,12 @@ all() -> [ replication_test ].
 
 
 replication_test(Config) ->
+    Bucket = ?BUCKET,
     [Node1, Node2 | _] = proplists:get_value(nodes, Config),
 
     O1 = {gr_repl_key1, antidote_crdt_counter_pn, bucket},
     O2 = {gr_repl_key2, antidote_crdt_counter_pn, bucket},
+
     %% Write to DC1
     {ok, _CT1} = rpc:call(Node1, antidote, update_objects, [ignore, [], [{O1, increment, 1}]]),
     %% Write to DC2
