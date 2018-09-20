@@ -176,7 +176,12 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                     SIdxUpdates = create_sindex_updates(PrepareIdxUpdates, Transaction),
                     %lager:info("SIdxUpdates: ~p", [SIdxUpdates]),
 
-                    lists:append([PIdxUpdate], SIdxUpdates)
+                    case PIdxUpdate of
+                        none ->
+                            SIdxUpdates;
+                        _ ->
+                            lists:append([PIdxUpdate], SIdxUpdates)
+                    end
             end;
         _ -> []
     end.
@@ -295,24 +300,29 @@ retrieve_index(ObjUpdate, Table) ->
     NewIndexes.
 
 create_pindex_update(ObjBoundKey, Updates, Table, PIndexKey, Transaction) ->
-    TableCols = table_utils:columns(Table),
-    [PKName] = table_utils:primary_key_name(Table),
-    {PKName, PKType, _Constraint} = maps:get(PKName, TableCols),
-    PKCRDT = crdt_utils:type_to_crdt(PKType, ignore),
+    case proplists:get_value({?STATE_COL, ?STATE_COL_DT}, Updates) of
+        {_, i} ->
+            TableCols = table_utils:columns(Table),
+            [PKName] = table_utils:primary_key_name(Table),
+            {PKName, PKType, _Constraint} = maps:get(PKName, TableCols),
+            PKCRDT = crdt_utils:type_to_crdt(PKType, ignore),
 
-    ConvPKey = case proplists:get_value({PKName, PKCRDT}, Updates) of
-                   {_Op, Value} ->
-                       Value;
-                   undefined ->
-                       [Record] = record_utils:record_data(ObjBoundKey, Transaction),
-                       record_utils:lookup_value({PKName, PKCRDT}, Record)
-               end,
+            ConvPKey = case proplists:get_value({PKName, PKCRDT}, Updates) of
+                           {_Op, Value} ->
+                               Value;
+                           undefined ->
+                               [Record] = record_utils:record_data(ObjBoundKey, Transaction),
+                               record_utils:lookup_value({PKName, PKCRDT}, Record)
+                       end,
 
-    PIdxOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ObjBoundKey),
+            PIdxOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, ObjBoundKey),
 
-    {{IdxKey, IdxType, IdxBucket}, UpdateType, IndexOp} =
-        crdt_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {ConvPKey, PIdxOp}),
-    {{IdxKey, IdxBucket}, IdxType, {UpdateType, IndexOp}}.
+            {{IdxKey, IdxType, IdxBucket}, UpdateType, IndexOp} =
+                crdt_utils:create_crdt_update(PIndexKey, ?INDEX_OPERATION, {ConvPKey, PIdxOp}),
+            {{IdxKey, IdxBucket}, IdxType, {UpdateType, IndexOp}};
+        _ ->
+            none
+    end.
 
 filter_table_name(Bucket) when is_atom(Bucket) ->
     BucketStr = atom_to_list(Bucket),
