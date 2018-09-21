@@ -1,6 +1,6 @@
-{application, antidote_pb,
+{application, antidotec_pb,
  [
-  {description, "Protocol Buffer client for antidote"},
+  {description, "Protocol Buffer client of AntidoteDB for Erlang"},
   {vsn, "1"},
   {registered, []},
   {applications, [
@@ -9,6 +9,6 @@
                  ]},
   {included_applications, [
       riak_pb
-  ]},               
+  ]},
   {env, []}
  ]}.
