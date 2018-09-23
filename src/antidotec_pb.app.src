@@ -10,6 +10,6 @@
                  ]},
   {maintainers, ["Annette Bieniusa", "Goncalo Tomas"]},
   {licenses, ["Apache 2.0"]},
-  {links,[{"Github","https://github.com/AntidoteDB/antidote-erlang-client"}]}
+  {links,[{"Github","https://github.com/AntidoteDB/antidote-erlang-client"}]},
   {env, []}
  ]}.
