@@ -1,14 +1,15 @@
 {application, antidotec_pb,
  [
   {description, "Protocol Buffer client of AntidoteDB for Erlang"},
-  {vsn, "1"},
+  {vsn, "0.2.2"},
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  riak_pb
                  ]},
-  {included_applications, [
-      riak_pb
-  ]},
+  {maintainers, ["Annette Bieniusa", "Goncalo Tomas"]},
+  {licenses, ["Apache 2.0"]},
+  {links,[{"Github","https://github.com/AntidoteDB/antidote-erlang-client"}]},
   {env, []}
  ]}.

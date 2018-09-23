@@ -1,10 +1,10 @@
 # Erlang client for Antiodote
-[![Build Status](https://travis-ci.org/AntidoteDB/antidote_pb.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote_pb)
+[![Build Status](https://travis-ci.org/AntidoteDB/antidote-erlang-client.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote-erlang-client)
 
 ## Interface for transactions
-     
+
 * start\_transaction (Pid, timestamp, properties) --> transaction\_descriptor
-  
+
   starts a new transaction and returns a transaction_descriptor which is a transaction identifier to be used with further operations of the transaction. timestamp provides the causality information. properties is a list of configurable parameters for the transaction. Currently only property supported which specifies to use static or interactive transactions.
 Example:
 
@@ -21,8 +21,8 @@ Example:
 
 * update\_objects (Pid, [{bound\_object, operation, op_parameters}], transaction\_descriptor) -> ok
 
-  update a set of object with the specified operations. operation is any allowed (upstream) operation on the crdt type for bound\_object, op\_parameters are parameters to the operation. 
-  Example: 
+  update a set of object with the specified operations. operation is any allowed (upstream) operation on the crdt type for bound\_object, op\_parameters are parameters to the operation.
+  Example:
 
            Obj = antidotec_counter:increment(1, antidotec_counter:new()),
            ok = antidotec_pb:update_objects(Pid,
@@ -36,7 +36,7 @@ Example:
 
 
 ## Example
-    
+
     %% Starts pb socket
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
 
