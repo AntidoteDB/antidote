@@ -1,14 +1,15 @@
 {application, antidote_pb_codec,
     [
         {description, "Protocol buffer codec for Antidote"},
-        {vsn, "1"},
-        {modules, [
-            antidote_pb_codec
-        ]},
+        {vsn, "0.0.3"},
         {registered, []},
         {applications, [
             kernel,
             stdlib
         ]},
-        {env, []}
+        {env, []},
+        {modules, []},
+        {maintainers, ["Goncalo Tomas", "Peter Zeller", "Annette Bieniusa"]},
+        {licenses, ["Apache 2.0"]},
+        {links,[{"Github","https://github.com/AntidoteDB/antidote_pb_codec"}]}
     ]}.
