@@ -1,7 +1,7 @@
 {application, antidote_crdt,
  [
-  {description, "An Erlang antidote_crdt library"},
-  {vsn, "1"},
+  {description, "An Erlang CRDT library"},
+  {vsn, "0.1.2"},
   {modules, [
              antidote_crdt
             ]},
@@ -10,5 +10,8 @@
                   kernel,
                   stdlib
                  ]},
-  {env, []}
+  {env, []},
+  {maintainers, ["Annette Bieniusa", "Goncalo Tomas", "Peter Zeller", "Albert Schimpf"]},
+  {licenses, ["Apache 2.0"]},
+  {links,[{"Github","https://github.com/AntidoteDB/antidote_crdt"}]}
  ]}.

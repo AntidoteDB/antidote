@@ -8,7 +8,6 @@ install:
   - mkdir -p ~/.config/rebar3/
   - echo "{plugins, [{rebar3_proper, \"0.9.0\"}]}." > ~/.config/rebar3/rebar.config
   - make
-  - ./rebar3 update
 script:
   - make test
   - make dialyzer

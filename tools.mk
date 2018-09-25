@@ -1,13 +1,13 @@
 .PHONY: compile-no-deps test docs xref dialyzer \
-		
+
 compile-no-deps:
-	${REBAR} compile skip_deps=true
+	${REBAR} compile
 
 docs:
-	${REBAR} doc skip_deps=true
+	${REBAR} doc
 
 xref: compile
-	${REBAR} xref skip_deps=true
+	${REBAR} xref
 
 dialyzer: compile
 	${REBAR} dialyzer

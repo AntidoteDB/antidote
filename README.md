@@ -1,5 +1,5 @@
 # Antidote CRDT library
-[![Build Status](https://travis-ci.org/SyncFree/antidote_crdt.svg?branch=master)](https://travis-ci.org/SyncFree/antidote_crdt)
+[![Build Status](https://travis-ci.org/AntidoteDB/antidote_crdt.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote_crdt)
 
 Operation based CRDT implementations to use with Antidote.
 
