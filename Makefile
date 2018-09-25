@@ -1,4 +1,4 @@
-REBAR = $(shell pwd)/rebar3
+REBAR = rebar3
 
 all: compile
 
@@ -17,14 +17,14 @@ cleantests:
 
 test:
 	mkdir -p logs
-	${REBAR} eunit skip_deps=true
+	${REBAR} eunit
 	${REBAR} cover
 
 docs:
-	${REBAR} doc skip_deps=true
+	${REBAR} doc
 
 xref: compile
-	${REBAR} xref skip_deps=true
+	${REBAR} xref
 
 dialyzer:
 	${REBAR} dialyzer
