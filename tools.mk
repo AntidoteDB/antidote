@@ -1,13 +1,13 @@
 REBAR ?= $(shell pwd)/rebar3
 
 test: compile
-	${REBAR} eunit skip_deps=true
+	${REBAR} eunit
 
 docs:
-	${REBAR} doc skip_deps=true
+	${REBAR} doc
 
 xref:	compile
-	${REBAR} xref skip_deps=true
+	${REBAR} xref
 
 dialyzer:	compile
 	${REBAR} dialyzer
