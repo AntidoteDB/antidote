@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(antidotec_set).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 -behaviour(antidotec_datatype).
 

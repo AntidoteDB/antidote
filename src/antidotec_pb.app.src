@@ -6,7 +6,7 @@
   {applications, [
                   kernel,
                   stdlib,
-                  riak_pb
+                  antidote_pb_codec
                  ]},
   {maintainers, ["Annette Bieniusa", "Goncalo Tomas", "Peter Zeller", "Albert Schimpf"]},
   {licenses, ["Apache 2.0"]},

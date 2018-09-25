@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(antidotec_pb_socket).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 -behaviour(gen_server).
 
@@ -47,7 +47,7 @@
          }).
 
 
--export([start_link/2, 
+-export([start_link/2,
          start_link/3,
          start/2,
          start/3,
@@ -70,7 +70,7 @@ init([Address, Port, _Options]) ->
     case connect(State) of
         {error, Reason} ->
             {stop, {tcp, Reason}};
-        {ok, State2} -> 
+        {ok, State2} ->
             {ok, State2}
     end.
 
@@ -107,7 +107,7 @@ store_commit_time(Pid, TimeStamp) ->
     gen_server:call(Pid, {store_commit_time, TimeStamp}, infinity).
 
 get_last_commit_time(Pid) ->
-    gen_server:call(Pid, get_commit_time, infinity). 
+    gen_server:call(Pid, get_commit_time, infinity).
 
 %% @private
 handle_call({req, Msg, Timeout}, From, State) ->
@@ -127,7 +127,7 @@ handle_call(stop, _From, State) ->
 %% @todo handle timeout
 handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
-    Response = riak_pb_codec:decode(MsgCode, MsgData),
+    Response = antidote_pb_codec:decode(MsgCode, MsgData),
     cancel_req_timer(Active#request.tref),
     _ = send_caller(Response, Active),
     NewState = State#state{active = undefined},
@@ -166,7 +166,7 @@ connect(State) when State#state.sock =:= undefined ->
                          State#state.connect_timeout) of
         {ok, Sock} ->
             {ok, State#state{sock = Sock}};
-        {error, Reason} -> 
+        {error, Reason} ->
             {error, Reason}
     end.
 
@@ -220,9 +220,8 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
 
 %% Unencoded Request (the normal PB client path)
 encode_request_message(#request{msg=Msg}=Req) ->
-    EncMsg = riak_pb_codec:encode(Msg),
+    EncMsg = antidote_pb_codec:encode(Msg),
     {Req, EncMsg}.
-    %{Req, riak_pb_codec:encode(Msg)}.
 
 %% maybe_reply({reply, Reply, State = #state{active = Request}}) ->
 %%   NewRequest = send_caller(Reply, Request),

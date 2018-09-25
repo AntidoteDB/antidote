@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(antidotec_counter).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 -behaviour(antidotec_datatype).
 
@@ -79,7 +79,7 @@ decrement(Counter) ->
 
 %% @doc Decrements the counter by the passed amount.
 -spec decrement(integer(), antidotec_counter()) -> antidotec_counter().
-decrement(Amount, #counter{increment=Value}=Counter) 
+decrement(Amount, #counter{increment=Value}=Counter)
   when is_integer(Amount) ->
     Counter#counter{increment=Value-Amount}.
 
