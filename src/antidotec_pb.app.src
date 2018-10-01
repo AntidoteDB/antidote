@@ -1,6 +1,6 @@
 {application, antidotec_pb,
  [
-  {description, "AntidoteDB Erlang Client"},
+  {description, "Antidote Erlang Client Library"},
   {vsn, "0.2.5"},
   {registered, []},
   {applications, [
