@@ -56,7 +56,7 @@ start_transaction(Pid, TimeStamp, TxnProperties) ->
             end
     end.
 
--spec abort_transaction(Pid::term(), TxId::term()) -> ok.
+-spec abort_transaction(Pid::term(), TxId::term()) -> ok | {error, term()}.
 abort_transaction(Pid, {interactive, TxId}) ->
     EncMsg = antidote_pb_codec:encode(abort_transaction, TxId),
     Result = antidotec_pb_socket:call_infinity(Pid,{req, EncMsg, ?TIMEOUT}),
