@@ -25,7 +25,7 @@ message ApbErrorResp {
 //------------------
 // Counter
 
-// Counter increment requenst
+// Counter increment request
 message ApbCounterUpdate {
     // inc indicates the value to be incremented. To decrement, use a negative value. If no value is given, it will be considered as an increment by 1
     optional sint64 inc = 1;
@@ -233,4 +233,30 @@ message ApbCommitResp {
 message ApbStaticReadObjectsResp {
     required ApbReadObjectsResp objects = 1;
     required ApbCommitResp committime = 2;
+}
+
+//------------ Cluster Management API ---------
+
+// Create a DC with multiple nodes
+message ApbCreateDC {
+  // name of antidote nodes of the form 'antidote@hostname' or 'antidote@ip'
+  repeated string nodes = 1;
+}
+
+// Get a connection descriptor of the DC to be given to other DCs.
+message ApbGetConnectionDescriptor {
+}
+
+message ApbGetConnectionDescriptorResp {
+  required bool success = 1;
+  //structure of descriptor is internal to antidote.
+  optional bytes descriptor = 2;
+  optional uint32 errorcode = 3;
+}
+
+// Connect DC with each other to start replication.
+// This message must be send to all DCs.
+message ApbConnectToDCs {
+  // descriptors is a list of connection information of all DCs obtained from ApbGetConnectionDescriptorResp.descriptor
+    repeated bytes descriptors = 1;
 }

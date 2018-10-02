@@ -272,4 +272,34 @@
         }).
 -endif.
 
+-ifndef('APBCREATEDC_PB_H').
+-define('APBCREATEDC_PB_H', true).
+-record('ApbCreateDC',
+        {nodes = []                     % = 1, [string]
+        }).
+-endif.
+
+-ifndef('APBGETCONNECTIONDESCRIPTOR_PB_H').
+-define('APBGETCONNECTIONDESCRIPTOR_PB_H', true).
+-record('ApbGetConnectionDescriptor',
+        {
+        }).
+-endif.
+
+-ifndef('APBGETCONNECTIONDESCRIPTORRESP_PB_H').
+-define('APBGETCONNECTIONDESCRIPTORRESP_PB_H', true).
+-record('ApbGetConnectionDescriptorResp',
+        {success,                       % = 1, bool
+         descriptor,                    % = 2, bytes (optional)
+         errorcode                      % = 3, uint32 (optional)
+        }).
+-endif.
+
+-ifndef('APBCONNECTTODCS_PB_H').
+-define('APBCONNECTTODCS_PB_H', true).
+-record('ApbConnectToDCs',
+        {descriptors = []               % = 1, [bytes]
+        }).
+-endif.
+
 -endif.
