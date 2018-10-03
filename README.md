@@ -6,7 +6,7 @@ Operation based CRDT implementations to use with Antidote.
 # API
 
 The `antidote_crdt` module provides the API below.
-For a more detailed description of the different data types, the [Antidote Documentation](http://syncfree.github.io/antidote/crdts.html) provides more information.
+For a more detailed description of the different data types, the [Antidote Documentation](https://antidotedb.gitbook.io/documentation/api/datatypes) provides more information.
 
 ```erlang
 % The CRDTs supported by Antidote:
