@@ -21,31 +21,26 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/7]).
+-export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
-  Type :: type(), Update :: op_param(), list(), orddict:orddict()) ->
+  Type :: type(), Update :: op_param(), list()) ->
     {ok, effect()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
     %% TODO: Check if read can be omitted for some types as registers
     NeedState = Type:require_state_downstream(Update),
     Result =
-        %% If state is needed to generate downstream, get it from txn buffer or materializer cache.
+        %% If state is needed to generate downstream, read it from the partition.
         case NeedState of
           true ->
-            case orddict:find(Key, InternalReadSet) of
-              {ok, S} ->
-                  S;
-              error ->
-                  case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                      {ok, S}->
-                          S;
-                      {error, Reason}->
-                          {error, {gen_downstream_read_failed, Reason}}
-                  end
+            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                {ok, S}->
+                    S;
+                {error, Reason}->
+                    {error, {gen_downstream_read_failed, Reason}}
             end;
           false ->
               {ok, ignore} %Use a dummy value

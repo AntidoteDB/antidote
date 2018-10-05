@@ -259,7 +259,6 @@ finish_op(From, Key, Result) ->
     | undefined | aborted,
     operations :: undefined | list() | {update_objects, list()},
     return_accumulator :: list() | ok | {error, reason()},
-    internal_read_set :: orddict:orddict(),
     is_static :: boolean(),
     full_commit :: boolean(),
     properties :: txn_properties(),
@@ -477,27 +476,24 @@ receive_aborted(info, {_EventType, EventValue}, State) ->
 %% @doc After asynchronously reading a batch of keys, collect the responses here
 receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #coord_state{
     num_to_read = NumToRead,
-    return_accumulator = ReadKeys,
-    internal_read_set = ReadSet
+    return_accumulator = ReadKeys
 }) ->
-    %% TODO: type is hard-coded..
+    %% Apply local updates to the read snapshot
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
 
     %% Swap keys with their appropriate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
-    NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of
         true ->
             {next_state, receive_read_objects_result, CoordState#coord_state{
                 num_to_read = NumToRead - 1,
-                return_accumulator = ReadValues,
-                internal_read_set = NewReadSet
+                return_accumulator = ReadValues
             }};
 
         false ->
-            {next_state, execute_op, CoordState#coord_state{num_to_read = 0, internal_read_set = NewReadSet},
+            {next_state, execute_op, CoordState#coord_state{num_to_read = 0},
                 [{reply, CoordState#coord_state.from, {ok, lists:reverse(ReadValues)}}]}
     end;
 
@@ -646,7 +642,6 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
         full_commit = FullCommit,
         is_static = IsStatic,
         return_accumulator = [],
-        internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         properties = Properties
     }.
@@ -715,15 +710,13 @@ execute_command(abort, _Protocol, Sender, State) ->
 %% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #coord_state{
     transaction=Transaction,
-    internal_read_set=InternalReadSet,
     updated_partitions=UpdatedPartitions
 }) ->
     case perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) of
         {error, _} ->
             abort(State);
         ReadResult ->
-            NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
-            {{ok, ReadResult}, execute_op, State#coord_state{internal_read_set=NewInternalReadSet}}
+            {{ok, ReadResult}, execute_op, State}
     end;
 
 %% @doc Read a batch of objects, asynchronous
@@ -748,10 +741,9 @@ execute_command(read_objects, Objects, Sender, State = #coord_state{transaction=
 execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transaction=Transaction}) ->
     ExecuteUpdates = fun(Op, AccState=#coord_state{
         client_ops = ClientOps0,
-        internal_read_set = ReadSet,
         updated_partitions = UpdatedPartitions0
     }) ->
-        case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
+        case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0) of
             {error, _} = Err ->
                 AccState#coord_state{return_accumulator = Err};
 
@@ -961,7 +953,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
+perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
@@ -988,8 +980,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                 Key,
                 Type,
                 PostHookUpdate,
-                WriteSet,
-                InternalReadSet
+                WriteSet
             ),
 
             case GenerateResult of
