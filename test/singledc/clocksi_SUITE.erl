@@ -203,18 +203,18 @@ clocksi_read_write_write_txn_test(Config) ->
     BoundObj = {Key1, antidote_crdt_register_mv, ?BUCKET},
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [], ignore, TxId),
+    antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [], ignore, TxId),
 
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"b">>}], TxId]),
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"c">>}], TxId]),
 
-    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
+    antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
     ?assertMatch({ok, _CausalSnapshot}, End),
     {ok, CausalSnapshot} = End,
-    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
+    antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
 
     pass.
 
