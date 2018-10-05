@@ -38,6 +38,7 @@
     clocksi_test4/1,
     clocksi_test5/1,
     clocksi_multiple_updates_per_txn_test/1,
+    clocksi_read_write_write_txn_test/1,
     clocksi_test_read_wait/1,
     clocksi_single_key_update_read_test/1,
     clocksi_multiple_key_update_read_test/1,
@@ -195,6 +196,27 @@ clocksi_multiple_updates_per_txn_test(Config) ->
     antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static, Bucket),
     pass.
 
+clocksi_read_write_write_txn_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    FirstNode = hd(Nodes),
+    Key1=clocksi_read_write_write_txn_key1,
+    BoundObj = {Key1, antidote_crdt_register_mv, ?BUCKET},
+
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [], ignore, TxId),
+
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"b">>}], TxId]),
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"c">>}], TxId]),
+
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
+
+    End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
+    ?assertMatch({ok, _CausalSnapshot}, End),
+    {ok, CausalSnapshot} = End,
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
+
+    pass.
 
 %% @doc The following function tests that ClockSI can run both a single
 %%      read and a bulk-update tx.
