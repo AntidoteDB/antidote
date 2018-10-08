@@ -29,7 +29,7 @@
 -spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
   Type :: type(), Update :: op_param(), list()) ->
     {ok, effect()} | {error, atom()}.
-generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
+generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
     %% TODO: Check if read can be omitted for some types as registers
     NeedState = Type:require_state_downstream(Update),
     Result =
