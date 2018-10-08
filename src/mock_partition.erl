@@ -39,7 +39,7 @@
     get_clock_of_dc/2,
     get_preflist_from_key/1,
     read_data_item/5,
-    generate_downstream_op/7,
+    generate_downstream_op/6,
     get_key_partition/1,
     get_logid_from_key/1,
     update_data_item/5,
@@ -146,7 +146,7 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
             {ok, mock_value}
     end.
 
-generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) ->
+generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
     case Key of
         downstream_fail ->
             {error, mock_downstream_fail};
@@ -210,4 +210,3 @@ callback_mode() -> state_functions.
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) -> ok.
-
