@@ -34,7 +34,7 @@ This function starts a new transaction and returns a transaction identifier, to 
 
 **Interactive transactions** can combine multiple read and update operations into an atomic transaction. Updates issued in the context of an interactive transaction are visible to read operations issued in the same context after the updates. Interactive transactions have to be committed in order to make the updates visible to subsequent transactions.
 
-The default transaction type is `interactive`. Currently you can create `static` transactions by using the alternative `start_transaction/3` callback, that accepts an additional list of transaction properties (you can pass in `[static]` to the third parameter in order to get static transactions).
+The default transaction type is `interactive`. Currently you can create `static` transactions by using the alternative `start_transaction/3` callback, that accepts an additional list of transaction properties (you can pass in `[{static, true}]` to the third parameter in order to get static transactions).
 
 Here is a simple example:
 
@@ -42,7 +42,7 @@ Here is a simple example:
 Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 %% ignore leaves out the clock parameter in the following calls
 {ok, TxId1} = antidotec_pb:start_transaction(Pid, ignore). %% interactive transaction
-{ok, TxId2} = antidotec_pb:start_transaction(Pid, ignore, [static]). %% static transaction
+{ok, TxId2} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]). %% static transaction
 ```
 
 #### read_objects(Pid, ListBoundOjects, TxId) -> {ok, Vals} | {error, Reason}.
@@ -57,7 +57,7 @@ Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
 RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
 %% start a static transaction
-{ok, TxId} = start_transaction(Pid, Clock, [static]).
+{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
 %% read values from antidote
 {ok, [Counter, Register]} = antidotec_pb:read_objects(Pid, [CounterBoundObj, RegisterBoundObj], TxId).
 %% get the actual values out of the CRDTs
@@ -76,7 +76,7 @@ Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
 RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
 %% start a static transaction
-{ok, TxId} = start_transaction(Pid, Clock, [static]).
+{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
 %% Perform local updates
 %% Get a new counter object and increment its value by 5
 UpdatedCounter = antidotec_counter:increment(5, antidote_crdt_counter:new())
