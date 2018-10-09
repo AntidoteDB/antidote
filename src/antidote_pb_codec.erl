@@ -27,7 +27,11 @@
 
 -export([encode/2,
   decode/2,
-  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1, encode_error_resp/2, decode_error_resp/1, encode_message/1, decode_message/1]).
+  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1, encode_error_resp/2, decode_error_resp/1, encode_message/1,
+  decode_message/1, encode_create_DC/1, decode_create_DC/1, encode_get_connection_descriptor/0, decode_get_connection_descriptor/1,
+  encode_get_connection_descriptor_resp/1, decode_get_connection_descriptor_resp/1,
+  encode_connect_to_DCs/1, decode_connect_to_DCs/1
+  ]).
 
 -define(TYPE_COUNTER, counter).
 -define(TYPE_SET, set).
@@ -55,6 +59,10 @@
 | #'ApbReadObjects'{}
 | #'ApbReadObjectsResp'{}
 | #'ApbOperationResp'{}
+| #'ApbCreateDC'{}
+| #'ApbGetConnectionDescriptor'{}
+| #'ApbGetConnectionDescriptorResp'{}
+| #'ApbConnectToDCs'{}
 .
 
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
@@ -75,15 +83,17 @@
 | {update_objects, {Updates :: [update()], TxId :: binary()}}
 | {static_update_objects, {Clock :: binary(), Properties :: list(), Updates :: [update()]}}
 | {static_read_objects, {Clock :: binary(), Properties :: list(), Objects :: [bound_object()]}}
-| {read_objects, {Objects :: [bound_object()], TxId :: binary()}}.
+| {read_objects, {Objects :: [bound_object()], TxId :: binary()}}
+| {get_connection_descriptor, {}}.
 
 -type response() ::
   {error_response, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_response, Resp :: {ok, TxId :: binary()} | {error, Reason::error_code()}}
-| {commit_response, {ok, CommitTime :: any()} | {error, Reason :: error_code()}}
+| {start_transaction_response, Resp :: {ok, TxId :: binary()}}
+| {commit_response, {ok, CommitTime :: any()}| {error, Reason :: error_code()}}
 | {static_read_objects_response, {ok, Results :: [{bound_object(), read_result()}], CommitTime :: binary()}}
 | {read_objects_response, Resp :: [{bound_object(), read_result()}]}
-| {operation_response, ok | {error, Reason :: error_code()}}.
+| {operation_response, ok | {error, Reason :: error_code()}}
+| {get_connection_descriptor_resp, {ok, Descriptor :: any()} | {error, Reason :: error_code()}}.
 
 -type message() :: request() | response().
 
@@ -112,7 +122,11 @@ messageTypeToCode('ApbStartTransactionResp')  -> 124;
 messageTypeToCode('ApbReadObjectResp')        -> 125;
 messageTypeToCode('ApbReadObjectsResp')       -> 126;
 messageTypeToCode('ApbCommitResp')            -> 127;
-messageTypeToCode('ApbStaticReadObjectsResp') -> 128.
+messageTypeToCode('ApbStaticReadObjectsResp') -> 128;
+messageTypeToCode('ApbCreateDC')                    -> 129;
+messageTypeToCode('ApbConnectToDCs')                -> 130;
+messageTypeToCode('ApbGetConnectionDescriptor')     -> 131;
+messageTypeToCode('ApbGetConnectionDescriptorResp') -> 132.
 
 messageCodeToType(0)   -> 'ApbErrorResp';
 messageCodeToType(107) -> 'ApbRegUpdate';
@@ -136,7 +150,11 @@ messageCodeToType(124) -> 'ApbStartTransactionResp';
 messageCodeToType(125) -> 'ApbReadObjectResp';
 messageCodeToType(126) -> 'ApbReadObjectsResp';
 messageCodeToType(127) -> 'ApbCommitResp';
-messageCodeToType(128) -> 'ApbStaticReadObjectsResp'.
+messageCodeToType(128) -> 'ApbStaticReadObjectsResp';
+messageCodeToType(129) -> 'ApbCreateDC';
+messageCodeToType(130) -> 'ApbConnectToDCs';
+messageCodeToType(131) -> 'ApbGetConnectionDescriptor';
+messageCodeToType(132) -> 'ApbGetConnectionDescriptorResp'.
 
 
 -spec encode_msg(sendable()) -> iolist().
@@ -212,7 +230,9 @@ decode_message(#'ApbCommitResp'{success = Success, errorcode = ErrorCode, commit
     false -> {error, decode_error_code(ErrorCode)}
   end,
   {commit_response, Resp};
-decode_message(#'ApbStaticReadObjectsResp'{objects = Objects, committime = Time}) ->
+decode_message(#'ApbStaticReadObjectsResp'{
+    objects = #'ApbReadObjectsResp'{objects = Objects},
+    committime = #'ApbCommitResp'{commit_time = Time}}) ->
   Results = [decode_read_object_resp(O) || O <- Objects],
   {static_read_objects_response, {ok, Results, binary_to_term(Time)}};
 decode_message(#'ApbReadObjectsResp'{success = Success, errorcode = ErrorCode, objects = Objects}) ->
@@ -273,6 +293,14 @@ encode(read_object_resp, Resp) ->
   encode_read_object_resp(Resp);
 encode(static_read_objects_response, {ok, Results, CommitTime}) ->
   encode_static_read_objects_response(Results, CommitTime);
+encode(create_DC, Nodes) ->
+  encode_create_DC(Nodes);
+encode(get_connection_descriptor, {}) ->
+  encode_get_connection_descriptor();
+encode(get_connection_descriptor_resp, Resp) ->
+  encode_get_connection_descriptor_resp(Resp);
+encode(connect_to_DCs, {Descriptors}) ->
+  encode_connect_to_DCs(Descriptors);
 encode(error_code, Code) ->
   encode_error_code(Code);
 encode(_Other, _) ->
@@ -743,6 +771,40 @@ decode_map_entry(#'ApbMapEntry'{key = KeyEnc, value = ValueEnc}) ->
   {{Key, Type}, Value}.
 
 
+%% Cluster Management
+
+encode_create_DC(Nodes) ->
+    #'ApbCreateDC'{nodes = Nodes}.
+decode_create_DC(#'ApbCreateDC'{nodes = Nodes}) ->
+    Nodes.
+
+encode_get_connection_descriptor() ->
+    #'ApbGetConnectionDescriptor'{}.
+decode_get_connection_descriptor(#'ApbGetConnectionDescriptor'{}) ->
+    ok.
+
+encode_get_connection_descriptor_resp({error, Reason}) ->
+    #'ApbGetConnectionDescriptorResp'{
+        success = false,
+        errorcode = encode_error_code(Reason)
+    };
+encode_get_connection_descriptor_resp({ok, Descriptor}) ->
+    #'ApbGetConnectionDescriptorResp'{
+        success = true,
+        descriptor = Descriptor
+    }.
+
+decode_get_connection_descriptor_resp(#'ApbGetConnectionDescriptorResp'{
+        success = Success,
+        descriptor = Descriptor,
+        errorcode = ErrorCode
+    }) ->
+    {Success, Descriptor, ErrorCode}.
+
+encode_connect_to_DCs(Descriptors) ->
+    #'ApbConnectToDCs'{descriptors = Descriptors}.
+decode_connect_to_DCs(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
+    Descriptors.
 
 
 
@@ -761,6 +823,26 @@ start_transaction_test() ->
   ?assertMatch(Properties,
     antidote_pb_codec:decode(txn_properties,
       Msg#'ApbStartTransaction'.properties)).
+
+commit_transaction_test() ->
+  TxId = <<"opaque_binary">>,
+  EncRecord = antidote_pb_codec:encode(commit_transaction, TxId),
+  [MsgCode, MsgData] = encode_msg(EncRecord),
+  Msg = decode_msg(MsgCode, list_to_binary(MsgData)),
+  ?assertMatch(true, is_record(Msg, 'ApbCommitTransaction')),
+
+  CommitTime = list_to_binary("committime_binary"),
+  EncResp = encode_commit_response({ok, CommitTime}),
+  [MsgCodeResp, MsgDataResp] = encode_msg(EncResp),
+  MsgResp = decode_msg(MsgCodeResp, list_to_binary(MsgDataResp)),
+  ?assertMatch(true, is_record(MsgResp, 'ApbCommitResp')).
+
+abort_transaction_test() ->
+  TxId = <<"opaque_binary">>,
+  EncRecord = antidote_pb_codec:encode(abort_transaction, TxId),
+  [MsgCode, MsgData] = encode_msg(EncRecord),
+  Msg = decode_msg(MsgCode, list_to_binary(MsgData)),
+  ?assertMatch(true, is_record(Msg, 'ApbAbortTransaction')).
 
 read_transaction_test() ->
   Objects = [{<<"key1">>, antidote_crdt_counter_pn, <<"bucket1">>},
@@ -916,10 +998,33 @@ crdt_encode_decode_test() ->
 
   ok.
 
+dc_management_test() ->
+    Nodes = [<<"antidote@host1">>, <<"antidote@host2">>],
+    EncRecord = antidote_pb_codec:encode(create_DC, Nodes),
+    [MsgCode, MsgData] = encode_msg(EncRecord),
+    Msg = decode_msg(MsgCode, list_to_binary(MsgData)),
+    ?assertMatch(true, is_record(Msg, 'ApbCreateDC')),
+    ?assertMatch(Nodes, Msg#'ApbCreateDC'.nodes),
 
+    EncRecordDesc = antidote_pb_codec:encode(get_connection_descriptor,{}),
+    [MsgCodeDesc, MsgDataDesc] = encode_msg(EncRecordDesc),
+    MsgDesc = decode_msg(MsgCodeDesc, list_to_binary(MsgDataDesc)),
+    ?assertMatch(true, is_record(MsgDesc, 'ApbGetConnectionDescriptor')),
+
+    Descriptor = <<"some_opaque_binary_descriptor">>,
+    EncRecordDescResp = antidote_pb_codec:encode(get_connection_descriptor_resp, {ok, Descriptor}),
+    [MsgCodeDescResp, MsgDataDescResp] = encode_msg(EncRecordDescResp),
+    MsgDescResp = decode_msg(MsgCodeDescResp, list_to_binary(MsgDataDescResp)),
+    ?assertMatch(true, is_record(MsgDescResp, 'ApbGetConnectionDescriptorResp')),
+    ?assertMatch({true, Descriptor, _}, antidote_pb_codec:decode_get_connection_descriptor_resp(MsgDescResp)),
+
+    Descriptors = [<<"opaque_binary_descriptor1">>, <<"opaque_binary_descriptor2">>, <<"opaque_binary_descriptor3">>],
+    EncRecordConnect = antidote_pb_codec:encode(connect_to_DCs, {Descriptors}),
+    [MsgCodeConnect, MsgDataConnect] = encode_msg(EncRecordConnect),
+    MsgConnect = decode_msg(MsgCodeConnect, list_to_binary(MsgDataConnect)),
+    ?assertMatch(true, is_record(MsgConnect, 'ApbConnectToDCs')),
+    ?assertMatch(Descriptors, antidote_pb_codec:decode_connect_to_DCs(MsgConnect)),
+
+    ok.
 
 -endif.
-
-
-
-
