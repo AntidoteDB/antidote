@@ -230,7 +230,9 @@ decode_message(#'ApbCommitResp'{success = Success, errorcode = ErrorCode, commit
     false -> {error, decode_error_code(ErrorCode)}
   end,
   {commit_response, Resp};
-decode_message(#'ApbStaticReadObjectsResp'{objects = Objects, committime = Time}) ->
+decode_message(#'ApbStaticReadObjectsResp'{
+    objects = #'ApbReadObjectsResp'{objects = Objects},
+    committime = #'ApbCommitResp'{commit_time = Time}}) ->
   Results = [decode_read_object_resp(O) || O <- Objects],
   {static_read_objects_response, {ok, Results, binary_to_term(Time)}};
 decode_message(#'ApbReadObjectsResp'{success = Success, errorcode = ErrorCode, objects = Objects}) ->
