@@ -10,7 +10,7 @@ compile:
 	$(REBAR) compile
 
 clean:
-	rm -rf ebin/* test/*.beam logs log
+	rm -rf ebin/* test/*.beam logs log _build/gpb
 	$(REBAR) clean
 
 test:
@@ -25,7 +25,7 @@ shell:
 
 _build/gpb:
 	mkdir -p _build/
-	(cd _build/ && git clone https://github.com/tomas-abrahamsson/gpb && cd gpb && git checkout 4.1.8)
+	(cd _build/ && git clone https://github.com/tomas-abrahamsson/gpb && cd gpb && git checkout 4.4.0)
 
 _build/gpb/bin/protoc-erl: _build/gpb
 	(cd _build/gpb && make)
