@@ -822,6 +822,26 @@ start_transaction_test() ->
     antidote_pb_codec:decode(txn_properties,
       Msg#'ApbStartTransaction'.properties)).
 
+commit_transaction_test() ->
+  TxId = <<"opaque_binary">>,
+  EncRecord = antidote_pb_codec:encode(commit_transaction, TxId),
+  [MsgCode, MsgData] = encode_msg(EncRecord),
+  Msg = decode_msg(MsgCode, list_to_binary(MsgData)),
+  ?assertMatch(true, is_record(Msg, 'ApbCommitTransaction')),
+
+  CommitTime = list_to_binary("committime_binary"),
+  EncResp = encode_commit_response({ok, CommitTime}),
+  [MsgCodeResp, MsgDataResp] = encode_msg(EncResp),
+  MsgResp = decode_msg(MsgCodeResp, list_to_binary(MsgDataResp)),
+  ?assertMatch(true, is_record(MsgResp, 'ApbCommitResp')).
+
+abort_transaction_test() ->
+  TxId = <<"opaque_binary">>,
+  EncRecord = antidote_pb_codec:encode(abort_transaction, TxId),
+  [MsgCode, MsgData] = encode_msg(EncRecord),
+  Msg = decode_msg(MsgCode, list_to_binary(MsgData)),
+  ?assertMatch(true, is_record(Msg, 'ApbAbortTransaction')).
+
 read_transaction_test() ->
   Objects = [{<<"key1">>, antidote_crdt_counter_pn, <<"bucket1">>},
     {<<"key2">>, antidote_crdt_set_aw, <<"bucket2">>}],
@@ -989,12 +1009,19 @@ dc_management_test() ->
     MsgDesc = decode_msg(MsgCodeDesc, list_to_binary(MsgDataDesc)),
     ?assertMatch(true, is_record(MsgDesc, 'ApbGetConnectionDescriptor')),
 
-    
-    % EncRecordDescResp =  antidote_pb_codec:encode(get_connection_descriptor_resp,{ok,}),
-    % [MsgCodeDescResp, MsgDataDescResp] = encode_msg(EncRecordDescResp),
-    % MsgDescResp = decode_msg(MsgCodeDescResp, list_to_binary(MsgDataDescResp)),
-    % ?assertMatch(true, is_record(MsgDescResp, 'ApbGetConnectionDescriptorResp')),
-    % ?assertMatch(S, Msg#'ApbGetConnectionDescriptorResp'.success),
+    Descriptor = <<"some_opaque_binary_descriptor">>,
+    EncRecordDescResp = antidote_pb_codec:encode(get_connection_descriptor_resp, {ok, Descriptor}),
+    [MsgCodeDescResp, MsgDataDescResp] = encode_msg(EncRecordDescResp),
+    MsgDescResp = decode_msg(MsgCodeDescResp, list_to_binary(MsgDataDescResp)),
+    ?assertMatch(true, is_record(MsgDescResp, 'ApbGetConnectionDescriptorResp')),
+    ?assertMatch({true, Descriptor, _}, antidote_pb_codec:decode_get_connection_descriptor_resp(MsgDescResp)),
+
+    Descriptors = [<<"opaque_binary_descriptor1">>, <<"opaque_binary_descriptor2">>, <<"opaque_binary_descriptor3">>],
+    EncRecordConnect = antidote_pb_codec:encode(connect_to_DCs, {Descriptors}),
+    [MsgCodeConnect, MsgDataConnect] = encode_msg(EncRecordConnect),
+    MsgConnect = decode_msg(MsgCodeConnect, list_to_binary(MsgDataConnect)),
+    ?assertMatch(true, is_record(MsgConnect, 'ApbConnectToDCs')),
+    ?assertMatch(Descriptors, antidote_pb_codec:decode_connect_to_DCs(MsgConnect)),
 
     ok.
 
