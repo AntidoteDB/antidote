@@ -124,9 +124,9 @@ messageTypeToCode('ApbReadObjectsResp')       -> 126;
 messageTypeToCode('ApbCommitResp')            -> 127;
 messageTypeToCode('ApbStaticReadObjectsResp') -> 128;
 messageTypeToCode('ApbCreateDC')                    -> 129;
-messageTypeToCode('ApbGetConnectionDescriptor')     -> 130;
-messageTypeToCode('ApbGetConnectionDescriptorResp') -> 131;
-messageTypeToCode('ApbConnectToDCs')                -> 132.
+messageTypeToCode('ApbConnectToDCs')                -> 130;
+messageTypeToCode('ApbGetConnectionDescriptor')     -> 131;
+messageTypeToCode('ApbGetConnectionDescriptorResp') -> 132.
 
 messageCodeToType(0)   -> 'ApbErrorResp';
 messageCodeToType(107) -> 'ApbRegUpdate';
@@ -152,9 +152,9 @@ messageCodeToType(126) -> 'ApbReadObjectsResp';
 messageCodeToType(127) -> 'ApbCommitResp';
 messageCodeToType(128) -> 'ApbStaticReadObjectsResp';
 messageCodeToType(129) -> 'ApbCreateDC';
-messageCodeToType(130) -> 'ApbGetConnectionDescriptor';
-messageCodeToType(131) -> 'ApbGetConnectionDescriptorResp';
-messageCodeToType(132) -> 'ApbConnectToDCs'.
+messageCodeToType(130) -> 'ApbConnectToDCs';
+messageCodeToType(131) -> 'ApbGetConnectionDescriptor';
+messageCodeToType(132) -> 'ApbGetConnectionDescriptorResp'.
 
 
 -spec encode_msg(sendable()) -> iolist().
