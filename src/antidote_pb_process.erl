@@ -51,7 +51,7 @@ process({abort_transaction, TxId}) ->
         {error, Reason} -> {operation_response, {error, Reason}}
             %% TODO: client initiated abort is not implemented yet
             %% Add the following only after it is implemented to avoid dialyzer errors
-            %% ok -> antidote_pb_codec:encode(operation_response, ok),
+            %% ok -> {operation_response, ok},
     end;
 
 process({commit_transaction, TxId}) ->
