@@ -50,3 +50,4 @@ prometheus                      MIT
 prometheus_process_collector    MIT
 elli_prometheus                 BSD-3
 rand_compat                     Apache 2.0
+lager                           Apache 2.0
