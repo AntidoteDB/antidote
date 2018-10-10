@@ -84,20 +84,18 @@
 | {static_update_objects, {Clock :: binary(), Properties :: list(), Updates :: [update()]}}
 | {static_read_objects, {Clock :: binary(), Properties :: list(), Objects :: [bound_object()]}}
 | {read_objects, {Objects :: [bound_object()], TxId :: binary()}}
-| {get_connection_descriptor, {}}.
+| {get_connection_descriptor, Descriptor :: binary()}.
 
 -type response() ::
   {error_response, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_response, Resp :: {ok, TxId :: binary()}}
+| {start_transaction_response, {ok, TxId :: binary()}}
 | {commit_response, {ok, CommitTime :: any()}| {error, Reason :: error_code()}}
 | {static_read_objects_response, {ok, Results :: [{bound_object(), read_result()}], CommitTime :: binary()}}
 | {read_objects_response, Resp :: [{bound_object(), read_result()}]}
 | {operation_response, ok | {error, Reason :: error_code()}}
-| {get_connection_descriptor_resp, {ok, Descriptor :: any()} | {error, Reason :: error_code()}}.
+| {get_connection_descriptor_resp, {ok, Descriptor :: binary()} | {error, Reason :: error_code()}}.
 
 -type message() :: request() | response().
-
-
 
 
 messageTypeToCode('ApbErrorResp')             -> 0;
@@ -215,6 +213,16 @@ decode_message(#'ApbStaticReadObjects'{objects = Objects, transaction = Tx}) ->
   {static_read_objects, {Clock, Properties, [decode_bound_object(O) || O <- Objects]}};
 decode_message(#'ApbReadObjects'{boundobjects = Objects, transaction_descriptor = TxId}) ->
   {read_objects, {[decode_bound_object(O) || O <- Objects], binary_to_term(TxId)}};
+
+decode_message(#'ApbCreateDC'{nodes = Nodes}) ->
+  {create_dc, [list_to_atom(N) || N <- Nodes]};
+decode_message(#'ApbGetConnectionDescriptor'{}) ->
+  {get_connection_descriptor};
+decode_message(#'ApbGetConnectionDescriptorResp'{descriptor = Descriptor}) ->
+  {get_connection_descriptor, Descriptor};
+decode_message(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
+  {connect_to_dcs, [binary_to_term(D) || D <- Descriptors]};
+
 
 decode_message(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
   {error_response, {decode_error_code(ErrorCode), Message}};
