@@ -98,6 +98,14 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [inter_dc_query_response_sup]},
 
+    PbSup = #{id => antidote_pb_sup,
+              start => {antidote_pb_sup, start_link, []},
+              restart => permanent,
+              shutdown => 5000,
+              type => supervisor,
+              modules => [antidote_pb_sup]},
+
+
     Config = [{mods, [{elli_prometheus, []}
                      ]}
              ],
@@ -137,4 +145,5 @@ init(_Args) ->
        MetaDataSenderSup,
        BCounterManager,
        LogResponseReaderSup,
+       PbSup,
        Elli]}}.
