@@ -107,11 +107,11 @@ process({create_dc, NodeNames}) ->
 process({get_connection_descriptor}) ->
     try
        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
-       antidote_pb_codec:encode(get_connection_descriptor_resp,{ok, term_to_binary(Descriptor)})
+       antidote_pb_codec:encode(get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)})
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
         lager:info("Get Conection Descriptor ~p : ~p", [Error, Reason]),
-        antidote_pb_codec:encode(get_connection_descriptor_resp,{error, no_clue})
+        antidote_pb_codec:encode(get_connection_descriptor_resp, {error, no_clue})
     end;
 
 process({connect_to_dcs, Descriptors}) ->

@@ -2,7 +2,6 @@
 % This module handles the protocol buffer protocol.
 % It provides callbacks used by the ranch library.
 
--include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 -behaviour(ranch_protocol).
 
 -export([start_link/4]).
@@ -44,7 +43,7 @@ handle(Socket, Transport, Msg) ->
   <<MsgCode:8, ProtoBufMsg/bits>> = Msg,
   DecodedMessage = antidote_pb_codec:decode_message(antidote_pb_codec:decode_msg(MsgCode, ProtoBufMsg)),
   try
-    Response = antidote_pb:process(DecodedMessage),
+    Response = antidote_pb_process:process(DecodedMessage),
     PbResponse = antidote_pb_codec:encode_message(Response),
     PbMessage = antidote_pb_codec:encode_msg(PbResponse),
     ok = Transport:send(Socket, PbMessage)
