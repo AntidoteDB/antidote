@@ -47,9 +47,9 @@ init([]) ->
 %%====================================================================
 
 pb_listener() ->
-  {NumberOfAcceptors, ""} = string:to_integer(os:getenv("pb_pool_size", "100")),
-  {Port, ""} = string:to_integer(os:getenv("pb_port", "8087")),
-  {MaxConnections, ""} = string:to_integer(os:getenv("pb_max_connections", "1024")),
+  NumberOfAcceptors = application:get_env(ranch, pb_pool_size, 100),
+  Port = application:get_env(ranch, pb_port, 8087),
+  MaxConnections = application:get_env(ranch, pb_max_connections, 1024),
   RanchOptions = [{port, Port}, {max_connections, MaxConnections}],
   ranch:child_spec(antidote_pb_process, NumberOfAcceptors,
     ranch_tcp, RanchOptions,
