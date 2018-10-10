@@ -1,6 +1,11 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,7 +21,10 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
+
 -module(zmq_utils).
 
 -export([create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).

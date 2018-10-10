@@ -1,6 +1,11 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,7 +21,10 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
+
 -module(bcountermgr_SUITE).
 
 %% common_test callbacks
@@ -50,12 +58,12 @@ init_per_suite(InitialConfig) ->
 
      % Ensure that write operations are certified
      test_utils:pmap(fun(Node) ->
-                             rpc:call(Node, application, set_env, [antidote, txn_cert, true]) 
+                             rpc:call(Node, application, set_env, [antidote, txn_cert, true])
                      end, Nodes),
 
      % Check that indeed transactions certification is turned on
      {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
-     
+
      Config.
 
 

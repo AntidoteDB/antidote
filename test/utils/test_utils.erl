@@ -1,6 +1,11 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Helium Systems, Inc.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,6 +21,8 @@
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 -module(test_utils).
@@ -84,7 +91,7 @@ init_multi_dc(Suite, Config) ->
     Clusters = test_utils:set_up_clusters_common([{suite_name, ?MODULE} | Config]),
     Nodes = hd(Clusters),
     [{clusters, Clusters} | [{nodes, Nodes} | Config]].
-        
+
 
 at_init_testsuite() ->
     {ok, Hostname} = inet:gethostname(),
