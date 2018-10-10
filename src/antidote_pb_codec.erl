@@ -380,7 +380,8 @@ encode_txn_properties(_Props) ->
   #'ApbTxnProperties'{}.
 
 decode_txn_properties(_Properties) ->
-  {}.
+  %%TODO: Add more property parameters
+  [].
 
 
 %%%%%%%%%%%%%%%%%%%%%
@@ -821,7 +822,7 @@ decode_connect_to_DCs(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
 %% Tests encode and decode
 start_transaction_test() ->
   Clock = term_to_binary(ignore),
-  Properties = {},
+  Properties = [],
   EncRecord = antidote_pb_codec:encode(start_transaction,
     {Clock, Properties}),
   [MsgCode, MsgData] = encode_msg(EncRecord),
