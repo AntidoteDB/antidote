@@ -48,12 +48,12 @@ handle(Socket, Transport, Msg) ->
     PbMessage = antidote_pb_codec:encode_msg(PbResponse),
     ok = Transport:send(Socket, PbMessage)
   catch
-    ExceptionType:Error:Stacktrace ->
+    ExceptionType:Error ->
       % log errors and reply with error message:
-      lager:error("Error ~p: ~p~nWhen handling request ~p~n~p~n", [ExceptionType, Error, DecodedMessage, Stacktrace]),
+      lager:error("Error ~p: ~p~nWhen handling request ~p~n", [ExceptionType, Error, DecodedMessage]),
       % when formatting the error message, we use a maximum depth of 9001.
       % This should be big enough to include useful information, but avoids sending a lot of data
-      MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n~P", [ExceptionType, 9001, Error, 9001, Stacktrace, 9001])),
+      MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n", [ExceptionType, 9001, Error, 9001])),
       Message = antidote_pb_codec:encode_msg(antidote_pb_codec:encode_message({error_response, {unknown, MessageStr}})),
       ok = Transport:send(Socket, Message),
       ok
