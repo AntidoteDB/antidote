@@ -36,7 +36,7 @@ limitations under the License.
 
 [The documentation for this program is under a creative commons attribution share-alike
 4.0 license.  http://creativecommons.org/licenses/by-sa/4.0/
-It can be found here:  https://antidotedb.gitbook.io/documentation/]
+The documentation can be found here:  https://antidotedb.gitbook.io/documentation/]
 *************************************************************************
 
 This program has dependencies on other libraries and Website dependencies which are or not under Apache License, Version 2.0 and that are commonly distributed with this program core libraries.
