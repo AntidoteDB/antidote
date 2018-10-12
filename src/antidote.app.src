@@ -1,18 +1,14 @@
 %% -*- erlang -*-
 {application, antidote,
  [
-  {description, "SyncFree reference platform"},
-  {vsn, "0.0.1"},
+  {description, "A transactional CRDT database"},
+  {vsn, "0.0.2"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib,
-                  riak_pb,
-                  riak_api,
                   riak_core,
-                  antidote_crdt,
                   cuttlefish,
-                  antidote_pb,
                   erlzmq,
                   rand_compat,
                   runtime_tools,
@@ -20,9 +16,15 @@
                   prometheus,
                   elli,
                   elli_prometheus,
-                  prometheus_process_collector,
-                  vectorclock
+                  prometheus_process_collector
                  ]},
+    {included_applications, [
+        vectorclock,
+        antidote_pb_codec,
+        antidote_crdt,
+        ranch
+    ]},
+
   {mod, { antidote_app, []}},
   %% Options for environmental variables
   %% txn_cert:

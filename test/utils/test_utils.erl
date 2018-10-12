@@ -84,7 +84,7 @@ init_multi_dc(Suite, Config) ->
     Clusters = test_utils:set_up_clusters_common([{suite_name, ?MODULE} | Config]),
     Nodes = hd(Clusters),
     [{clusters, Clusters} | [{nodes, Nodes} | Config]].
-        
+
 
 at_init_testsuite() ->
     {ok, Hostname} = inet:gethostname(),
@@ -138,8 +138,7 @@ start_node(Name, Config) ->
 
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["../../_build/default/rel/antidote/lib/"]]),
 
-            ok = rpc:call(Node, application, set_env, [riak_api, pb_port, web_ports(Name) + 2]),
-            ok = rpc:call(Node, application, set_env, [riak_api, pb_ip, "127.0.0.1"]),
+            ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
 
             ct:log("Starting antidote"),
             ok = rpc:call(Node, application, load, [antidote]),
