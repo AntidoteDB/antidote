@@ -1,4 +1,4 @@
-# Erlang client for Antiodote
+# Erlang client for Antidote
 [![Build Status](https://travis-ci.org/AntidoteDB/antidote-erlang-client.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote-erlang-client)
 
 ## Interface for transactions

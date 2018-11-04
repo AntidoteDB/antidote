@@ -214,7 +214,7 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
-            lager:warning("Socket error while sending riakc request: ~p.", [Reason]),
+            lager:warning("Socket error while sending request: ~p.", [Reason]),
             gen_tcp:close(State#state.sock)
     end.
 
