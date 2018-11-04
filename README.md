@@ -1,56 +1,103 @@
-# Erlang client for Antidote
+# Antidote Erlang Client Library
 [![Build Status](https://travis-ci.org/AntidoteDB/antidote-erlang-client.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote-erlang-client)
 
-## Interface for transactions
+## Connecting to Antidote
+This section assumes that you have at least one AntidoteDB node running. Check the documentation in the [main repository][antidote-repo] for instructions on how to launch AntidoteDB instances.
 
-* start\_transaction (Pid, timestamp, properties) --> transaction\_descriptor
+The `antidotec_pb_socket` has several connection functions, but the simplest is `antidotec_pb_socket:start_link/2`, which takes in an address and port number and returns a connection wrapped in an Erlang Pid:
 
-  starts a new transaction and returns a transaction_descriptor which is a transaction identifier to be used with further operations of the transaction. timestamp provides the causality information. properties is a list of configurable parameters for the transaction. Currently only property supported which specifies to use static or interactive transactions.
-Example:
+```erl-sh
+Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+```
 
-        Clock = term_to_binary(ignore), %% First time there is no clock information
-        {ok, TxId} = start_transaction(Pid, Clock, [{static=true}]). %% Use static transactions
+If you are running a local instance of AntidoteDB, the default protocol buffers port number is `8087`.
 
-* read\_objects (Pid, [bound\_object], transaction\_descriptor) --> {ok, Vals}
+Once you have acquired a `Pid` connection to an AntidoteDB node, you are ready to run transactions.
 
-  reads a set of keys.
-  Example:
+## Transactional Interface
 
-        {ok, [Val1, Val2]} = ([O1, O2], TxId),
-        Value = antidotec_counter:value(Val1). %% Assuming O1 is of type counter
+AntidoteDB has a simple transactional interface:
 
-* update\_objects (Pid, [{bound\_object, operation, op_parameters}], transaction\_descriptor) -> ok
+- `start_transaction/2`
+- `read_objects/3`
+- `update_objects/3`
+- `commit_transaction/2`
+- `abort_transaction/2`
 
-  update a set of object with the specified operations. operation is any allowed (upstream) operation on the crdt type for bound\_object, op\_parameters are parameters to the operation.
-  Example:
+Here is a detailed interface explanation:
 
-           Obj = antidotec_counter:increment(1, antidotec_counter:new()),
-           ok = antidotec_pb:update_objects(Pid,
-                                        antidotec_counter:to_ops(BObj, Obj),
-                                        TxId).
+#### start_transaction(Pid, Timestamp) -> {ok, TxId} | {error, Reason}.
 
-* abort\_transaction (Pid, transaction_descriptor)
-  aborts a transaction
+This function starts a new transaction and returns a transaction identifier, to be used with further operations in the same transaction. Antidote transactions can be of 2 types: _interactive_ or _static_.
 
-* commit\_transaction (Pid, transaction_descriptor) --> {ok,timestamp} OR aborted
+**Static transactions** can be seen as one-shot transactions for executing a set of updates or a read operation. Static transactions do not have to be committed or closed and are mainly handled by the Antidote server.
 
+**Interactive transactions** can combine multiple read and update operations into an atomic transaction. Updates issued in the context of an interactive transaction are visible to read operations issued in the same context after the updates. Interactive transactions have to be committed in order to make the updates visible to subsequent transactions.
 
-## Example
+The default transaction type is `interactive`. Currently you can create `static` transactions by using the alternative `start_transaction/3` callback, that accepts an additional list of transaction properties (you can pass in `[{static, true}]` to the third parameter in order to get static transactions).
 
-    %% Starts pb socket
-    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+Here is a simple example:
 
-    BObj = {Key, riak_dt_pncounter, Bucket},
-    Obj = antidotec_counter:increment(Amount, antidotec_counter:new()),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
-    ok = antidotec_pb:update_objects(Pid,
-                                     antidotec_counter:to_ops(BObj, Obj),
-                                     TxId),
-    {ok, TimeStamp} = antidotec_pb:commit_transaction(Pid, TxId),
-    %% Use TimeStamp for subsequent transactions if required
-    {ok, TxId2} = antidotec_pb:start_transaction(Pid, TimeStamp, [{static=true}]),
-    ...
-    ...
+```erl-sh
+Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+%% ignore leaves out the clock parameter in the following calls
+{ok, TxId1} = antidotec_pb:start_transaction(Pid, ignore). %% interactive transaction
+{ok, TxId2} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]). %% static transaction
+```
 
-    %% Close pb socket
-    _Disconnected = antidotec_pb_socket:stop(Pid),
+#### read_objects(Pid, ListBoundOjects, TxId) -> {ok, Vals} | {error, Reason}.
+
+This callback is used to read multiple objects from Antidote. The parameters are the Pid we already created before, a list of bound objects and finally the transactional identifier. Bound objects are
+tuples that identify the key, its type and the bucket it is being read from.
+
+Here is an example of a read-only static transaction:
+
+```erl-sh
+Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
+RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
+%% start a static transaction
+{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
+%% read values from antidote
+{ok, [Counter, Register]} = antidotec_pb:read_objects(Pid, [CounterBoundObj, RegisterBoundObj], TxId).
+%% get the actual values out of the CRDTs
+CounterVal = antidotec_counter:value(Counter).
+RegisterVal = antidotec_reg:value(Register).
+```
+
+#### update_objects(Pid, ListBoundOjectUpdates, TxId) -> ok | {error, Reason}.
+
+Updates a set of objects with the specified operations. The supplied `ListBoundOjectUpdates` value must
+include operations allowed on the CRDT type for the bound object. To clarify this concept, we provide an
+example below:
+
+```erl-sh
+Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
+RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
+%% start a static transaction
+{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
+%% Perform local updates
+%% Get a new counter object and increment its value by 5
+UpdatedCounter = antidotec_counter:increment(5, antidote_crdt_counter:new())
+%% Get a new register object and assign it to some value
+UpdatedRegister = antidotec_reg:assign(antidote_crdt_reg:new(), "Antidote rules!")
+%% convert updated values into operations to be performed in the database
+CounterUpdateOps = antidotec_counter:to_ops(CounterBoundObj, UpdatedCounter),
+RegisterUpdateOps = antidotec_reg:to_ops(RegisterBoundObj, UpdatedRegister),
+%% write values to antidote
+antidotec_pb:read_objects(Pid, [CounterUpdateOps, RegisterUpdateOps], TxId).
+%% get the actual values out of the CRDTs
+CounterVal = antidotec_counter:value(Counter).
+RegisterVal = antidotec_reg:value(Register).
+```
+
+#### abort_transaction(Pid, TxId) -> ok | {error, Reason}.
+
+Aborts an ongoing transaction. Can fail if transaction was already committed or by request time out.
+
+#### commit_transaction(Pid, TxId)  -> ok | {error, Reason}.
+
+Commits an ongoing transaction. When multiple transactions attempt to write to the same key only one is guaranteed to succeed in the commit operation; the others will return error messages.
+
+[antidote-repo]: https://github.com/AntidoteDB/antidote

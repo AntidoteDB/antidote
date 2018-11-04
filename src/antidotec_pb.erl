@@ -22,7 +22,8 @@
 -include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 
--export([start_transaction/3,
+-export([start_transaction/2,
+         start_transaction/3,
          abort_transaction/2,
          commit_transaction/2,
          update_objects/3,
@@ -30,6 +31,11 @@
          read_values/3]).
 
 -define(TIMEOUT, 10000).
+
+-spec start_transaction(Pid::term(), TimeStamp::term())
+        -> {ok, {interactive, term()} | {static, {term(), term()}}} | {error, term()}.
+start_transaction(Pid, TimeStamp) ->
+    start_transaction(Pid, TimeStamp, []).
 
 -spec start_transaction(Pid::term(), TimeStamp::term(), TxnProperties::term())
         -> {ok, {interactive, term()} | {static, {term(), term()}}} | {error, term()}.
