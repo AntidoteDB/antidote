@@ -48,7 +48,7 @@ init(Ref, Socket, Transport, _Opts) ->
 
 % Receive-Respond loop for handling connections:
 loop(Socket, Transport) ->
-  case Transport:recv(Socket, 0, 30000) of
+  case Transport:recv(Socket, 0, infinity) of
     {ok, Data} ->
       handle(Socket, Transport, Data),
       loop(Socket, Transport);
