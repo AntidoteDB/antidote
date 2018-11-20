@@ -1,4 +1,5 @@
-FROM erlang:19
+# A Docker file for a tiny container image of AntidoteDB based on Alpine Linux
+FROM erlang:20.3.8-alpine
 
 ENV HANDOFF_PORT "8099"
 ENV PB_PORT "8087"
@@ -13,16 +14,18 @@ ENV ANTIDOTE_REPO "https://github.com/AntidoteDB/antidote.git"
 ENV ANTIDOTE_BRANCH "master"
 
 RUN set -xe \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends git openssl ca-certificates \
-  && cd /usr/src \
-  && git clone $ANTIDOTE_REPO \
+  && apk --no-cache --update upgrade busybox musl \
+  && apk --no-cache add bash coreutils git curl build-base openssl ca-certificates perl \
+  && cd /tmp \
+  && git clone ${ANTIDOTE_REPO} \
   && cd antidote \
-  && git checkout $ANTIDOTE_BRANCH \
+  && git checkout ${ANTIDOTE_BRANCH} \
   && make rel \
+  && mkdir /opt \
   && cp -R _build/default/rel/antidote /opt/ \
-  && sed -e '$i,{kernel, [{inet_dist_listen_min, 9100}, {inet_dist_listen_max, 9100}]}' /usr/src/antidote/_build/default/rel/antidote/releases/0.0.1/sys.config > /opt/antidote/releases/0.0.1/sys.config \
-  && rm -rf /usr/src/antidote /var/lib/apt/lists/*
+  && sed -e '$i,{kernel, [{inet_dist_listen_min, 9100}, {inet_dist_listen_max, 9100}]}' /tmp/antidote/_build/default/rel/antidote/releases/0.0.1/sys.config > /opt/antidote/releases/0.0.1/sys.config \
+  && apk del git curl perl \
+  && rm -rf /tmp/antidote /var/lib/apt/lists/*
 
 ADD ./start_and_attach.sh /opt/antidote/
 ADD ./entrypoint.sh /
