@@ -19,11 +19,12 @@ Mike Rudek
 Roger Pueyo
 Borja
 Shraddha Barke (Technische Universität Kaiserslautern)
-Vitor Enes
+Vitor Enes (Universidade do Minho & INESC TEC, Portugal)
+Georges Younes (Universidade do Minho & INESC TEC, Portugal)
 Goncalo Tomas
 João Neto
 Ilyas Toumlilt
 Paolo Viotti
 Nuno Preguiça (Universidade NOVA de Lisboa, Portugal)
-Carlos Baquero
+Carlos Baquero (Universidade do Minho & INESC TEC, Portugal)
 Marc Shapiro (Université Pierre et Marie Curie / Sorbonne-Université, France)

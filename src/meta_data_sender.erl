@@ -5,6 +5,7 @@
 %%  Université Pierre et Marie Curie / Sorbonne-Université, France
 %%  Universidade NOVA de Lisboa, Portugal
 %%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
 %% >
 %%
 %% This file is provided to you under the Apache License,

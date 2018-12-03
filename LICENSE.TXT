@@ -1,7 +1,7 @@
 Antidote Licensing
 ============================================
 
-This file attempts to include all licenses that apply within Antidote (this program) source tree, in particular any that are supposed to be exposed to the end user for credit requirements for instance.
+This file attempts to include all licenses that apply within Antidote (this program) source trees AntidoteDB/antidote and AntidoteDB/antidote_crdt, in particular any that are supposed to be exposed to the end user for credit requirements for instance.
 
 Antidote :A planet scale, highly available, transactional database built on CRDT technology.
 
@@ -11,6 +11,7 @@ Technische Universität Kaiserslautern, Germany
 Université Pierre et Marie Curie / Sorbonne-Université, France
 Universidade NOVA de Lisboa, Portugal
 Université catholique de Louvain (UCL), Belgique
+INESC TEC, Portugal 
 >
 
 The list of the contributors to the development of Antidote is given in the AUTHORS file.
