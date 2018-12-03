@@ -11,6 +11,7 @@ Technische Universität Kaiserslautern, Germany
 Université Pierre et Marie Curie / Sorbonne-Université, France
 Universidade NOVA de Lisboa, Portugal
 Université catholique de Louvain (UCL), Belgique
+INESC TEC, Portugal 
 >
 
 The list of the contributors to the development of Antidote is given in the AUTHORS file.
