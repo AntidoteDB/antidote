@@ -27,8 +27,8 @@ RUN set -xe \
   && apk del git curl perl \
   && rm -rf /tmp/antidote /var/lib/apt/lists/*
 
-ADD ../start_and_attach.sh /opt/antidote/
-ADD ../entrypoint.sh /
+ADD ./start_and_attach.sh /opt/antidote/
+ADD ./entrypoint.sh /
 
 RUN chmod a+x /opt/antidote/start_and_attach.sh \
   && chmod a+x /entrypoint.sh
