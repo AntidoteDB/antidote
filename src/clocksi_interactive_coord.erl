@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,11 +18,14 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
+
 %% @doc The coordinator for a given Clock SI interactive transaction.
 %%      It handles the state of the tx and executes the operations sequentially
 %%      by sending each operation to the responsible clockSI_vnode of the
@@ -45,7 +54,6 @@
 -define(LOGGING_VNODE, mock_partition).
 -define(PROMETHEUS_GAUGE, mock_partition).
 -define(PROMETHEUS_COUNTER, mock_partition).
-
 
 -else.
 -include("lock_mgr_es.hrl").
@@ -213,7 +221,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                     {error, _} -> AccUpdatedPartitions;
                     _Else ->
                         Partition = ?LOG_UTIL:get_key_partition(Key1),
-                        case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key1, Type1, Params1, [], []) of
+                        case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key1, Type1, Params1, []) of
                             {ok, DownstreamRecord} ->
                                 TxId = Transaction#transaction.txn_id,
                                 LogRecord = #log_operation{
@@ -274,7 +282,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
 
         {Key, Type, Params1} ->
             Partition = ?LOG_UTIL:get_key_partition(Key),
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [], []) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, []) of
                 {ok, DownstreamRecord} ->
                     UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
@@ -658,8 +666,6 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
     return_accumulator = ReadKeys,
     internal_read_set = ReadSet
 }) ->
-    %% TODO: type is hard-coded..
-
     {ReqNum, Key, Type, Snapshot, Operation} =
         case Response of
             {N, K, T, F, S} -> {N, K, T, S, F};
@@ -1027,7 +1033,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                     % Get the maximum snapshot of this dc and all locks in use
                     New_Snapshot = vectorclock:max([SnapshotTime|Snapshots]),
                     wait_for_clock(New_Snapshot),
-                    Transaction = #transaction{snapshot_time = LocalClock,
+                    Transaction = #transaction{snapshot_time_local = LocalClock,
                         vec_snapshot_time = New_Snapshot,
                         txn_id = TransactionId,
                         properties = Properties},
@@ -1043,7 +1049,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                     % Get the maximum snapshot of this dc and all locks in use
                     New_Snapshot = vectorclock:max([SnapshotTime|Snapshots]),
                     wait_for_clock(New_Snapshot),
-                    Transaction = #transaction{snapshot_time = LocalClock,
+                    Transaction = #transaction{snapshot_time_local = LocalClock,
                         vec_snapshot_time = New_Snapshot,
                         txn_id = TransactionId,
                         properties = Properties},
@@ -1069,7 +1075,7 @@ create_transaction_record_with_locks(ClientClock, StayAlive, From, _IsStatic, Pr
                     % Get the maximum snapshot of this dc and all locks in use
                     New_Snapshot = vectorclock:max([SnapshotTime|Snapshots1]++Snapshots2),
                     wait_for_clock(New_Snapshot),
-                    Transaction = #transaction{snapshot_time = LocalClock,
+                    Transaction = #transaction{snapshot_time_local = LocalClock,
                         vec_snapshot_time = New_Snapshot,
                         txn_id = TransactionId,
                         properties = Properties},
@@ -1133,7 +1139,7 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-    Transaction = #transaction{snapshot_time = LocalClock,
+    Transaction = #transaction{snapshot_time_local = LocalClock,
         vec_snapshot_time = SnapshotTime,
         txn_id = TransactionId,
         properties = Properties},
@@ -1253,7 +1259,7 @@ prepare_2pc(State = #coord_state{
     updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
     case UpdatedPartitions of
         [] ->
-            SnapshotTime = Transaction#transaction.snapshot_time,
+            SnapshotTime = Transaction#transaction.snapshot_time_local,
             case FullCommit of
                 false ->
                     {committing_2pc, State#coord_state{state = committing, commit_time = SnapshotTime},
@@ -1555,7 +1561,7 @@ prepare(State = #coord_state{
 }) ->
     case UpdatedPartitions of
         [] ->
-            SnapshotTime = Transaction#transaction.snapshot_time,
+            SnapshotTimeLocal = Transaction#transaction.snapshot_time_local,
             case NumToRead of
                 0 ->
                     case FullCommit of
@@ -1563,8 +1569,8 @@ prepare(State = #coord_state{
                             reply_to_client(State#coord_state{state = committed_read_only});
 
                         false ->
-                            {committing, State#coord_state{state = committing, commit_time = SnapshotTime},
-                                [{reply, From, {ok, SnapshotTime}}]}
+                            {committing, State#coord_state{state = committing, commit_time = SnapshotTimeLocal},
+                                [{reply, From, {ok, SnapshotTimeLocal}}]}
                     end;
                 _ ->
                     {receive_prepared, State#coord_state{state = prepared}}
@@ -1802,5 +1808,3 @@ start_link_with_locks_not_available_es_test() ->
              {error,"Process should not be up"}
     end.
 -endif.
-
-

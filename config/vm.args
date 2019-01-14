@@ -35,8 +35,8 @@
 -antidote logreader_port ${LOGREADER_PORT}
 -antidote metrics_port ${METRICS_PORT}
 
-## Riak API configuration values coming from the command line.
--riak_api pb_port ${PB_PORT}
+## Ranch configuration values coming from the command line.
+-ranch pb_port ${PB_PORT}
 
 ## Riak Core configuration values coming from the command line.
 -riak_core handoff_port ${HANDOFF_PORT}
