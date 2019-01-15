@@ -1471,7 +1471,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                 ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
 
                 {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key1, Type1, Update1,
-                    CurrUpdatedPartitions, Transaction, InternalReadSet, CurrUpdatedOps),
+                    CurrUpdatedPartitions, Transaction, CurrUpdatedOps),
                 {NewUpdatedPartitions, UpdatedOps, TotalUpds + 1}
 
             end, {UpdatedPartitions, ClientOps, 0}, PostHookUpdates);
@@ -1480,11 +1480,11 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
             ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
 
             {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key, Type, PostHookUpdate,
-                UpdatedPartitions, Transaction, InternalReadSet, ClientOps),
+                UpdatedPartitions, Transaction, ClientOps),
             {NewUpdatedPartitions, UpdatedOps, 1}
     end.
 
-generate_new_state(Key, Type, HookUpdate, Partitions, Transaction, ReadSet, Ops) ->
+generate_new_state(Key, Type, HookUpdate, Partitions, Transaction, Ops) ->
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, Partitions) of
@@ -1501,8 +1501,7 @@ generate_new_state(Key, Type, HookUpdate, Partitions, Transaction, ReadSet, Ops)
         Key,
         Type,
         HookUpdate,
-        WriteSet,
-        ReadSet
+        WriteSet
     ),
 
     case GenerateResult of
