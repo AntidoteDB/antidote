@@ -374,7 +374,6 @@ finish_op(From, Key, Result) ->
     | undefined | aborted,
     operations :: undefined | list() | {update_objects, list()},
     return_accumulator :: list() | ok | {error, reason()},
-    internal_read_set :: orddict:orddict(),
     is_static :: boolean(),
     full_commit :: boolean(),
     properties :: txn_properties(),
@@ -663,8 +662,7 @@ receive_aborted(info, {_EventType, EventValue}, State) ->
 %% @doc After asynchronously reading a batch of keys, collect the responses here
 receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
     num_to_read = NumToRead,
-    return_accumulator = ReadKeys,
-    internal_read_set = ReadSet
+    return_accumulator = ReadKeys
 }) ->
     {ReqNum, Key, Type, Snapshot, Operation} =
         case Response of
@@ -673,22 +671,19 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
         end,
 
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-    {ReadValues, NewReadSet} =
+    ReadValues =
         case Operation of
             undefined ->
                 %% Swap keys with their appropriate read values
-                {replace_first(ReadKeys, Key, {{ReqNum, Key}, {state, UpdatedSnapshot}}),
-                    orddict:store(Key, UpdatedSnapshot, ReadSet)};
+                replace_first(ReadKeys, Key, {{ReqNum, Key}, {state, UpdatedSnapshot}});
             Operation ->
                 case Type:is_operation(Operation) of
                     true ->
                         Value = Type:value(Operation, UpdatedSnapshot),
-                        {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, Value}}),
-                            orddict:store(Key, UpdatedSnapshot, ReadSet)};
+                        replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, Value}});
                     false ->
                         ErrorMsg = {error, {function_not_supported, Operation}},
-                        {replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, ErrorMsg}}),
-                            orddict:store(Key, UpdatedSnapshot, ReadSet)}
+                        replace_first(ReadKeys, Key, {{ReqNum, Key}, {value, ErrorMsg}})
                 end
         end,
 
@@ -697,12 +692,11 @@ receive_read_objects_result(cast, {ok, Response}, CoordState = #coord_state{
         true ->
             {next_state, receive_read_objects_result, CoordState#coord_state{
                 num_to_read = NumToRead - 1,
-                return_accumulator = ReadValues,
-                internal_read_set = NewReadSet
+                return_accumulator = ReadValues
             }};
 
         false ->
-            {next_state, execute_op, CoordState#coord_state{num_to_read = 0, internal_read_set = NewReadSet},
+            {next_state, execute_op, CoordState#coord_state{num_to_read = 0},
                 [{reply, CoordState#coord_state.from, {ok, lists:reverse(ReadValues)}}]}
     end;
 
@@ -849,6 +843,7 @@ terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = T
             ok
     end;
 terminate(_Reason, _SN, _SD) -> ok.
+
 callback_mode() -> state_functions.
 
 %%%===================================================================
@@ -870,7 +865,6 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
         full_commit = FullCommit,
         is_static = IsStatic,
         return_accumulator = [],
-        internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         properties = Properties,
         transactionid = 0
@@ -1163,32 +1157,23 @@ execute_command(abort, _Protocol, Sender, State) ->
 %% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #coord_state{
     transaction=Transaction,
-    internal_read_set=InternalReadSet,
     updated_partitions=UpdatedPartitions
 }) ->
     case perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) of
         {error, _} ->
             abort(State);
         ReadResult ->
-            NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
-            {{ok, ReadResult}, execute_op, State#coord_state{internal_read_set=NewInternalReadSet}}
+            {{ok, ReadResult}, execute_op, State}
     end;
 
 %% @doc Read a batch of objects, asynchronous
-execute_command(read_objects, Objects, Sender, State =
-    #coord_state{transaction=Transaction, internal_read_set = ReadSet}) ->
-
+execute_command(read_objects, Objects, Sender, State = #coord_state{transaction=Transaction}) ->
     ExecuteReads = fun(Object, {ReqNum, AccState}) ->
         ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         case Object of
             {Key, Type, Function} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
-                case orddict:find(Key, ReadSet) of
-                    {ok, Snapshot} ->
-                        gen_statem:cast(self(), {ok, {ReqNum, Key, Type, Function, Snapshot}});
-                    error ->
-                        ok = clocksi_vnode:async_read_data_function(Partition, Transaction, ReqNum, Key, Type, Function)
-                end,
+                ok = clocksi_vnode:async_read_data_function(Partition, Transaction, ReqNum, Key, Type, Function),
 
                 %ok = clocksi_object_function:async_execute_object_function(
                 %    {fsm, self()}, Transaction, Partition, ReqNum, Key, Type, Function, WriteSet, ReadSet),
@@ -1196,12 +1181,7 @@ execute_command(read_objects, Objects, Sender, State =
                 {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}};
             {Key, Type} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
-                case orddict:find(Key, ReadSet) of
-                    {ok, Snapshot} ->
-                        gen_statem:cast(self(), {ok, {ReqNum, Key, Type, Snapshot}});
-                    error ->
-                        ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type)
-                end,
+                ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type),
 
                 ReadKeys = AccState#coord_state.return_accumulator,
                 {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}}
@@ -1220,10 +1200,9 @@ execute_command(read_objects, Objects, Sender, State =
 execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transaction=Transaction}) ->
     ExecuteUpdates = fun(Op, AccState=#coord_state{
         client_ops = ClientOps0,
-        internal_read_set = ReadSet,
         updated_partitions = UpdatedPartitions0
     }) ->
-        case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
+        case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0) of
             {error, _} = Err ->
                 AccState#coord_state{return_accumulator = Err};
 
@@ -1244,13 +1223,13 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
     ),
 
     LoggingState = NewCoordState#coord_state{from=Sender},
-
     case LoggingState#coord_state.num_to_read > 0 of
         true ->
             {receive_logging_responses, LoggingState};
         false ->
             {receive_logging_responses, LoggingState, 0}
     end.
+
 
 %% @doc function called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
@@ -1457,11 +1436,11 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
+perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     {Key, Type, Update} = Op,
 
     %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, {Transaction, InternalReadSet, UpdatedPartitions}) of
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update, {Transaction, UpdatedPartitions}) of
         {error, Reason} ->
             lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};

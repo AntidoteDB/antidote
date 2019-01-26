@@ -162,15 +162,10 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State
         RequestEntry = #request_cache_entry{request_type=RequestType, req_id_binary=ReqIdBinary,
                                             func=Func, pdcid={DCID, SendPartition}, binary_req=FullRequest},
         %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case almost finisched--~n",[RequestType,PDCID,BinaryRequest,Func]),
-
-        Req_Sent = req_sent(ReqIdBinary, RequestEntry, State),
         %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--ok case finisched--~n",[RequestType,PDCID,BinaryRequest,Func]),
-        {reply, ok,Req_Sent };
+        {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
     %% If socket not found
-    _ ->
-        %lager:info("handle_call({any_request,~w,~w,~w,~w},from,state)--unknown--~n",[RequestType,PDCID,BinaryRequest,Func]),
-        {reply, unknown_dc, State}
-        
+    _ -> {reply, unknown_dc, State}
     end.
 
 close_dc_sockets(DCPartitionDict) ->
