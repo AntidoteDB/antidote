@@ -181,14 +181,14 @@ inc(_) -> ok.
 
 % added for lock tests
 
-get_locks([a,b], _TransactionId) ->
-    {ok,[dict:new()]};
-get_locks([b,c], _TransactionId) ->
-    {missing_locks, [b,c]}.
-get_locks(_,[a,b], _TransactionId) ->
-    {ok,[dict:new()]};
-get_locks(_,[b,c], _TransactionId) ->
-    {missing_locks, {[],[b,c]}}.
+get_locks([a, b], _TransactionId) ->
+    {ok, [dict:new()]};
+get_locks([b, c], _TransactionId) ->
+    {missing_locks, [b, c]}.
+get_locks(_, [a, b], _TransactionId) ->
+    {ok, [dict:new()]};
+get_locks(_, [b, c], _TransactionId) ->
+    {missing_locks, {[], [b, c]}}.
 %%%===================================================================
 %%% STATE FUNCTIONS
 %%%===================================================================

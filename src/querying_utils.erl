@@ -418,7 +418,7 @@ read_data_item({Key, Type, Bucket}, {Transaction, UpdatedPartitions}) ->
 
     Args = {Partition, Transaction, WriteSet, SendKey, Type},
 
-    {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}),% clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
+    {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}), % clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
     {ok, Snapshot}.
 
 get_write_set(Partition, Partitions) ->
