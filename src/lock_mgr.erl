@@ -554,6 +554,7 @@ remote_send_lock(Lock, Amount, Last_Changed, MyDCId, RemoteId, Key) ->
 
 %% Request response - do nothing. TODO  what is this function meant to do ?
 request_response(_BinaryRep, _RequestCacheEntry) -> ok.
+
 % ===================================================================
 % Callbacks
 % ===================================================================
@@ -627,8 +628,30 @@ handle_info(transfer_periodic, #state{lock_requests = Old_Lock_Requests, local_l
     Clean_Lock_Requests = clear_old_lock_requests(Old_Lock_Requests, ?LOCK_REQUEST_TIMEOUT),
     Clear_Local_Locks = remove_old_required_locks(Local_Locks, ?LOCK_REQUIRED_TIMEOUT),
     %lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
-    % goes through all lock reuests. If the request is NOT in local_locks then the lock is send to the requesting DC
-    Updated_Lock_Requests = orddict:fold(
+
+    New_Lock_Requests_Value =
+        case ?REDUCED_INTER_DC_COMMUNICATION of
+            true -> update_lock_requests_to_transfer(Clean_Lock_Requests, Clear_Local_Locks);
+            false -> Clean_Lock_Requests
+        end,
+    NewTimer = erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
+    {noreply, State#state{transfer_timer = NewTimer, local_locks = Clear_Local_Locks, lock_requests = New_Lock_Requests_Value}}.
+
+terminate(_Reason, _State) ->
+    dets:close(?DETS_FILE_NAME),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+% ===================================================================
+% Callbacks private functions
+% ===================================================================
+
+% Goes through all lock requests.
+% If the request is NOT in local_locks then the lock is sent to the requesting DC
+update_lock_requests_to_transfer(Clean_Lock_Requests, Clear_Local_Locks) ->
+    orddict:fold(
         fun(DCID, Lock_Timestamp_List, Changed_Lock_Requests) ->
             Updated_Key_Value_List = orddict:fold(
                 fun(Lock, Timestamp, New_Key_Value_List) ->
@@ -656,18 +679,4 @@ handle_info(transfer_periodic, #state{lock_requests = Old_Lock_Requests, local_l
                 _ ->
                     orddict:store(DCID, Updated_Key_Value_List, Changed_Lock_Requests)
             end
-        end, orddict:new(), Clean_Lock_Requests),
-    NewTimer = erlang:send_after(?LOCK_TRANSFER_FREQUENCY, self(), transfer_periodic),
-    New_Lock_Requests_Value = case ?REDUCED_INTER_DC_COMMUNICATION of
-                                  true -> Updated_Lock_Requests;
-                                  false -> Clean_Lock_Requests
-                              end,
-    {noreply, State#state{transfer_timer = NewTimer, local_locks = Clear_Local_Locks, lock_requests = New_Lock_Requests_Value}}.
-
-
-terminate(_Reason, _State) ->
-    dets:close(?DETS_FILE_NAME),
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+        end, orddict:new(), Clean_Lock_Requests).

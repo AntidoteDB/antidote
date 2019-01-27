@@ -115,8 +115,8 @@ init([]) ->
 %% Tries to reserve the locks for the specified transaction
 %% Returns {ok,[snapshot_time()]} if all locks were available. The snapshot times correspond to the latest time the locks were released
 %% Returns {missing_locks, {[key()],[key()]}} if any requested keys are not currently owned by this dc
-%% Returns {locks_in_use, [txid()]} if all keys are owned by this dc but are in use by other transacitons
--spec get_locks([key()], [key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+%% Returns {locks_in_use, [txid()]} if all keys are owned by this dc but are in use by other transactions
+-spec get_locks([key()], [key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, {[{txid(), [key()]}], [{txid(), [key()]}]}}.
 get_locks(Shared_Locks, Exclusive_Locks, TxId) ->
     gen_server:call(?MODULE, {get_locks, TxId, Shared_Locks, Exclusive_Locks}).
 %% TxId : transaction id for which all locks are to be released
@@ -925,6 +925,7 @@ remote_send_lock_history(Lock, Send_History, Last_Changed, MyDCId, RemoteId, Key
 
 %% Request response - do nothing. TODO  what is this function meant to do ?
 request_response_es(_BinaryRep, _RequestCacheEntry) -> ok.
+
 % ===================================================================
 % Callbacks
 % ===================================================================
@@ -992,15 +993,36 @@ handle_call({get_locks, TxId, Shared_Locks, Exclusive_Locks}, _From, #state{loca
             {reply, {ok, Snapshot_Times}, State#state{local_locks = New_Lokal_Locks1}}
     end.
 
-
 %% Periodically transfers locks requested by other DCs to them, if they are currently not used
 handle_info(transfer_periodic, #state{lock_requests = Old_Lock_Requests, local_locks = Local_Locks, transfer_timer = OldTimer} = State) ->
     erlang:cancel_timer(OldTimer),
     Clean_Lock_Requests = clear_old_lock_requests(Old_Lock_Requests, ?LOCK_REQUEST_TIMEOUT_ES),
     Clear_Local_Locks = remove_old_required_locks(Local_Locks, ?LOCK_REQUIRED_TIMEOUT_ES),
     %lager:info("handle_info({transfer_periodic},clear_local_locks=~w,clear_lock_requests =~w ~n",[Clear_Local_Locks,Clean_Lock_Requests]),
-    % goes through all lock reuests. If the request is NOT in local_locks then the lock is send to the requesting DC
-    New_Lock_Requests = orddict:fold(
+
+    New_Lock_Requests_Value =
+        case ?REDUCED_INTER_DC_COMMUNICATION_ES of
+            true -> update_lock_requests_to_transfer(Clean_Lock_Requests, Clear_Local_Locks);
+            false -> Clean_Lock_Requests
+        end,
+    NewTimer = erlang:send_after(?LOCK_TRANSFER_FREQUENCY_ES, self(), transfer_periodic),
+    {noreply, State#state{transfer_timer = NewTimer, local_locks = Clear_Local_Locks, lock_requests = New_Lock_Requests_Value}}.
+
+terminate(_Reason, _State) ->
+    dets:close(?DETS_FILE_NAME),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+% ===================================================================
+% Callbacks private functions
+% ===================================================================
+
+% Goes through all lock requests.
+% If the request is NOT in local_locks then the lock is send to the requesting DC
+update_lock_requests_to_transfer(Clean_Lock_Requests, Clear_Local_Locks) ->
+    orddict:fold(
         fun(DCID, Lock_Amount_Timestamp_List, Changed_Lock_Requests) ->
             Updated_Lock_Amount_Timestamp_List = lists:foldl(
                 fun({Lock, Amount, Timestamp}, New_Lock_Amount_Timestamp_List) ->
@@ -1086,18 +1108,4 @@ handle_info(transfer_periodic, #state{lock_requests = Old_Lock_Requests, local_l
                 _ ->
                     [{DCID, Updated_Lock_Amount_Timestamp_List} | Changed_Lock_Requests]
             end
-        end, [], Clean_Lock_Requests),
-    NewTimer = erlang:send_after(?LOCK_TRANSFER_FREQUENCY_ES, self(), transfer_periodic),
-    New_Lock_Requests_Value = case ?REDUCED_INTER_DC_COMMUNICATION_ES of
-                                  true -> New_Lock_Requests;
-                                  false -> Clean_Lock_Requests
-                              end,
-    {noreply, State#state{transfer_timer = NewTimer, local_locks = Clear_Local_Locks, lock_requests = New_Lock_Requests_Value}}.
-
-
-terminate(_Reason, _State) ->
-    dets:close(?DETS_FILE_NAME),
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+        end, [], Clean_Lock_Requests).

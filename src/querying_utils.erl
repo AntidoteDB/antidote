@@ -211,15 +211,12 @@ get_locks(Timeout, Locks, TxId) ->
     Res = clocksi_interactive_coord:get_locks(Timeout, TxId, Locks),
     case Res of
         {ok, _} -> ok;
-        {missing_locks, Keys} ->
-            ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
-            throw(lists:flatten(ErrorMsg));
         {locks_not_available, Keys} ->
             ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
             throw(lists:flatten(ErrorMsg));
-        {locks_in_use, {UsedExclusive, _UsedShared}} ->
+        {locks_in_use, UsedLocks} ->
             FilterNotThisTx =
-                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedExclusive),
+                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedLocks),
             case FilterNotThisTx of
                 [] -> ok;
                 _ ->
@@ -234,9 +231,6 @@ get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
     Res = clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks),
     case Res of
         {ok, _} -> ok;
-        {missing_locks, Keys} ->
-            ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
-            throw(lists:flatten(ErrorMsg));
         {locks_not_available, Keys} ->
             ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
             throw(lists:flatten(ErrorMsg));

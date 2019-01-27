@@ -388,69 +388,18 @@ finish_op(From, Key, Result) ->
 init([From, ClientClock, Properties, StayAlive]) ->
     BaseState = init_state(StayAlive, false, false, Properties),
 
-    Locks = lists:keyfind(locks, 1, Properties),
-    Shared_Locks = lists:keyfind(shared_locks, 1, Properties),
-    Exclusive_Locks = lists:keyfind(exclusive_locks, 1, Properties),
-    State = case {Locks, Shared_Locks, Exclusive_Locks} of
-        {false, false, false} ->
-            start_tx_internal(From, ClientClock, Properties, BaseState);
-        {{locks, A}, {shared_locks, B}, {exclusive_locks, C}}
-            when is_list(A) andalso is_list(B) andalso is_list(C) ->
-            case (A ++ B ++ C) == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, A, B, C);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {false, {shared_locks, B}, {exclusive_locks, C}}
-            when is_list(B) andalso is_list(C) ->
-            case (B ++ C) == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, [], B, C);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {{locks, A}, false, {exclusive_locks, C}}
-            when is_list(A) andalso is_list(C) ->
-            case (A ++ C) == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, A, [], C);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {{locks, A}, {shared_locks, B}, false}
-            when is_list(A) andalso is_list(B) ->
-            case (A ++ B) == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, A, B, []);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {{locks, A}, false, false}
-            when is_list(A) ->
-            case A == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, A, [], []);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {false, {shared_locks, B}, false}
-            when is_list(B) ->
-            case B == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, [], B, []);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end;
-        {false, false, {exclusive_locks, C}}
-            when is_list(C) ->
-            case C == [] of
-                false ->
-                    start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, [], [], C);
-                true ->
-                    start_tx_internal(From, ClientClock, Properties, BaseState)
-            end
-    end,
+    Locks = get_locks_from_properties(locks, Properties),
+    SharedLocks = get_locks_from_properties(shared_locks, Properties),
+    ExclusiveLocks = get_locks_from_properties(exclusive_locks, Properties),
+
+    State =
+        case {Locks, SharedLocks, ExclusiveLocks} of
+            {[], [], []} ->
+                start_tx_internal(From, ClientClock, Properties, BaseState);
+            {L, SL, EL} ->
+                start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, L, SL, EL)
+        end,
+
     {ok, execute_op, State};
 
 %% @doc Initialize static transaction with Operations.
@@ -458,18 +407,18 @@ init([From, ClientClock, Properties, StayAlive]) ->
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
     BaseState = init_state(StayAlive, true, true, Properties),
 
-    Locks = lists:keyfind(locks, 1, Properties),
-    Shared_Locks = lists:keyfind(shared_locks, 1, Properties),
-    Exclusive_Locks = lists:keyfind(exclusive_locks, 1, Properties),
-    State = if
-        ((Locks == false) andalso (Shared_Locks == false) andalso (Exclusive_Locks == false)) ->
-            start_tx_internal(From, ClientClock, Properties, BaseState);
-        true ->
-            Locks1 = case Locks of false -> []; {locks, A} -> A end,
-            Shared_Locks1 = case Shared_Locks of false -> []; {shared_locks, B} -> B end,
-            Exclusive_Locks1 = case Exclusive_Locks of false -> []; {exclusive_locks, C} -> C end,
-            start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, Locks1, Shared_Locks1, Exclusive_Locks1)
-    end,
+    Locks = get_locks_from_properties(locks, Properties),
+    SharedLocks = get_locks_from_properties(shared_locks, Properties),
+    ExclusiveLocks = get_locks_from_properties(exclusive_locks, Properties),
+
+    State =
+        case {Locks, SharedLocks, ExclusiveLocks} of
+            {[], [], []} ->
+                start_tx_internal(From, ClientClock, Properties, BaseState);
+            {L, SL, EL} ->
+                start_tx_internal_with_locks(From, ClientClock, Properties, BaseState, L, SL, EL)
+        end,
+
     {ok, execute_op, State#coord_state{operations = Operations, from = From}, [{state_timeout, 0, timeout}]}.
 
 %%%== execute_op
@@ -830,17 +779,15 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 %% #Locks
 %% Release the locks when the transaction terminates
 terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = TransactionId}, _SD) ->
-
-    case lists:keymember(locks, 1, Properties) of
-        false -> ok;
-        true -> ?LOCK_MGR:release_locks(TransactionId), ok
+    case get_locks_from_properties(locks, Properties) of
+        [] -> ok;
+        _L -> ?LOCK_MGR:release_locks(TransactionId), ok
     end,
-    HasSharedLocks = lists:keymember(shared_locks, 1, Properties),
-    HasExclusiveLocks = lists:keymember(exclusive_locks, 1, Properties),
-    HasLocks = HasSharedLocks orelse HasExclusiveLocks,
-    case HasLocks of
-        true -> ?LOCK_MGR_ES:release_locks(TransactionId), ok;
-        false -> ok
+    HasSharedLocks = get_locks_from_properties(shared_locks, Properties),
+    HasExclusiveLocks = get_locks_from_properties(exclusive_locks, Properties),
+    case {HasSharedLocks, HasExclusiveLocks} of
+        {[], []} -> ok;
+        {_SL, _EL} -> ?LOCK_MGR_ES:release_locks(TransactionId), ok
     end;
 terminate(_Reason, _SN, _SD) -> ok.
 
@@ -903,11 +850,11 @@ start_tx_internal_with_locks(
             {stop, "Transaction using the locks ore are missing: " ++ lists:flatten(io_lib:format("~p", [Error_Info]))}   %%TODO
     end.
 
-
-%% @doc This function tries to aquire the specified locks, if this fails it will retry after GET_LOCKS_INTERVALms
+%% @doc This function tries to acquire the specified locks,
+%% if this fails it will retry after GET_LOCKS_INTERVAL ms
 %% for a maximum number of times (Timeout div GET_LOCKS_INTERVAL).
 %% #Locks
--spec get_locks(non_neg_integer(), txid(), [key()]) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()], [key()]}]} | {locks_in_use, [{txid(), [key()]}]}.
+%-spec get_locks(non_neg_integer(), txid(), [key()]) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()], [key()]}]} | {locks_in_use, [{txid(), [key()]}]}.
 get_locks(Timeout, TransactionId, Locks) ->
     Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
     case Result of
@@ -961,7 +908,7 @@ get_locks_extra(TransactionId, Shared_Locks, Exclusive_Locks)->
 %% @doc This function tries to aquire the specified exclusive and hared locks, if this fails it will retry after GET_LOCKS_INTERVALms
 %% for a maximum number of times (Timeout div GET_LOCKS_INTERVAL).
 %% #Locks
--spec get_locks(non_neg_integer(), txid(), [key()], [key()]) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()], [key()]}]} | {locks_in_use, [{txid(), [key()]}]}.
+-spec get_locks(non_neg_integer(), txid(), [key()], [key()]) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, {[{txid(), [key()]}], [{txid(), [key()]}]}}.
 get_locks(Timeout, TransactionId, Shared_Locks, Exclusive_Locks) ->
     Result = ?LOCK_MGR_ES:get_locks(Shared_Locks, Exclusive_Locks, TransactionId),
     case Result of
@@ -1025,6 +972,13 @@ prepare_transaction_with_locks(ClientClock, StayAlive, From) ->
                    self()
            end,
     {#tx_id{local_start_time = LocalClock, server_pid = Name}, LocalClock, SnapshotTime}.
+
+get_locks_from_properties(LockPropertyName, Properties) ->
+    case lists:keyfind(LockPropertyName, 1, Properties) of
+        {LockPropertyName, FindLocks}
+            when is_list(FindLocks) -> FindLocks;
+        _Else -> []
+    end.
 
 create_transaction_record_with_locks(ClientClock, StayAlive, From, Properties, Locks, [], []) ->
     {TransactionId, LocalClock, SnapshotTime} = prepare_transaction_with_locks(ClientClock, StayAlive, From),
@@ -1370,16 +1324,15 @@ reply_to_client(State = #coord_state{
     transactionid = TransactionId,
     properties = Properties
 }) ->
-    case lists:keymember(locks, 1, Properties) of
-        false -> ok;
-        true -> ?LOCK_MGR:release_locks(TransactionId), ok
+    case get_locks_from_properties(locks, Properties) of
+        [] -> ok;
+        _L -> ?LOCK_MGR:release_locks(TransactionId), ok
     end,
-    HasSharedLocks = lists:keymember(shared_locks, 1, Properties),
-    HasExclusiveLocks = lists:keymember(exclusive_locks, 1, Properties),
-    HasLocks = HasSharedLocks orelse HasExclusiveLocks,
-    case HasLocks of
-        true -> ?LOCK_MGR_ES:release_locks(TransactionId), ok;
-        false -> ok
+    HasSharedLocks = get_locks_from_properties(shared_locks, Properties),
+    HasExclusiveLocks = get_locks_from_properties(exclusive_locks, Properties),
+    case {HasSharedLocks, HasExclusiveLocks} of
+        {[], []} -> ok;
+        {_SL, _EL} -> ?LOCK_MGR_ES:release_locks(TransactionId), ok
     end,
 
     case From of
