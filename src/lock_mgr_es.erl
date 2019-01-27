@@ -189,7 +189,7 @@ required_remote(Shared_Locks,Exclusive_Locks,{Missing_Shared_Locks,Missing_Exclu
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Returns {locks_in_use,[{txid(),[locks]}]} if all locks are owned by this DC but are used by another Transaction
 %% Updates the local_locks list if the locks were available by adding {TxId,{using,Locks}} to local_locks
--spec using([key()],[key()],txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}] | {atom(),[key()]} | {atom(),[{txid(),[key()]}]}.
+-spec using([key()],[key()],txid(),[{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}]) -> [{txid(),{atom(),[key()],erlang:timestamp()}|{atom(),[key()]}}] | {atom(),[key()]} | {atom(),{[{txid(),[key()]}],[{txid(),[key()]}]}}.
 using(Shared_Locks,Exclusive_Locks,TxId,Local_Locks) ->
         Missing_Locks_Shared = lists:foldl(fun(Lock,AccIn)->
                         case check_lock_shared(Lock) of
@@ -524,7 +524,7 @@ send_lock(Lock,Amount,To)->
             {error,Reason}
     end.
 
--spec get_send_history_of(key()) -> {key(),[{dcid(),[{dcid(),non_neg_integer() | all}]}],snapshot_time()}.
+-spec get_send_history_of(key()) -> [{dcid(),[{dcid(),non_neg_integer() | all}]}].
 get_send_history_of(Lock) ->
     {ok, _Ref}= dets:open_file(?DETS_FILE_NAME,?DETS_SETTINGS),
     case dets:lookup(?DETS_FILE_NAME,Lock) of

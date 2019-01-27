@@ -152,7 +152,7 @@ read_function(ObjKeys, {Function, Args}, TxId)
 
     Reads = lists:map(fun(Key) -> {Key, {Function, Args}} end, ObjKeys),
     read_crdts(value, Reads, TxId);
-read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, UpdatedPartitions})
+read_function(ObjKeys, {Function, Args}, {TxId, UpdatedPartitions})
     when is_list(ObjKeys) andalso is_record(TxId, transaction)  ->
 
     lists:map(fun({Key, Type, Bucket}) ->
@@ -160,7 +160,7 @@ read_function(ObjKeys, {Function, Args}, {TxId, ReadSet, UpdatedPartitions})
         WriteSet = get_write_set(Partition, UpdatedPartitions),
 
         case clocksi_object_function:sync_execute_object_function(
-            TxId, Partition, {Key, Bucket}, Type, {Function, Args}, WriteSet, ReadSet) of
+            TxId, Partition, {Key, Bucket}, Type, {Function, Args}, WriteSet) of
             {ok, {Key, Type, _, _, Value}} ->
                 Value;
             {error, Reason} ->
@@ -223,6 +223,9 @@ get_locks(Timeout, Locks, TxId) ->
         {missing_locks, Keys} ->
             ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
             throw(lists:flatten(ErrorMsg));
+        {locks_not_available, Keys} ->
+            ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
+            throw(lists:flatten(ErrorMsg));
         {locks_in_use, {UsedExclusive, _UsedShared}} ->
             FilterNotThisTx =
                 lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedExclusive),
@@ -242,6 +245,9 @@ get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
         {ok, _} -> ok;
         {missing_locks, Keys} ->
             ErrorMsg = io_lib:format("One or more locks are missing: ~p", [Keys]),
+            throw(lists:flatten(ErrorMsg));
+        {locks_not_available, Keys} ->
+            ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
             throw(lists:flatten(ErrorMsg));
         {locks_in_use, {UsedExclusive, _UsedShared}} ->
             FilterNotThisTx =
@@ -369,11 +375,11 @@ stop(Pid) -> gen_statem:stop(Pid).
 %% ====================================================================
 
 
-read_crdts(StateOrValue, ObjKeys, {TxId, _ReadSet, _UpdatedPartitions} = Transaction)
+read_crdts(StateOrValue, ObjKeys, {TxId, _UpdatedPartitions} = Transaction)
     when is_list(ObjKeys) andalso is_record(TxId, transaction) ->
     {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
     Objs;
-read_crdts(StateOrValue, ObjKey, {TxId, _ReadSet, _UpdatedPartitions} = Transaction)
+read_crdts(StateOrValue, ObjKey, {TxId, _UpdatedPartitions} = Transaction)
     when is_record(TxId, transaction) ->
     read_crdts(StateOrValue, [ObjKey], Transaction);
 
@@ -393,9 +399,7 @@ read_crdts(value, ObjKeys) when is_list(ObjKeys) ->
     Objs;
 read_crdts(state, ObjKeys) when is_list(ObjKeys) ->
     {ok, Objs, _} = cure:get_objects(ignore, [], ObjKeys),
-    Objs;
-read_crdts(StateOrValue, ObjKey) ->
-    read_crdts(StateOrValue, [ObjKey]).
+    Objs.
 
 read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
     ReadObjects = lists:map(fun({_Key, Type, _Bucket} = ObjKey) ->
@@ -407,20 +411,15 @@ read_data_items(StateOrValue, ObjKeys, Transaction) when is_list(ObjKeys) ->
     end, ObjKeys),
     {ok, ReadObjects}.
 
-read_data_item({Key, Type, Bucket}, {Transaction, ReadSet, UpdatedPartitions}) ->
+read_data_item({Key, Type, Bucket}, {Transaction, UpdatedPartitions}) ->
     SendKey = {Key, Bucket},
-    case orddict:find(SendKey, ReadSet) of
-        error ->
-            Partition = ?LOG_UTIL:get_key_partition(SendKey),
-            WriteSet = get_write_set(Partition, UpdatedPartitions),
+    Partition = ?LOG_UTIL:get_key_partition(SendKey),
+    WriteSet = get_write_set(Partition, UpdatedPartitions),
 
-            Args = {Partition, Transaction, WriteSet, SendKey, Type},
+    Args = {Partition, Transaction, WriteSet, SendKey, Type},
 
-            {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}),% clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
-            {ok, Snapshot};
-        {ok, State} ->
-            {ok, State}
-    end.
+    {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}),% clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
+    {ok, Snapshot}.
 
 get_write_set(Partition, Partitions) ->
     case lists:keyfind(Partition, 1, Partitions) of

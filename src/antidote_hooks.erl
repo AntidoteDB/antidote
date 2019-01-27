@@ -145,7 +145,7 @@ execute_pre_commit_hook(Updates) when is_list(Updates) ->
         execute_pre_commit_hook({Key, Bucket}, Type, Param)
     end, Updates).
 
--spec execute_pre_commit_hook(term(), type(), op_param(), txid()) ->
+-spec execute_pre_commit_hook(term(), type(), op_param(), txid() | {term(), term()}) ->
     {term(), type(), op_param()} | [{term(), type(), op_param()}] | {error, reason()}.
 execute_pre_commit_hook({Key, Bucket}, Type, Param, Transaction) ->
     Hook = get_hooks(pre_commit, Bucket),

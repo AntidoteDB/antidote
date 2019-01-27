@@ -107,7 +107,8 @@ increment_bcounter(Value) ->
     bcounter_op(increment, Value).
 
 decrement_bcounter(0) -> [];
-decrement_bcounter({0, _Actor}) -> [];
+%% TODO not used
+%% decrement_bcounter({0, _Actor}) -> [];
 decrement_bcounter(Value) ->
     bcounter_op(decrement, Value).
 

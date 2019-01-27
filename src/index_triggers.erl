@@ -172,7 +172,7 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                     [PIdxKey] = querying_utils:build_keys(PIdxName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
 
                     PIdxUpdate = create_pindex_update(ObjBoundKey, Updates, Table, PIdxKey, Transaction),
-                    PrepareIdxUpdates = build_index_updates(Updates, ObjBoundKey, Table),
+                    PrepareIdxUpdates = build_index_updates(Updates, ObjBoundKey, Table, []),
                     SIdxUpdates = create_sindex_updates(PrepareIdxUpdates, Transaction),
                     %lager:info("SIdxUpdates: ~p", [SIdxUpdates]),
 
@@ -224,11 +224,6 @@ fill_index(ObjUpdate, Table, Transaction) ->
                 lists:append(Acc, lists:flatten(IdxUpds))
             end, [], Indexes)
     end.
-
-build_index_updates(Updates, ObjBoundKey, Table) when is_list(Updates) ->
-    build_index_updates(Updates, ObjBoundKey, Table, []);
-build_index_updates(Update, ObjBoundKey, Table) ->
-    build_index_updates([Update], ObjBoundKey, Table, []).
 
 build_index_updates([Update | Updates], ObjBoundKey, Table, Acc) ->
     {Key, _Type, _Bucket} = ObjBoundKey,

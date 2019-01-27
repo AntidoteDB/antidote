@@ -214,7 +214,7 @@ update_objects(Clock, Properties, Updates) ->
             {error, Reason}
     end.
 
--spec get_locks(default | integer(), [key()], txid()) -> {ok,snapshot_time()} | {locks_not_available,[key()]} | {missing_locks, [{txid(),[key()]}]}.
+-spec get_locks(default | integer(), [key()], txid()) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()]}]}.
 get_locks(default, Locks, TxId) ->
     clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
 get_locks(Timeout, Locks, TxId) ->

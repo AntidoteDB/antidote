@@ -72,7 +72,7 @@ query(Filter, TxId) when is_list(Filter) ->
                         [] ->
                             {ok, Index} = index_manager:read_index(primary, TableName, TxId),
                             Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
-                            Records = read_records(Keys, TxId),
+                            Records = record_utils:record_data(Keys, TxId),
                             prepare_records(table_utils:column_names(Table), Table, Records);
                         _Else ->
                             apply_filter(Conditions, Table, TxId)
@@ -167,12 +167,7 @@ apply_filter(Conditions, Table, TxId) ->
 %% The sub-queries mentioned here are conditions that are
 %% surrounded by parenthesis.
 read_subqueries([{sub, Conds} | Tail], Table, TxId, RemainConds, PartialRes) ->
-    Result = apply_filter(Conds, Table, TxId),
-    ResultSet = case is_list(Result) of
-                       true -> sets:from_list(Result);
-                       false -> Result
-                end,
-
+    ResultSet = apply_filter(Conds, Table, TxId),
     Intersection = case PartialRes of
                        nil -> ResultSet;
                        _Else -> sets:intersection(PartialRes, ResultSet)
@@ -210,7 +205,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             iterate_ranges(RangeQueries, Table, TxId);
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
-                            Objects = read_records(KeyList, TxId),
+                            Objects = record_utils:record_data(KeyList, TxId),
                             PreparedObjs = prepare_records(table_utils:column_names(Table), Table, Objects),
 
                             %RemainRanges = dict:filter(fun(Column, _Range) ->
@@ -231,7 +226,7 @@ iterate_ranges(RangeQueries, Table, TxId) ->
     TableName = table_utils:name(Table),
     {ok, Index} = index_manager:read_index(primary, TableName, TxId),
     Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
-    Data = read_records(Keys, TxId),
+    Data = record_utils:record_data(Keys, TxId),
     PreparedData = prepare_records(table_utils:column_names(Table), Table, Data),
     iterate_ranges(RangeQueries, Table, PreparedData, TxId).
 
@@ -343,11 +338,6 @@ prepare_records0(BCounterCols, [Record | Records], Acc) ->
     NewObjsAcc = lists:append(Acc, [NewObj]),
     prepare_records0(BCounterCols, Records, NewObjsAcc);
 prepare_records0(_, [], Acc) -> Acc.
-
-read_records(Keys, TxId) when is_list(Keys) ->
-    record_utils:record_data(Keys, TxId);
-read_records(Key, TxId) ->
-    record_utils:record_data(Key, TxId).
 
 range_type({{{greatereq, _Val}, {lessereq, _Val}}, _}) -> equality;
 range_type({{{nil, infinity}, {nil, infinity}}, Excluded}) when length(Excluded) > 0 -> notequality;
