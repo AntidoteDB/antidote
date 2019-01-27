@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,10 +18,12 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
@@ -52,8 +60,6 @@
 
 %% TODO support more than one table per filter, for supporting join queries
 query(Filter, TxId) when is_list(Filter) ->
-    %gen_server:call(?MODULE, {query, Filter, TxId}, infinity).
-    %lager:info("==> Received query: ~p", [Filter]),
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
     TCols = table_utils:column_names(Table),
@@ -62,7 +68,6 @@ query(Filter, TxId) when is_list(Filter) ->
     Result =
         case validate_projection(Projection, TCols) of
             {error, Msg} ->
-                %lager:info("==> An error occurred: ~p", [Msg]),
                 {error, Msg};
             {ok, ProjectionCols} ->
                 Conditions = conditions(Filter),
@@ -83,14 +88,11 @@ query(Filter, TxId) when is_list(Filter) ->
                         true -> FilteredResult
                     end,
 
-                ApplyProjection = apply_projection(ProjectionCols, ResultToList),
-                %lager:info("==> Final result: ~p", [ApplyProjection]),
-                ApplyProjection
+                apply_projection(ProjectionCols, ResultToList)
         end,
     {ok, Result}.
 
 filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
-    %gen_server:call(?MODULE, {filter_record, Filter, TxId}, infinity).
     {_Key, _Type, Bucket} = ObjectKey,
     [Object] = querying_utils:read_keys(value, ObjectKey, TxId),
     Table = table_utils:table_metadata(Bucket, TxId),
@@ -98,7 +100,6 @@ filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
     Result =
         case validate_projection(Filter, TCols) of
             {error, Msg} ->
-                %lager:info("==> An error occurred: ~p", [Msg]),
                 {error, Msg};
             {ok, Projection} ->
                 {ok, apply_projection(Projection, Object)}
@@ -155,17 +156,16 @@ apply_filter(Conditions, Table, TxId) ->
             lists:foldl(fun(Conjunction, FinalRes) ->
                 {RemainConds, PartialRes} = read_subqueries(Conjunction, Table, TxId, [], nil),
                 PartialResult = read_remaining(RemainConds, Table, PartialRes, TxId),
-
                 ResultSet = sets:from_list(PartialResult),
-                %io:format("ResultSet: ~p~n", [ResultSet]),
+
                 sets:union(FinalRes, ResultSet)
             end, sets:new(), Conjunctions);
         false ->
-            throw("The current condition is not valid")
+            ErrorMsg = io_lib:format("The current condition is not valid. It should be a disjunction: ~p", [Conditions]),
+            throw(lists:flatten(ErrorMsg))
     end.
 
-%% The sub-queries mentioned here are conditions that are
-%% surrounded by parenthesis.
+%% Sub-queries are conditions enclosed between parenthesis.
 read_subqueries([{sub, Conds} | Tail], Table, TxId, RemainConds, PartialRes) ->
     ResultSet = apply_filter(Conds, Table, TxId),
     Intersection = case PartialRes of
@@ -178,13 +178,11 @@ read_subqueries([Cond | Tail], Table, TxId, RemainConds, PartialRes) ->
 read_subqueries([], _Table, _TxId, RemainConds, nil) ->
     {RemainConds, nil};
 read_subqueries([], _Table, _TxId, RemainConds, PartialRes) ->
-    %AddFks = get_shadow_columns(Table, sets:to_list(PartialRes), TxId),
     {RemainConds, sets:to_list(PartialRes)}.
 
 read_remaining(_Conditions, _Table, [], _TxId) -> [];
 read_remaining([], _Table, CurrentData, _TxId) -> CurrentData;
 read_remaining(Conditions, Table, CurrentData, TxId) ->
-    %TableName = table_utils:table(Table),
     RangeQueries = range_queries:get_range_query(Conditions),
     case RangeQueries of
         nil -> [];
@@ -207,10 +205,6 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             KeyList = ordsets:to_list(LeastKeys),
                             Objects = record_utils:record_data(KeyList, TxId),
                             PreparedObjs = prepare_records(table_utils:column_names(Table), Table, Objects),
-
-                            %RemainRanges = dict:filter(fun(Column, _Range) ->
-                            %    lists:member(Column, Remain)
-                            %end, RangeQueries),
 
                             case dict:is_empty(RemainRanges) of
                                 true -> PreparedObjs;
@@ -308,10 +302,9 @@ apply_projection(_Projection, [], Acc) ->
     Acc.
 
 %% This function reads all remaining data of each record.
-%% A record may not have its full data if:
-%% - At least one of its bounded counter columns has the initial value
-%%   (which means to have the initial state of a bounded counter);
-%% - Or it does not have the values (i.e. states) of its shadow columns.
+%% A record may not have its full data if at least one of its
+%% bounded counter columns has the initial value which is the
+%% same as not having the current counter value.
 prepare_records(Columns, Table, Records) ->
     TColumns = table_utils:columns(Table),
     BCounterCols = lists:foldl(fun(ColName, AccCols) ->
@@ -357,25 +350,6 @@ read_predicate(Range) ->
             fun(V) -> Pred1(V) andalso Pred2(V) end
     end.
 
-%%read_predicate_pk(Range) ->
-%%    case range_queries:to_predicate(Range) of
-%%        {{{_, LPred}, infinity}, Inequality} ->
-%%            fun({V, _, _}) -> LPred(V) andalso Inequality(V) end;
-%%        {{infinity, {_, RPred}}, Inequality} ->
-%%            fun({V, _, _}) -> RPred(V) andalso Inequality(V) end;
-%%        {{{_, LPred}, {_, RPred}}, Inequality} ->
-%%            fun({V, _, _}) -> LPred(V) andalso RPred(V) andalso Inequality(V) end;
-%%        {ignore, Pred} when is_function(Pred) ->
-%%            fun({V, _, _}) -> Pred(V) end;
-%%        {Pred1, Pred2} when is_function(Pred1) and is_function(Pred2) ->
-%%            fun({V, _, _}) -> Pred1(V) andalso Pred2(V) end
-%%    end.
-%%
-%%read_pk_predicate(Range) ->
-%%    {{{LB, Val1}, {RB, Val2}}, Excluded} = Range,
-%%    NewRange = {{LB, querying_utils:to_atom(Val1)}, {RB, querying_utils:to_atom(Val2)}},
-%%    read_predicate_pk({NewRange, Excluded}).
-
 read_indexes(RangeQueries, Table) ->
     TableName = table_utils:name(Table),
     dict:fold(fun(Column, Range, {RemainAcc, IdxAcc}) ->
@@ -396,31 +370,22 @@ read_indexes(RangeQueries, Table) ->
     end, {dict:new(), []}, RangeQueries).
 
 interpret_index({primary, TName}, Table, RangeQueries, TxId) ->
-    % TODO old code; uncomment to use with an antidote_crdt_set_go type index
-    %IdxData = indexing:read_index(primary, TableName, TxId),
-    %[PKCol] = table_utils:primary_key_name(Table),
-
-    %GetRange = range_queries:lookup_range(PKCol, RangeQueries),
-    %FilterFun = read_pk_predicate(GetRange),
-    %ordsets:from_list(filter_keys(FilterFun, IdxData));
-
     [PKCol] = table_utils:primary_key_name(Table),
     GetRange = range_queries:lookup_range(PKCol, RangeQueries),
 
     IdxData = filter_index(GetRange, primary, TName, Table, TxId),
 
     lists:foldl(fun({_RawKey, BoundObj}, Set) ->
-        %% there's an assumption that the accumulator will never have repeated keys
         ordsets:add_element(BoundObj, Set)
     end, ordsets:new(), IdxData);
 
-interpret_index({secondary, {Name, TName, [Col]}}, Table, RangeQueries, TxId) -> %% TODO support more columns
+%% TODO support more columns
+interpret_index({secondary, {Name, TName, [Col]}}, Table, RangeQueries, TxId) ->
     GetRange = range_queries:lookup_range(Col, RangeQueries),
 
     IdxData = filter_index(GetRange, secondary, {TName, Name}, Table, TxId),
 
     lists:foldl(fun({_IdxCol, PKs}, Set) ->
-        %% there's an assumption that the accumulator will never have repeated keys
         ordsets:union(Set, PKs)
     end, ordsets:new(), IdxData).
 
@@ -449,8 +414,8 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             {_, Excluded} = Range,
             {ok, Aux} = index_manager:read_index(IndexType, IndexName, TxId),
 
+            %% inequality predicate
             lists:filter(fun({IdxVal, _}) ->
-                %% inequality predicate
                 not lists:member(IdxVal, Excluded)
             end, Aux);
         range ->
@@ -458,8 +423,8 @@ filter_index(Range, IndexType, IndexName, Table, TxId) ->
             {ok, Index} = index_manager:read_index_function(IndexType, IndexName,
                 {range, {send_range(LeftBound), send_range(RightBound)}}, TxId),
 
+            %% inequality predicate
             lists:filter(fun({IdxCol, _}) ->
-                %% inequality predicate
                 not lists:member(IdxCol, Excluded)
             end, Index)
     end.

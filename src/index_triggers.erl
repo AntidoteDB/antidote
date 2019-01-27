@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,10 +18,12 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
@@ -64,7 +72,7 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
         end
     end, [], Updates).
 
-% Uncomment to use with following 3 hooks
+% Uncomment to use with the following 3 hooks
 %%fill_pindex(Key, Bucket) ->
 %%    TableName = querying_utils:to_atom(Bucket),
 %%    PIdxName = generate_pindex_key(TableName),
@@ -103,9 +111,9 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
 %%
 %%    {ok, ObjUpdate}.
 
-%% The 'Transaction' object passed here is a tuple on the form
-%% {TxId, ReadSet, WriteSet} that represents a transaction id,
-%% a transaction read set, and a transaction write set, respectively.
+%% The 'Transaction' object passed here is a tuple of the form
+%% {TxId, WriteSet} that includes a transaction id and a
+%% transaction write set, respectively.
 index_update_hook(Update, Transaction) when is_tuple(Update) ->
     {{Key, Bucket}, Type, Param} = Update,
     case generate_index_updates(Key, Type, Bucket, Param, Transaction) of
@@ -143,9 +151,7 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
 
     case update_type({Key, Type, Bucket}) of
         ?TABLE_UPD_TYPE ->
-            % Is a table update
-            %lager:info("Is a table update: ~p", [ObjUpdate]),
-
+            % This update is a table update
             [{{TableName, _}, _}] = Updates,
 
             Table = table_utils:table_metadata(TableName, Transaction),
@@ -157,9 +163,7 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
 
             Upds;
         ?RECORD_UPD_TYPE ->
-            % Is a record update
-            %lager:info("Is a record update: ~p", [ObjUpdate]),
-
+            % This update is a record update
             TName = filter_table_name(Bucket),
             Table = table_utils:table_metadata(TName, Transaction),
             case Table of
@@ -174,7 +178,6 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
                     PIdxUpdate = create_pindex_update(ObjBoundKey, Updates, Table, PIdxKey, Transaction),
                     PrepareIdxUpdates = build_index_updates(Updates, ObjBoundKey, Table, []),
                     SIdxUpdates = create_sindex_updates(PrepareIdxUpdates, Transaction),
-                    %lager:info("SIdxUpdates: ~p", [SIdxUpdates]),
 
                     case PIdxUpdate of
                         none ->
@@ -189,25 +192,18 @@ generate_index_updates(Key, Type, Bucket, Param, Transaction) ->
 fill_index(ObjUpdate, Table, Transaction) ->
     case retrieve_index(ObjUpdate, Table) of
         [] ->
-            % No index was created
-            %lager:info("No index was created"),
+            % No index was created in the update
             [];
         Indexes when is_list(Indexes) ->
             lists:foldl(fun(Index, Acc) ->
-                % A new index was created
-                %lager:info("A new index was created: ~p", Indexes),
-
+                % A new index was created in the update
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
-                %[PrimaryKey] = table_utils:primary_key_name(NewTable),
                 {ok, PIndexObject} = index_manager:read_index(primary, TableName, Transaction),
-                %SIndexObject = indexing:read_index(secondary, {TableName, IndexName}, Transaction),
-                %lager:info("Primary index: ~p", [PIndexObject]),
 
                 IdxUpds = lists:map(fun({RawKey, BoundKey}) ->
                     case record_utils:record_data(BoundKey, Transaction) of
                         [] -> [];
                         [Record] ->
-                            %%PkValue = querying_utils:to_atom(record_utils:lookup_value(PrimaryKey, Record)),
                             ?ATTRIBUTE(_ColName, Type, Value) = record_utils:get_column(IndexedColumn, Record),
                             AtomKey = querying_utils:to_atom(RawKey),
                             BObjOp = crdt_utils:to_insert_op(?CRDT_VARCHAR, BoundKey),
@@ -247,21 +243,17 @@ build_index_updates([Update | Updates], ObjBoundKey, Table, Acc) ->
 build_index_updates([], _ObjBoundKey, _Table, Acc) ->
     Acc.
 
-%% Given a list of index updates on the form {TableName, IndexName, {EntryKey, EntryValue}},
-%% build the database updates given that it may be necessary to delete old entries and
+%% Given a list of index updates, build the database updates given
+%% that it may be necessary to delete old entries and
 %% insert the new ones.
 create_sindex_updates([], _TxId) -> [];
 create_sindex_updates(Updates, _TxId) when is_list(Updates) ->
-    %lager:info("List of updates: ~p", [Updates]),
-
     lists:foldl(fun(Update, AccList) ->
         ?INDEX_UPD(TableName, IndexName, {_Value, _Type}, {PkValue, Op}) = Update,
 
         {ok, DBIndexName} = index_manager:generate_index_key(secondary, TableName, IndexName),
         [IndexKey] = querying_utils:build_keys(DBIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
 
-        %{{K, T, B}, UpdateOp, Upd} = crdt_utils:create_crdt_update(IndexKey, ?INDEX_OPERATION, {Type, PkValue, Op}),
-        %IdxUpdate = [{{K, B}, T, {UpdateOp, Upd}}],
         IdxUpdate =
             case is_list(Op) of
                 true ->
@@ -296,7 +288,7 @@ retrieve_index(ObjUpdate, Table) ->
 
 create_pindex_update(ObjBoundKey, Updates, Table, PIndexKey, Transaction) ->
     case proplists:get_value({?STATE_COL, ?STATE_COL_DT}, Updates) of
-        {_, i} ->
+        {_, i} -> %% We only update the indexes on row insertion
             TableCols = table_utils:columns(Table),
             [PKName] = table_utils:primary_key_name(Table),
             {PKName, PKType, _Constraint} = maps:get(PKName, TableCols),

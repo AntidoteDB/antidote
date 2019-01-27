@@ -186,12 +186,8 @@ get_objects(Clock, Objects, Properties) ->
 update_objects(Updates, TxId) ->
     case type_check(Updates, fun type_check_update/1) of
         ok ->
-            %ok = indexing:create_index_hooks(Updates),
-            %cure:update_objects(Updates, TxId);
-
             {ok, AddUpdates} = index_manager:create_index_hooks(Updates),
             NewUpdates = lists:append(Updates, AddUpdates),
-            %triggers:create_triggers(Updates),
             cure:update_objects(NewUpdates, TxId);
         {error, Reason} ->
             {error, Reason}
@@ -203,12 +199,8 @@ update_objects(Updates, TxId) ->
 update_objects(Clock, Properties, Updates) ->
     case type_check(Updates, fun type_check_update/1) of
         ok ->
-            %ok = indexing:create_index_hooks(Updates, TxId),
-            %cure:update_objects(Clock, Properties, Updates);
-
             {ok, AddUpdates} = index_manager:create_index_hooks(Updates),
             NewUpdates = lists:append(Updates, AddUpdates),
-            %triggers:create_triggers(Updates),
             cure:update_objects(Clock, Properties, NewUpdates);
         {error, Reason} ->
             {error, Reason}

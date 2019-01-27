@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,17 +18,19 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
 %%% @doc An Antidote module that contains some common and utility
 %%%      functions for, but not exclusively to, the indexing and
-%%%      query_optimizer modules.
+%%%      query optimizer components.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -141,8 +149,6 @@ read_keys(StateOrValue, ObjKey) ->
 
 %% Applying a function on a set of keys implies returning the values
 %% of the CRDTs mapped by those keys.
-%-spec read_function(bound_object() | [bound_object()], {atom(), [term()]}, txid() | {txid(), [term()], [term()]}) ->
-%    term() | {error, reason()} | [term() | {error, reason()}].
 read_function([], _Func, _TxId) -> [[]];
 read_function(ObjKeys, Function, ignore) ->
     read_function(ObjKeys, Function);
@@ -166,25 +172,10 @@ read_function(ObjKeys, {Function, Args}, {TxId, UpdatedPartitions})
             {error, Reason} ->
                 {error, Reason}
         end
-        %Args = {Partition, TxId, WriteSet, Key, Type},
-        %case gen_statem:call(?MODULE, {read_async, Args}) of
-        %    {ok, Snapshot} ->
-        %        case Type:is_operation({Function, Args}) of
-        %            true ->
-        %                Value = Type:value({Function, Args}, Snapshot),
-        %                Value;
-        %            false ->
-        %                {error, {function_not_supported, {Function, Args}}}
-        %        end;
-        %    {error, Reason} ->
-        %        {error, Reason}
-        %end
     end, ObjKeys);
 read_function(ObjKey, Range, TxId) ->
     read_function([ObjKey], Range, TxId).
 
-%-spec read_function(bound_object() | [bound_object()], {atom(), [term()]}) ->
-%    term() | {error, reason()} | [term() | {error, reason()}].
 read_function([], _Func) -> [[]];
 read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
     Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
@@ -374,7 +365,6 @@ stop(Pid) -> gen_statem:stop(Pid).
 %% Internal functions
 %% ====================================================================
 
-
 read_crdts(StateOrValue, ObjKeys, {TxId, _UpdatedPartitions} = Transaction)
     when is_list(ObjKeys) andalso is_record(TxId, transaction) ->
     {ok, Objs} = read_data_items(StateOrValue, ObjKeys, Transaction),
@@ -418,7 +408,7 @@ read_data_item({Key, Type, Bucket}, {Transaction, UpdatedPartitions}) ->
 
     Args = {Partition, Transaction, WriteSet, SendKey, Type},
 
-    {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}), % clocksi_vnode:read_data_item(Partition, Transaction, SendKey, Type, WriteSet),
+    {ok, Snapshot} = gen_statem:call(?MODULE, {read_async, Args}),
     {ok, Snapshot}.
 
 get_write_set(Partition, Partitions) ->

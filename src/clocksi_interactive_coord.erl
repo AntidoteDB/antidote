@@ -1276,26 +1276,24 @@ execute_command(read_objects, Objects, Sender, State = #coord_state{transaction=
                 Partition = ?LOG_UTIL:get_key_partition(Key),
                 ok = clocksi_vnode:async_read_data_function(Partition, Transaction, ReqNum, Key, Type, Function),
 
-                %ok = clocksi_object_function:async_execute_object_function(
-                %    {fsm, self()}, Transaction, Partition, ReqNum, Key, Type, Function, WriteSet, ReadSet),
                 ReadKeys = AccState#coord_state.return_accumulator,
-                {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}};
+                {ReqNum + 1, AccState#coord_state{return_accumulator = [Key | ReadKeys]}};
             {Key, Type} ->
                 Partition = ?LOG_UTIL:get_key_partition(Key),
                 ok = clocksi_vnode:async_read_data_item(Partition, Transaction, ReqNum, Key, Type),
 
                 ReadKeys = AccState#coord_state.return_accumulator,
-                {ReqNum + 1, AccState#coord_state{return_accumulator=[Key | ReadKeys]}}
+                {ReqNum + 1, AccState#coord_state{return_accumulator = [Key | ReadKeys]}}
         end
     end,
 
     {_, NewCoordState} = lists:foldl(
         ExecuteReads,
-        {0, State#coord_state{num_to_read = length(Objects), return_accumulator=[]}},
+        {0, State#coord_state{num_to_read = length(Objects), return_accumulator = []}},
         Objects
     ),
 
-    {receive_read_objects_result, NewCoordState#coord_state{from=Sender}};
+    {receive_read_objects_result, NewCoordState#coord_state{from = Sender}};
 
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transaction=Transaction}) ->
@@ -1320,7 +1318,7 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
 
     NewCoordState = lists:foldl(
         ExecuteUpdates,
-        State#coord_state{num_to_read=0, return_accumulator=ok},
+        State#coord_state{num_to_read = 0, return_accumulator = ok},
         UpdateOps
     ),
 
@@ -1548,7 +1546,6 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
                 {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key1, Type1, Update1,
                     CurrUpdatedPartitions, Transaction, CurrUpdatedOps),
                 {NewUpdatedPartitions, UpdatedOps, TotalUpds + 1}
-
             end, {UpdatedPartitions, ClientOps, 0}, PostHookUpdates);
 
         {Key, Type, PostHookUpdate} ->

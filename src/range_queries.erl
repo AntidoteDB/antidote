@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,15 +18,18 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
-%%% @doc An Antidote module that manages range queries.
+%%% @doc A module that manages range queries on query processing
+%%%      capabilities of Antidote.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -46,26 +55,33 @@ get_range_query(Conditions) ->
     GroupedConds = lists:foldl(fun(Condition, MapAcc) ->
         ?CONDITION(Column, {Comparison, _}, Value) = Condition,
         case dict:is_key(Column, MapAcc) of
-            true -> dict:update(Column, fun(CondList) -> lists:append(CondList, [{Comparison, Value}]) end, MapAcc);
-            false -> dict:store(Column, [{Comparison, Value}], MapAcc)
+            true ->
+                dict:update(
+                    Column,
+                    fun(CondList) -> lists:append(CondList, [{Comparison, Value}]) end,
+                    MapAcc
+                );
+            false ->
+                dict:store(Column, [{Comparison, Value}], MapAcc)
         end
     end, dict:new(), Conditions),
 
     {RangeQueries, Status} = dict:fold(fun(Col, CList, {DictAcc, CurrStatus}) ->
         case CurrStatus of
-            nil -> {DictAcc, CurrStatus};
+            nil ->
+                {DictAcc, CurrStatus};
             ok ->
                 Range = get_range(CList, {?RANGE_INFINITY, []}),
                 case Range of
-                    nil -> {DictAcc, nil};
+                    nil ->
+                        {DictAcc, nil};
                     Range ->
-                        %io:format(">> get_range_query:~n", []),
-                        %io:format("Range: ~p~n", [Range]),
                         NewRange = to_readable_bound(Range),
                         {dict:store(Col, NewRange, DictAcc), CurrStatus}
                 end
         end
     end, {dict:new(), ok}, GroupedConds),
+
     case Status of
         ok -> RangeQueries;
         nil -> nil
@@ -101,9 +117,11 @@ get_range([{Comparator, Value} | Tail], Range) ->
 get_range([], Range) -> Range.
 
 update_range(_Comp, _Val, nil) -> nil;
-update_range(Comparator, Value, {Range, Excluded}) -> %%?RANGE(LBound, LVal, RBound, RVal) = Range) ->
+update_range(Comparator, Value, {Range, Excluded}) ->
     %% Range = {<range>, <excluded>}
-    %% , where <range> is a range and <excluded> are values from inequalities
+    %% , where <range> is a range of columns and their respective values
+    %% and <excluded> are values from inequality ranges that are to be
+    %% excluded from the results.
     ToRange = to_range(Comparator, Value),
     case intersects(ToRange, {Range, Excluded}) of
         true ->
@@ -174,15 +192,8 @@ to_readable_bound({BType, Bound}, Val) ->
     {to_cond(BType, Bound), Val}.
 
 intersects(?RANGE_EQ(Val) = Range1, {Range2, Excluded}) ->
-    %io:format(">> intersects 1:~n", []),
-    %io:format("~p~n", [Range1]),
-    %io:format("~p~n", [Range2]),
-    %io:format("~p~n", [Expected]),
     not lists:member(Val, Excluded) and intersects_ranges(Range1, Range2);
 intersects(Range1, {Range2, _Excluded}) ->
-    %io:format(">> intersects 2:~n", []),
-    %io:format("~p~n", [Range1]),
-    %io:format("~p~n", [Range2]),
     intersects_ranges(Range1, Range2).
 
 intersects_ranges(_, ?RANGE_INFINITY) -> true;

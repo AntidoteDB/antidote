@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,16 +18,18 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
 %%% @author pedrolopes
 %%% @doc An Antidote module that manages the indexing data structures
-%%%      of the database, including the primary and secondary indexes.
+%%%      of the database which includes primary and secondary indexes.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -62,13 +70,11 @@ table_name(?INDEX(_IndexName, TableName, _Attributes)) -> TableName.
 attributes(?INDEX(_IndexName, _TableName, Attributes)) -> Attributes.
 
 read_index(primary, TableName, TxId) ->
-    %gen_server:call(?MODULE, {read_index, primary, TableName, TxId}, infinity);
     IName = pindex_key(TableName),
     ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_keys(value, ObjKeys, TxId),
     {ok, IdxObj};
 read_index(secondary, {TableName, IndexName}, TxId) ->
-    %gen_server:call(?MODULE, {read_index, secondary, {TableName, IndexName}, TxId}, infinity).
     %% The secondary index is identified by the notation #2i_<IndexName>, where
     %% <IndexName> = <table_name>.<index_name>
 
@@ -78,23 +84,19 @@ read_index(secondary, {TableName, IndexName}, TxId) ->
     {ok, IdxObj}.
 
 read_index_function(primary, TableName, {Function, Args}, TxId) ->
-    %gen_server:call(?MODULE, {read_function, primary, TableName, {Function, Args}, TxId}, infinity);
     IName = pindex_key(TableName),
     ObjKeys = querying_utils:build_keys(IName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
     {ok, IdxObj};
 read_index_function(secondary, {TableName, IndexName}, {Function, Args}, TxId) ->
-    %gen_server:call(?MODULE, {read_function, secondary, {TableName, IndexName}, {Function, Args}, TxId}, infinity).
     FullIName = sindex_key(TableName, IndexName),
     ObjKeys = querying_utils:build_keys(FullIName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
     {ok, IdxObj}.
 
 generate_index_key(primary, TableName) ->
-    %gen_server:call(?MODULE, {generate_index_key, primary, TableName}, infinity).
     {ok, pindex_key(TableName)}.
 generate_index_key(secondary, TableName, IndexName) ->
-    %gen_server:call(?MODULE, {generate_index_key, secondary, TableName, IndexName}, infinity).
     {ok, sindex_key(TableName, IndexName)}.
 
 get_indexed_values(IndexObj) ->
@@ -104,11 +106,9 @@ get_database_keys(IndexedValues, IndexObj) ->
     gen_server:call(?MODULE, {get_database_keys, IndexedValues, IndexObj}, infinity).
 
 lookup_index(ColumnName, Indexes) ->
-    %gen_server:call(?MODULE, {lookup_index, ColumnName, Indexes}, infinity).
     {ok, lookup_index(ColumnName, Indexes, [])}.
 
 create_index_hooks(Updates) ->
-    %gen_server:call(?MODULE, {index_hooks, Updates}, infinity).
     {ok, index_triggers:create_index_hooks(Updates, ignore)}.
 
 %% ====================================================================
@@ -159,7 +159,6 @@ handle_call({get_database_keys, IndexedValues, IndexObj}, _From, State) ->
     {reply, {ok, PKeys}, State};
 
 handle_call({index_hooks, Updates}, _From, State) ->
-    %{reply, {ok, index_triggers:create_index_hooks(Updates, ignore)}, State}.
     {reply, create_index_hooks(Updates), State}.
 
 handle_cast(_Request, State) ->

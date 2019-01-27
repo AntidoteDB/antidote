@@ -1,6 +1,12 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%% Copyright <2013-2018> <
+%%  Technische Universität Kaiserslautern, Germany
+%%  Université Pierre et Marie Curie / Sorbonne-Université, France
+%%  Universidade NOVA de Lisboa, Portugal
+%%  Université catholique de Louvain (UCL), Belgique
+%%  INESC TEC, Portugal
+%% >
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -12,10 +18,12 @@
 %% Unless required by applicable law or agreed to in writing,
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
+%% KIND, either expressed or implied.  See the License for the
 %% specific language governing permissions and limitations
 %% under the License.
 %%
+%% List of the contributors to the development of Antidote: see AUTHORS file.
+%% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
@@ -28,8 +36,8 @@
 -module(crdt_utils).
 -include("querying.hrl").
 
--define(CRDT_INDEX, antidote_crdt_index).
 -define(CRDT_INDEX_P, antidote_crdt_index_p).
+-define(CRDT_INDEX_S, antidote_crdt_index_s).
 -define(CRDT_MAP, antidote_crdt_map_go).
 -define(CRDT_SET, antidote_crdt_set_aw).
 
@@ -71,7 +79,7 @@ type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
 create_crdt_update({_Key, ?CRDT_MAP, _Bucket} = ObjKey, UpdateOp, Value) ->
     Update = map_update(Value),
     {ObjKey, UpdateOp, Update};
-create_crdt_update({_Key, ?CRDT_INDEX, _Bucket} = ObjKey, UpdateOp, Value) ->
+create_crdt_update({_Key, ?CRDT_INDEX_S, _Bucket} = ObjKey, UpdateOp, Value) ->
     Update = index_update(UpdateOp, Value),
     {ObjKey, UpdateOp, Update};
 create_crdt_update({_Key, ?CRDT_INDEX_P, _Bucket} = ObjKey, UpdateOp, Value) ->
@@ -97,6 +105,7 @@ increment_counter(0) -> [];
 increment_counter(Value) when is_integer(Value) ->
     {increment, Value}.
 
+%% TODO not used
 %decrement_counter(0) -> [];
 %decrement_counter(Value) when is_integer(Value) ->
 %    {decrement, Value}.
@@ -131,7 +140,7 @@ map_update(Values) when is_list(Values) ->
                 end, [], Values).
 
 index_update(UpdateOp, Update) when is_tuple(Update) ->
-    case ?CRDT_INDEX:is_operation({UpdateOp, Update}) of
+    case ?CRDT_INDEX_S:is_operation({UpdateOp, Update}) of
         true -> [Update];
         false -> throw(lists:flatten(?INVALID_OP_MSG(Update, ?CRDT_INDEX_P)))
     end;
