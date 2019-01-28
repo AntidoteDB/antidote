@@ -98,7 +98,7 @@ init([]) ->
 %% Returns {ok,[snapshot_time()]} if all locks were available. The snapshot times correspond to the latest time the locks were released
 %% Returns {missing_locks, [key()]} if any requested keys are not currently owned by this dc
 %% Returns {locks_in_use, [txid()]} if all keys are owned by this dc but are in use by other transacitons
--spec get_locks([key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+-spec get_locks([key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
 get_locks(Locks, TxId) ->
     gen_server:call(?MODULE, {get_locks, TxId, Locks}).
 
@@ -170,7 +170,7 @@ required_remote(Locks, Missing_Locks, TxId, Timestamp, Local_Locks) ->
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Returns {locks_in_use,[{txid(),[locks]}]} if all locks are owned by this DC but are used by another Transaction
 %% Updates the local_locks list if the locks were available by adding {TxId,{using,Locks}} to local_locks
--spec using([key()], txid(), [{txid(), {atom(), [key()], erlang:timestamp()} | {atom(), [key()]}}]) -> [{txid(), {atom(), [key()], erlang:timestamp()} | {atom(), [key()]}}] | {atom(), [key()]} | {atom(), [{txid(), [key()]}]}.
+-spec using([key()], txid(), [{txid(), {atom(), [key()], erlang:timestamp()} | {atom(), [key()]}}]) -> [{txid(), {atom(), [key()], erlang:timestamp()} | {atom(), [key()]}}] | {missing_locks, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
 using(Locks, TxId, Local_Locks) ->
     Missing_Locks = lists:foldl(fun(Lock, AccIn) ->
         case check_lock(Lock) of

@@ -854,7 +854,7 @@ start_tx_internal_with_locks(
 %% if this fails it will retry after GET_LOCKS_INTERVAL ms
 %% for a maximum number of times (Timeout div GET_LOCKS_INTERVAL).
 %% #Locks
-%-spec get_locks(non_neg_integer(), txid(), [key()]) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()], [key()]}]} | {locks_in_use, [{txid(), [key()]}]}.
+-spec get_locks(non_neg_integer(), txid(), [key()]) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
 get_locks(Timeout, TransactionId, Locks) ->
     Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
     case Result of
