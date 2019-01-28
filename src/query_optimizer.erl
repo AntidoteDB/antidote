@@ -65,32 +65,31 @@ query(Filter, TxId) when is_list(Filter) ->
     TCols = table_utils:column_names(Table),
     Projection = projection(Filter),
 
-    Result =
-        case validate_projection(Projection, TCols) of
-            {error, Msg} ->
-                {error, Msg};
-            {ok, ProjectionCols} ->
-                Conditions = conditions(Filter),
+    case validate_projection(Projection, TCols) of
+        {error, Msg} ->
+            {error, Msg};
+        {ok, ProjectionCols} ->
+            Conditions = conditions(Filter),
 
-                FilteredResult =
-                    case Conditions of
-                        [] ->
-                            {ok, Index} = index_manager:read_index(primary, TableName, TxId),
-                            Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
-                            Records = record_utils:record_data(Keys, TxId),
-                            prepare_records(table_utils:column_names(Table), Table, Records);
-                        _Else ->
-                            apply_filter(Conditions, Table, TxId)
-                    end,
-                ResultToList =
-                    case is_list(FilteredResult) of
-                        false -> sets:to_list(FilteredResult);
-                        true -> FilteredResult
-                    end,
+            FilteredResult =
+                case Conditions of
+                    [] ->
+                        {ok, Index} = index_manager:read_index(primary, TableName, TxId),
+                        Keys = lists:map(fun({_RawKey, BoundObj}) -> BoundObj end, Index),
+                        Records = record_utils:record_data(Keys, TxId),
+                        prepare_records(table_utils:column_names(Table), Table, Records);
+                    _Else ->
+                        apply_filter(Conditions, Table, TxId)
+                end,
+            ResultToList =
+                case is_list(FilteredResult) of
+                    false -> sets:to_list(FilteredResult);
+                    true -> FilteredResult
+                end,
 
-                apply_projection(ProjectionCols, ResultToList)
-        end,
-    {ok, Result}.
+            Result = apply_projection(ProjectionCols, ResultToList),
+            {ok, Result}
+    end.
 
 filter_record(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
     {_Key, _Type, Bucket} = ObjectKey,
