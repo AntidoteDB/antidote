@@ -206,13 +206,13 @@ update_objects(Clock, Properties, Updates) ->
             {error, Reason}
     end.
 
--spec get_locks(default | integer(), [key()], txid()) -> {ok, snapshot_time()} | {locks_not_available, [key()]} | {missing_locks, [{txid(), [key()]}]}.
+-spec get_locks(default | integer(), [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
 get_locks(default, Locks, TxId) ->
     clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
 get_locks(Timeout, Locks, TxId) ->
     clocksi_interactive_coord:get_locks(Timeout, TxId, Locks).
 
--spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {missing_locks, [key()]} | {locks_in_use, [txid()]}.
+-spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, {[{txid(), [key()]}], [{txid(), [key()]}]}}.
 get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
     clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
 get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
