@@ -742,7 +742,7 @@ cluster_failure_test_2(Config) ->
             {ok, TxId2} = helper_start_transaction(Keys, Node2, 100),
             {ok, _} = rpc:call(Node2, antidote, commit_transaction, [TxId2])
     end.
-helper_start_transaction(Locks, _Node, 0) ->
+helper_start_transaction(_Locks, _Node, 0) ->
     {error, "Could not aquire Locks"};
 helper_start_transaction(Locks, Node, Tries) ->
     case rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Locks}]]) of
@@ -753,15 +753,6 @@ helper_start_transaction(Locks, Node, Tries) ->
         {badrpc, _} ->
             helper_start_transaction(Locks, Node, Tries - 1)
     end.
-to_string_helper([]) ->
-    "[]";
-to_string_helper([HD | TL]) ->
-    to_string_helper(TL, "[" ++ atom_to_list(HD)).
-to_string_helper([], String) ->
-    String ++ "]";
-to_string_helper([HD | TL], String) ->
-    New_String = String ++ ", " ++ atom_to_list(HD),
-    to_string_helper(TL, New_String).
 
 
 %% Tests some internal functions of lock_mgr_es

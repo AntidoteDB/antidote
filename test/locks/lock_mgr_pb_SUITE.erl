@@ -220,7 +220,7 @@ all() -> [
 
 
 kram(Config) ->
-    [Node1, Node2, Node3 | Nodes] = proplists:get_value(nodes, Config),
+    [Node1, Node2, Node3 | _Nodes] = proplists:get_value(nodes, Config),
     Result1 = rpc:call(Node1, dc_utilities, get_stable_snapshot, []),
     ct:print("Snapshot Node1: ~p", [Result1]),
     Result2 = rpc:call(Node2, dc_utilities, get_stable_snapshot, []),
@@ -228,7 +228,7 @@ kram(Config) ->
     Result3 = rpc:call(Node3, dc_utilities, get_stable_snapshot, []),
     ct:print("Snapshot Node3: ~p", [Result3]).
 
-kram2(Config) ->
+kram2(_Config) ->
     {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT1),
     {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT2),
     {ok, Pid3} = antidotec_pb_socket:start(?ADDRESS, ?PORT3),

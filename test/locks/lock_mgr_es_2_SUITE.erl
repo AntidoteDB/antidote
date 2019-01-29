@@ -471,7 +471,7 @@ different_key_types_test1(Config) ->
 
 % Tests if exclusive locks and regular locks can be acquired at the same time.
 locks_and_exclusive_locks_together_test1(Config) ->
-    [Node1, Node2, Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2, _Node3 | _Nodes] = proplists:get_value(nodes, Config),
     Locks = [locks_and_exclusive_locks_together_test1_key_1, locks_and_exclusive_locks_together_test1_test_key_2, locks_and_exclusive_locks_together_test1_test_key_3, locks_and_exclusive_locks_together_test1_test_key_4],
     {ok, TxId} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks, Locks}, {locks, Locks}]]),
     {ok, _Clock} = rpc:call(Node2, antidote, commit_transaction, [TxId]).
@@ -526,7 +526,7 @@ transaction_asynchroneous_helper2(Node, Shared_Locks, Exclusive_Locks, Retries, 
 transaction_asynchroneous_helper3(Id) ->
     receive
         {ok, Id} -> ok;
-        {error, Error_Msg, Id} -> Msg = atom_to_list(Error_Msg), ?assertError(Msg, false)
+        {error, Error_Msg, Id} -> ?assertError(Error_Msg, false)
     after 300000 -> ?assertError("The test case took too long and was timed out", false)
     end.
 % Asynchroneously starts a transaction on Node requesting the specified locks. Then it directly commits that transactions.
