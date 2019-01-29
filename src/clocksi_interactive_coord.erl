@@ -38,6 +38,7 @@
 
 -include("antidote.hrl").
 
+-dialyzer({[no_match], [get_locks/3, get_locks/4]}).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

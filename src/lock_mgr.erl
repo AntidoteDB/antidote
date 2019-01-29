@@ -27,6 +27,8 @@
 -module(lock_mgr).
 -behaviour(gen_server).
 
+-dialyzer({[no_match], [handle_info/2]}).
+
 % interface functions
 -export([start_link/0,
         get_locks/2,
