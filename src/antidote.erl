@@ -168,7 +168,7 @@ read_objects(Clock, Properties, Objects) ->
 
 %%%%%%%%%%%%%%%%%%% QUERY ZONE %%%%%%%%%%%%%%%%%%%
 
--spec query_objects(filter(), txid()) -> {ok, [term()]} | {error, reason()}.
+-spec query_objects(filter(), txid()) -> {ok, [term()]} | {error, term()}.
 query_objects(Filter, TxId) ->
     query_optimizer:query(Filter, TxId).
 
