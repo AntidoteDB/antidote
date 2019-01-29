@@ -76,11 +76,7 @@
 -type column_name() :: atom() | list().
 -type projection_filter() :: {projection, [column_name()]}.
 
--type comparison() :: atom().
--type value() :: term().
--type condition() :: {column_name(), comparison(), value()}.
-
--type conditions_filter() :: {conditions, [condition()]}.
+-type conditions_filter() :: {conditions, [term()]}.
 
 %% Export
 -export_type([filter/0]).
