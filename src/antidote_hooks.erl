@@ -75,7 +75,7 @@
 
 -ifdef(TEST).
 -export([test_commit_hook/1,
-         test_increment_hook/1,
+         test_increment_hook/2,
          test_post_hook/1]).
 -endif.
 
@@ -94,7 +94,9 @@ register_pre_hook(Bucket, Module, Function) ->
 
 %% Overwrites the previous commit hook
 register_hook(Prefix, Bucket, Module, Function) ->
-    case erlang:function_exported(Module, Function, 1) of
+    IsExported = erlang:function_exported(Module, Function, 1)
+        orelse erlang:function_exported(Module, Function, 2), % with a transaction parameter
+    case IsExported of
         true ->
             riak_core_metadata:put(Prefix, Bucket, {Module, Function}),
             ok;
@@ -194,7 +196,7 @@ test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
     {ok, Object}.
 
-test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) ->
+test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}, _Tx) ->
     {ok, {{Key, Bucket}, antidote_crdt_counter_pn, {increment, 2}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->

@@ -1257,10 +1257,9 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
             client_ops = ClientOps0,
             updated_partitions = UpdatedPartitions0
         }) ->
-            case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0) of
-                {error, _} = Err ->
-                    AccState#coord_state{return_accumulator = Err};
-
+            try
+                perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0)
+            of
                 {UpdatedPartitions, ClientOps, NumOfUpds} ->
                     NumToRead = AccState#coord_state.num_to_read,
                     AccState#coord_state{
@@ -1268,6 +1267,11 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
                         num_to_read = NumToRead + NumOfUpds,
                         updated_partitions = UpdatedPartitions
                     }
+                %{error, Reason} ->
+                %    AccState#coord_state{return_accumulator = {error, Reason}}
+            catch
+                throw:{error, Reason} ->
+                    AccState#coord_state{return_accumulator = {error, Reason}}
             end
         end,
 
@@ -1497,17 +1501,29 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
             lists:foldl(fun({Key1, Type1, Update1}, {CurrUpdatedPartitions, CurrUpdatedOps, TotalUpds}) ->
                 ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
 
-                {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key1, Type1, Update1,
+                NewState = generate_new_state(Key1, Type1, Update1,
                     CurrUpdatedPartitions, Transaction, CurrUpdatedOps),
-                {NewUpdatedPartitions, UpdatedOps, TotalUpds + 1}
+
+                case NewState of
+                    {error, Reason} ->
+                        throw({error, Reason});
+                    {NewUpdatedPartitions, UpdatedOps} ->
+                        {NewUpdatedPartitions, UpdatedOps, TotalUpds + 1}
+                end
             end, {UpdatedPartitions, ClientOps, 0}, PostHookUpdates);
 
         {Key, Type, PostHookUpdate} ->
             ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
 
-            {NewUpdatedPartitions, UpdatedOps} = generate_new_state(Key, Type, PostHookUpdate,
+            NewState = generate_new_state(Key, Type, PostHookUpdate,
                 UpdatedPartitions, Transaction, ClientOps),
-            {NewUpdatedPartitions, UpdatedOps, 1}
+
+            case NewState of
+                {error, Reason} ->
+                    throw({error, Reason});
+                {NewUpdatedPartitions, UpdatedOps} ->
+                    {NewUpdatedPartitions, UpdatedOps, 1}
+            end
     end.
 
 generate_new_state(Key, Type, HookUpdate, Partitions, Transaction, Ops) ->

@@ -32,6 +32,7 @@
 
 -define(FORCE_KILL_TIMER, 1500).
 -define(RIAK_SLEEP, 5000).
+-define(DEFAULT_CACHE_CONFIG, [{type, set}, {policy, lru}, {ttl, 120}]).
 
 -export([
     at_init_testsuite/0,
@@ -147,6 +148,7 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["../../_build/default/rel/antidote/lib/"]]),
 
             ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
+            ok = rpc:call(Node, application, set_env, [cache, antidote_cache, ?DEFAULT_CACHE_CONFIG]),
 
             ct:log("Starting antidote"),
             ok = rpc:call(Node, application, load, [antidote]),
