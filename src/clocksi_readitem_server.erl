@@ -99,7 +99,7 @@ read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
             {perform_read, Key, Type, Transaction, PropertyList}, infinity)
     catch
     _:Reason ->
-        lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
+        logger:debug("Exception caught: ~p, starting read server to fix", [Reason]),
         check_server_ready([{Partition, Node}]),
         read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList)
     end.
@@ -164,7 +164,7 @@ start_read_servers_internal(Node, Partition, Num) ->
         {error, {already_started, _}} ->
             start_read_servers_internal(Node, Partition, Num-1);
         Err ->
-            lager:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
+            logger:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
             try
                 gen_server:call({global, generate_server_name(Node, Partition, Num)}, {go_down})
             catch

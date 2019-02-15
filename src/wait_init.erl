@@ -59,7 +59,7 @@ wait_ready(Node) ->
 %% except it takes as input a single physical node instead of a list
 -spec check_ready(node()) -> boolean().
 check_ready(Node) ->
-    lager:debug("Checking if node ~w is ready ~n", [Node]),
+    logger:debug("Checking if node ~w is ready ~n", [Node]),
     case rpc:call(Node, clocksi_vnode, check_tables_ready, []) of
         true ->
             case rpc:call(Node, clocksi_readitem_server, check_servers_ready, []) of
@@ -68,21 +68,21 @@ check_ready(Node) ->
                 true ->
                     case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
                     true ->
-                        lager:debug("Node ~w is ready! ~n", [Node]),
+                        logger:debug("Node ~w is ready! ~n", [Node]),
                         true;
                     false ->
-                        lager:debug("Node ~w is not ready ~n", [Node]),
+                        logger:debug("Node ~w is not ready ~n", [Node]),
                         false
                     end;
                 false ->
-                    lager:debug("Node ~w is not ready ~n", [Node]),
+                    logger:debug("Node ~w is not ready ~n", [Node]),
                     false
                 end;
             false ->
-                lager:debug("Checking if node ~w is ready ~n", [Node]),
+                logger:debug("Checking if node ~w is ready ~n", [Node]),
                 false
             end;
         false ->
-            lager:debug("Checking if node ~w is ready ~n", [Node]),
+            logger:debug("Checking if node ~w is ready ~n", [Node]),
             false
     end.

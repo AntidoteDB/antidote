@@ -153,7 +153,7 @@ init([]) ->
     case LoadFromDisk of
         true ->
             Table = dets:to_ets(DetsTable, Table),
-            lager:info("Loaded meta data from disk");
+            logger:info("Loaded meta data from disk");
         false ->
             ok = dets:delete_all_objects(DetsTable),
             Table

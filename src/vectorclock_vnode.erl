@@ -104,7 +104,7 @@ handle_command(calculate_stable_snapshot, _Sender, State) ->
   Metadata = metadata_maybe_list(?META_PREFIX),
   %% If metadata does not contain clock of all partitions, do not calculate the stable snapshot
   case dc_utilities:get_partitions_num() == length(Metadata) of
-    false -> lager:warning("Metadata misses entries for some partitions, skipping the calculate_stable_snapshot.");
+    false -> logger:warning("Metadata misses entries for some partitions, skipping the calculate_stable_snapshot.");
     true ->
       VClocks = lists:foldl(fun({_Key, Value}, AccList) ->
         case is_list(Value) of
@@ -125,13 +125,13 @@ handle_command({update_clock, NewClock}, _Sender, State = #state{vectorclock = C
 
 metadata_maybe_put(Prefix, Key, Value) ->
   case catch riak_core_metadata:put(Prefix, Key, Value) of
-    {'EXIT', {shutdown, _}} -> lager:warning("Failed to update partition clock: shutting down.");
+    {'EXIT', {shutdown, _}} -> logger:warning("Failed to update partition clock: shutting down.");
     Normal -> Normal
   end.
 
 metadata_maybe_list(Prefix) ->
   case catch riak_core_metadata:to_list(Prefix) of
-    {'EXIT', Reason} -> lager:warning("Failed to fetch metadata (reason: ~p)", [Reason]), [];
+    {'EXIT', Reason} -> logger:warning("Failed to fetch metadata (reason: ~p)", [Reason]), [];
     Normal -> Normal
   end.
 

@@ -69,7 +69,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    lager:info("Started Bounded counter manager at node ~p", [node()]),
+    logger:info("Started Bounded counter manager at node ~p", [node()]),
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 

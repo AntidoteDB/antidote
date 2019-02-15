@@ -105,7 +105,7 @@ process({create_dc, NodeNames}) ->
       {operation_response, ok}
     catch
      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-       lager:info("Create DC Failed ~p : ~p", [Error, Reason]),
+       logger:info("Create DC Failed ~p : ~p", [Error, Reason]),
        {operation_response, {error, create_dc_failed}}
     end;
 
@@ -115,7 +115,7 @@ process({get_connection_descriptor}) ->
        {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        lager:info("Get Conection Descriptor ~p : ~p", [Error, Reason]),
+        logger:info("Get Conection Descriptor ~p : ~p", [Error, Reason]),
         {get_connection_descriptor_resp, {error, no_clue}}
     end;
 
@@ -125,11 +125,11 @@ process({connect_to_dcs, Descriptors}) ->
        {operation_response, ok}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        lager:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
+        logger:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
         {operation_response, {error, connect_to_dcs_failed}}
     end;
 
 process(Message) ->
-  lager:error("Received unhandled message ~p~n", [Message]),
+  logger:error("Received unhandled message ~p~n", [Message]),
   MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
   {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
