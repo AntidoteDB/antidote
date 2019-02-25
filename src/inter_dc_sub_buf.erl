@@ -64,11 +64,11 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
                          DCID, Partition)
              catch
                  _:Reason ->
-                     lager:debug("Error loading last opid from log: ~w, will retry", [Reason])
+                     logger:debug("Error loading last opid from log: ~w, will retry", [Reason])
              end,
     case Result of
     {ok, OpId} ->
-        lager:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
+        logger:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
         process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=OpId});
     _ ->
         riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
@@ -76,7 +76,7 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
-  lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
+  logger:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   push(Txn, State);
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
@@ -90,7 +90,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
   %% This case must not happen
-  lager:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
+  logger:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
   State.
 
 
@@ -112,19 +112,19 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
         gt ->
         case EnableLogging of
           true ->
-            lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+            logger:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
                   [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
             try
               case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
                 ok ->
                   State#inter_dc_sub_buf{state_name = buffering};
                 _  ->
-                  lager:warning("Failed to send log query to DC, will retry on next ping message"),
+                  logger:warning("Failed to send log query to DC, will retry on next ping message"),
                   State#inter_dc_sub_buf{state_name = normal}
               end
             catch
               _:_ ->
-                  lager:warning("Failed to send log query to DC, will retry on next ping message"),
+                  logger:warning("Failed to send log query to DC, will retry on next ping message"),
                   State#inter_dc_sub_buf{state_name = normal}
             end;
           false -> %% we deliver the transaction as we can't ask anything to the remote log
@@ -136,7 +136,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction has an old value, drop it.
         lt ->
-            lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+            logger:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
             process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.

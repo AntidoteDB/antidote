@@ -243,7 +243,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
                                                          Acc
                                                  end;
                                              error ->
-                                                 lager:error("Could not find DC in SS ~p", [SnapshotTime]),
+                                                 logger:error("Could not find DC in SS ~p", [SnapshotTime]),
                                                  false
                                          end,
                                   Res2 = dict:update(DcIdOp, fun(Val) ->

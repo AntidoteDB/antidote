@@ -123,10 +123,6 @@ start_node(Name, Config) ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node]),
 
-            ct:log("Starting lager"),
-            ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
-            ok = rpc:call(Node, application, load, [lager]),
-
             ct:log("Starting riak_core"),
             ok = rpc:call(Node, application, load, [riak_core]),
 

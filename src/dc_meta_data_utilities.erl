@@ -117,7 +117,7 @@ get_dc_partitions_detailed(DCID) ->
         {ok, Info} ->
             Info;
         error ->
-            lager:error("Error no partitions for dc ~w", [DCID]),
+            logger:error("Error no partitions for dc ~w", [DCID]),
             {dict:new(), {}, 0}
     end.
 
@@ -128,7 +128,7 @@ get_dc_partitions_dict(DCID) ->
         {ok, Dict} ->
             Dict;
         error ->
-            lager:error("Error no partitions for dc ~w", [DCID]),
+            logger:error("Error no partitions for dc ~w", [DCID]),
             dict:new()
     end.
 

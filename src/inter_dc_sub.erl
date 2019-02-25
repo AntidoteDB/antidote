@@ -121,7 +121,7 @@ connect_to_nodes([Node|Rest], Acc) ->
     end.
 
 connect_to_node([]) ->
-    lager:error("Unable to subscribe to DC"),
+    logger:error("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([Address|Rest]) ->
     %% Test the connection

@@ -87,7 +87,7 @@ get_address_list() ->
 -spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn) ->
   case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+    {'EXIT', _Reason} -> logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
 
@@ -98,7 +98,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
   {_, Port} = get_address(),
   Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  lager:info("Publisher started on port ~p", [Port]),
+  logger:info("Publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.

@@ -257,7 +257,7 @@ open_table(Partition) ->
             [set, protected, named_table, ?TABLE_CONCURRENCY]);
     _ ->
         %% Other vnode hasn't finished closing tables
-        lager:debug("Unable to open ets table in clocksi vnode, retrying"),
+        logger:debug("Unable to open ets table in clocksi vnode, retrying"),
         timer:sleep(100),
         try
         ets:delete(get_cache_name(Partition, prepared))
@@ -433,7 +433,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
         ets:delete(get_cache_name(Partition, prepared))
     catch
         _:Reason ->
-            lager:error("Error closing table ~p", [Reason])
+            logger:error("Error closing table ~p", [Reason])
     end,
     clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
@@ -493,7 +493,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
-    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+    logger:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->

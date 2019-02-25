@@ -102,7 +102,7 @@ init([]) ->
     {_, Port} = get_address(),
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    lager:info("Log reader started on port ~p", [Port]),
+    logger:info("Log reader started on port ~p", [Port]),
     {ok, #state{socket = Socket, next=getid}}.
 
 %% Handle the remote request
@@ -138,7 +138,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
     end,
     {noreply, State#state{next=getid}};
 handle_info(Info, State) ->
-    lager:info("got weird info ~p", [Info]),
+    logger:info("got weird info ~p", [Info]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.

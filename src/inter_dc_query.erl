@@ -180,12 +180,12 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
                 <<RequestType, RestBinary/binary>> ->
                     Func(RestBinary, CacheEntry);
                 Other ->
-                    lager:error("Received unknown reply: ~p", [Other])
+                    logger:error("Received unknown reply: ~p", [Other])
             end,
             %% Remove the request from the list of unanswered queries.
             true = ets:delete(Table, ReqIdBinary);
         [] ->
-            lager:error("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
+            logger:error("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
     {noreply, State}.
 
@@ -215,7 +215,7 @@ req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_i
 %% A node is a list of addresses because it can have multiple interfaces
 %% this just goes through the list and connects to the first interface that works
 connect_to_node([]) ->
-    lager:error("Unable to subscribe to DC log reader"),
+    logger:error("Unable to subscribe to DC log reader"),
     connection_error;
 connect_to_node([Address| Rest]) ->
     %% Test the connection

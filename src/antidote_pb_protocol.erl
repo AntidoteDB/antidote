@@ -56,10 +56,10 @@ loop(Socket, Transport) ->
     {error, closed} ->
       ok = Transport:close(Socket);
     {error, timeout} ->
-      lager:info("Socket timed out~n"),
+      logger:info("Socket timed out~n"),
       ok = Transport:close(Socket);
     {error, Reason} ->
-      lager:error("Socket error: ~p~n", [Reason]),
+      logger:error("Socket error: ~p~n", [Reason]),
       ok = Transport:close(Socket)
   end.
 
@@ -78,7 +78,7 @@ handle(Socket, Transport, Msg) ->
   catch
     ExceptionType:Error ->
       % log errors and reply with error message:
-      lager:error("Error ~p: ~p~nWhen handling request ~p~n", [ExceptionType, Error, DecodedMessage]),
+      logger:error("Error ~p: ~p~nWhen handling request ~p~n", [ExceptionType, Error, DecodedMessage]),
       % when formatting the error message, we use a maximum depth of 9001.
       % This should be big enough to include useful information, but avoids sending a lot of data
       MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n", [ExceptionType, 9001, Error, 9001])),
