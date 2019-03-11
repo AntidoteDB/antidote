@@ -8,7 +8,9 @@ compile-utils: compile
 test:
 	mkdir -p logs
 	${REBAR} eunit skip_deps=true
-	${REBAR} cover
+
+coverage: test
+	${REBAR} cover --verbose
 
 singledc: compile-utils rel
 	rm -f test/singledc/*.beam
