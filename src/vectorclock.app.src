@@ -1,5 +1,5 @@
 {application, vectorclock,
- [{description, "An vectorclock library for Erlang"},
+ [{description, "A vectorclock library for Erlang"},
   {vsn, "0.0.1"},
   {registered, []},
   {applications,

@@ -1,4 +1,4 @@
-REBAR = $(shell pwd)/rebar3
+REBAR = rebar3
 
 all: compile
 
@@ -8,7 +8,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean relclean
+distclean: clean
 	$(REBAR) clean --all
 
 cleantests:

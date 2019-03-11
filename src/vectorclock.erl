@@ -39,7 +39,6 @@
          min/1,
          conc/2]).
 
-
 -type actor() :: any().
 -type vectorclock() :: #{actor() => non_neg_integer()}.
 -export_type([vectorclock/0]).
@@ -145,6 +144,12 @@ conc(V1, V2) -> (not ge(V1, V2)) andalso (not le(V1, V2)).
 
 -ifdef(TEST).
 
+vectorclock_empty_test() ->
+    V1 = vectorclock:new(),
+    V2 = vectorclock:from_list([]),
+    ?assertEqual(V1, V2),
+    ?assertEqual(eq(vectorclock:min([]), vectorclock:max([])), true).
+
 vectorclock_test() ->
     V1 = vectorclock:from_list([{1, 5}, {2, 4}, {3, 5}, {4, 6}]),
     V2 = vectorclock:from_list([{1, 4}, {2, 3}, {3, 4}, {4, 5}]),
@@ -160,7 +165,6 @@ vectorclock_test() ->
     ?assertEqual(le(V1, V4), false),
     ?assertEqual(eq(V1, V4), false),
     ?assertEqual(ge(V1, V5), false).
-
 
 vectorclock_lt_test() ->
   ?assertEqual(lt(from_list([{a, 1}]), from_list([{a, 1}, {b, 1}])), true),
@@ -184,7 +188,6 @@ vectorclock_max_test() ->
   ?assertEqual(eq(max([V1, V2, V3]), Expected123), true),
   ?assertEqual(eq(max([V1, V2, V3]), Unexpected123), false).
 
-
 vectorclock_min_test() ->
   V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
   V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
@@ -200,7 +203,8 @@ vectorclock_min_test() ->
   ?assertEqual(eq(min([V2, V3]), Expected23), true),
   ?assertEqual(eq(min([V1, V3]), Expected13), true),
   ?assertEqual(eq(min([V1, V2, V3]), Expected123), true),
-  ?assertEqual(eq(min([V1, V2, V3]), Unexpected123), false).
+  ?assertEqual(eq(min([V1, V2, V3]), Unexpected123), false),
+  ?assertEqual(eq(vectorclock:min([V1]), vectorclock:max([V1])), true).
 
 vectorclock_conc_test() ->
   V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
@@ -213,4 +217,13 @@ vectorclock_conc_test() ->
   ?assertEqual(conc(V2, V3), true),
   ?assertEqual(conc(V3, V4), false),
   ?assertEqual(conc(V5, V4), false).
+
+vectorclock_set_test() ->
+  V1 = vectorclock:from_list([{1, 1}, {2, 2}]),
+  V2 = vectorclock:from_list([{1, 1}, {2, 2}, {3, 3}]),
+  V3 = vectorclock:from_list([{1, 1}, {2, 4}]),
+
+  ?assertEqual(eq(V2, vectorclock:set_clock_of_dc(3, 3, V1)), true),
+  ?assertEqual(eq(V3, vectorclock:set_clock_of_dc(2, 4, V1)), true).
+
 -endif.
