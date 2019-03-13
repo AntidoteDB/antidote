@@ -18,7 +18,7 @@ cleantests:
 test:
 	mkdir -p logs
 	${REBAR} eunit
-	${REBAR} cover
+	${REBAR} cover --verbose
 
 docs:
 	${REBAR} doc
