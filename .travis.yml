@@ -8,7 +8,6 @@ script:
   - make test
   - make reltest
   - make systests
-  - cp logs/ct_run*/all.coverdata _build/test/cover/ct.coverdata
   - rebar3 as test coveralls send
   - make dialyzer
   - make lint
