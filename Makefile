@@ -61,7 +61,7 @@ test:
 	mkdir -p logs
 	${REBAR} eunit skip_deps=true
 
-coverage: test
+coverage:
 	${REBAR} cover --verbose
 
 singledc: compile-utils rel

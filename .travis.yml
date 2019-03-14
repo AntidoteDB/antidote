@@ -8,10 +8,9 @@ script:
   - make test
   - make reltest
   - make systests
+  - rebar3 as test coveralls send
   - make dialyzer
   - make lint
-  - make coverage
-  - rebar3 as test coveralls send
 notifications:
   email: bieniusa@cs.uni-kl.de
 sudo: required
