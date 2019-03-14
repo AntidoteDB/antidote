@@ -52,37 +52,50 @@ relnocert: relclean cleantests rel
 stage :
 	$(REBAR) release -d
 
-include tools.mk
+compile-utils: compile
+	for filename in "test/utils/*.erl" ; do \
+		erlc -o test/utils $$filename ; \
+	done
 
-# Tutorial targets.
+test:
+	mkdir -p logs
+	${REBAR} eunit skip_deps=true
 
-tutorial:
-	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
-	docker run -t -i cmeiklejohn/antidote-tutorial
+coverage: test
+	${REBAR} cover --verbose
 
-# Mesos targets.
+singledc: compile-utils rel
+	rm -f test/singledc/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/singledc/${SUITE} -cover test/antidote.coverspec
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/singledc -cover test/antidote.coverspec
+endif
 
-foreground: rel
-	./_build/default/rel/antidote/bin/env foreground
+multidc: compile-utils rel
+	rm -f test/multidc/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec
+endif
 
-console: rel
-	./_build/default/rel/antidote/bin/env console
+systests: singledc multidc
 
-mesos-docker-build:
-	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+docs:
+	${REBAR} doc skip_deps=true
 
-mesos-docker-run: mesos-docker-build
-	docker run -t -i cmeiklejohn/antidote-mesos
+xref: compile
+	${REBAR} xref skip_deps=true
 
-mesos-docker-build-dev:
-	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
-
-mesos-docker-run-dev: mesos-docker-build-dev
-	docker run -t -i cmeiklejohn/antidote-mesos-dev
+dialyzer:
+	${REBAR} dialyzer
 
 docker-build:
 	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles
 
 docker-local:
-	docker run --rm -v $(shell pwd):/code -w /code erlang:19 make rel
+	docker run --rm -v $(shell pwd):/code -w /code erlang:21 make rel
 	docker build -f Dockerfiles/Dockerfile-local -t antidotedb/antidote:local .
