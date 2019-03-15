@@ -161,7 +161,7 @@ maybe_wait_for_changes(Node) ->
 
 %% @doc Given a list of nodes, wait until all nodes believe there are no
 %% on-going or pending ownership transfers.
--spec wait_until_no_pending_changes([node()]) -> ok | fail.
+-spec wait_until_no_pending_changes([node()]) -> ok.
 wait_until_no_pending_changes(Nodes) ->
     logger:info("Wait until no pending changes on ~p", [Nodes]),
     F = fun() ->
@@ -170,8 +170,7 @@ wait_until_no_pending_changes(Nodes) ->
                 Changes = [ riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings ],
                 BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)
         end,
-    ok = wait_until(F),
-    ok.
+    wait_until(F).
 
 %% @doc Utility function used to construct test predicates. Retries the
 %%      function `Fun' until it returns `true', or until the maximum

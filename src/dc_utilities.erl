@@ -278,7 +278,7 @@ get_stable_snapshot() ->
             end
     end.
 
--spec get_partition_snapshot(partition_id()) -> snapshot_time().
+-spec get_partition_snapshot(partition_id()) -> vectorclock:vectorclock().
 get_partition_snapshot(Partition) ->
     case meta_data_sender:get_meta_dict(stable, Partition) of
         undefined ->
