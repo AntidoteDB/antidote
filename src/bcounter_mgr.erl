@@ -29,7 +29,7 @@
 %% Module for handling bounded counter operations.
 %% Allows safe increment, decrement and transfer operations.
 %% Basic inter-dc reservations manager only requests remote reservations
-%% when necessay.
+%% when necessary.
 %% Transfer requests are throttled to prevent distribution unbalancing
 %% (TODO: implement inter-dc transference policy E.g, round-robin).
 

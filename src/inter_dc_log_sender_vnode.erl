@@ -85,7 +85,7 @@ send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_se
 start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {start_timer}).
 
 %% After restarting from failure, load the operation id of the last operation sent by this DC
-%% Otherwise the stable time won't advance as the receving DC will be thinking it is getting old messages
+%% Otherwise the stable time won't advance as the receiving DC will be thinking it is getting old messages
 -spec update_last_log_id(partition_id(), #op_number{}) -> ok.
 update_last_log_id(Partition, OpId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId}).
 

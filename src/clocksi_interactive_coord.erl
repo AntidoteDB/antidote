@@ -245,7 +245,7 @@ finish_op(From, Key, Result) ->
 %%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
-%%                number of partitions that have acked.
+%%                number of partitions that have asked.
 %%    num_to_read: when sending read requests
 %%                 number of partitions that are asked.
 %%    prepare_time: transaction prepare time.

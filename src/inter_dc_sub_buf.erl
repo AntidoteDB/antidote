@@ -58,7 +58,7 @@ new_state(PDCID) ->
 process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
-    %% you can check for duplocates or lost messages
+    %% you can check for duplicates or lost messages
     Result = try
                  logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
                          DCID, Partition)

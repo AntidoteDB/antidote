@@ -109,7 +109,7 @@ get_entries_internal(Partition, From, To) ->
   %% We can remove this once the read_log_range is reimplemented.
   lists:filter(fun inter_dc_txn:is_local/1, Txns).
 
-%% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
+%% TODO: re-implement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
 -spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#log_record{}].
 log_read_range(Partition, Node, From, To) ->

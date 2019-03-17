@@ -131,12 +131,12 @@ apply_operations(Type, Snapshot, Count, [Op | Rest]) ->
 %%      FirstHole: The variable keeps track of 1 minus the number of the operation with the smallest id
 %%      not included in the new snapshot that is currently being generated, it should be initialised to the
 %%      id of the first op in OpList
-%%      SnapshotCommitTime: The time used to describe the intitial state of the CRDT given in Snapshot
+%%      SnapshotCommitTime: The time used to describe the initial state of the CRDT given in Snapshot
 %%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order, the most recent op is on the left
 %%      TxId: The Id of the transaction requesting the snapshot
 %%      LastOpCommitTime: The snapshot time of the last operation in the list of operations to apply
-%%      NewSS: Boolean that is true if any operations should be applied, fale otherwise.  Should start as false.
+%%      NewSS: Boolean that is true if any operations should be applied, fail otherwise.  Should start as false.
 %%      Output: A tuple with 4 elements or an error.  The first element of the tuple is the atom ok.
 %%      The second element is the list of operations that should be applied to the snapshot.
 %%      The third element 1 minus the number of the operation with the smallest id not included in the snapshot.
@@ -206,10 +206,10 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 %%      SnapshotTime: The snapshot time to check if the operation is included in
 %%      LastSnapshot: The previous snapshot that is being used to generate the new snapshot
 %%      PrevTime: The snapshot time of the previous operation that was checked
-%%      Outptut: A tuple of 3 elements.  The first element is a boolean that is true
+%%      Output: A tuple of 3 elements.  The first element is a boolean that is true
 %%      if the operation should be included in the snapshot false otherwise, the second element
 %%      is a boolean that is true if the operation was already included in the previous snapshot,
-%%      false otherwise.  The thrid element is the snapshot time of the last operation to
+%%      false otherwise.  The third element is the snapshot time of the last operation to
 %%      be applied to the snapshot
 -spec is_op_in_snapshot(txid(), clocksi_payload(), dc_and_commit_time(), snapshot_time(), snapshot_time(),
                         snapshot_time() | ignore, snapshot_time()) -> {boolean(), boolean(), snapshot_time()}.

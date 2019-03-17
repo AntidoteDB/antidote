@@ -52,7 +52,7 @@
 
 %% This is just a helper fsm for meta_data_sender.
 %% See the meta_data_sender file for information on how to use the meta-data
-%% This is a seperate fsm from meta_data_sender, which will be triggered
+%% This is a separate fsm from meta_data_sender, which will be triggered
 %% by meta_data_sender to broadcast the data.
 %% It also keeps track of the names of physical nodes in the cluster.
 
