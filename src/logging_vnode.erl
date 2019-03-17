@@ -321,7 +321,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
     end,
     {noreply, State};
 
-%% @doc Read command: Returns the phyiscal time of the
+%% @doc Read command: Returns the physical time of the
 %%      clocksi vnode for which no transactions will commit with smaller time
 %%      Output: {ok, Time}
 handle_command({send_min_prepared, Time}, _Sender,
@@ -377,7 +377,7 @@ handle_command({read_from, LogId, _From}, _Sender,
     end;
 
 %% @doc Append command: Appends a new op to the Log of Key
-%%      Input:  LogId: Indetifies which log the operation has to be
+%%      Input:  LogId: Identifies which log the operation has to be
 %%              appended to.
 %%              LogOperation of the operation
 %%              OpId: Unique operation id
@@ -442,7 +442,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 %% That already have their operation id numbers assigned
 %% That is why IsLocal is hard coded to false
 %% Might want to support appending groups of local operations in the future
-%% for efficency
+%% for efficiency
 %% -spec handle_command({append_group, log_id(), [#log_record{}], false, boolean()}, pid(), #state{}) ->
 %%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
 handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Sender,
@@ -591,7 +591,7 @@ reverse_and_add_op_id([Next|Rest], Id, Acc) ->
     reverse_and_add_op_id(Rest, Id+1, [{Id, Next}|Acc]).
 
 %% Gets the id of the last operation that was put in the log
-%% and the maximum vectorclock of the commited transactions stored in the log
+%% and the maximum vectorclock of the committed transactions stored in the log
 -spec get_last_op_from_log(log_id(), disk_log:continuation() | start, cache_id(), vectorclock()) -> {eof, vectorclock()} | {error, term()}.
 get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
     ok = disk_log:sync(Log),
@@ -613,8 +613,8 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
     end.
 
 %% This is called when the vnode starts and loads into the cache
-%% the id of the last operation appened to the log, so that new ops will
-%% be assigned corret ids (after crash and restart)
+%% the id of the last operation appended to the log, so that new ops will
+%% be assigned correct ids (after crash and restart)
 -spec get_max_op_numbers([{log_id(), #log_record{}}], cache_id(), vectorclock()) -> vectorclock().
 get_max_op_numbers([], _ClockTable, MaxVector) ->
     MaxVector;
@@ -710,7 +710,7 @@ finish_op_load(CommittedOpsDict) ->
 %% @doc Given a list of log_records, this method filters the ones corresponding to Key.
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
-%% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
+%% a list of the committed operations for that key which have a smaller commit time than MinSnapshotTime.
 -spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(), snapshot_time(),
                 dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
                    {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
@@ -920,7 +920,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
 
 %% @doc get_log_from_map: abstracts the get function of a key-value store
 %%              currently using dict
-%%      Input:  Map:  dict that representes the map
+%%      Input:  Map:  dict that represents the map
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
 %%
@@ -936,7 +936,7 @@ get_log_from_map(Map, _Partition, LogId) ->
 
 %% @doc join_logs: Recursive fold of all the logs stored in the vnode
 %%      Input:  Logs: A list of pairs {Preflist, Log}
-%%                      F: Function to apply when floding the log (dets)
+%%                      F: Function to apply when folding the log (dets)
 %%                      Acc: Folded data
 %%      Return: Folded data of all the logs.
 %%

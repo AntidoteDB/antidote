@@ -204,7 +204,7 @@ bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
     end.
 
 %% Loops until all vnodes of a given type are running
-%% on the local phyical node from which this was funciton called
+%% on the local physical node from which this was funciton called
 -spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),

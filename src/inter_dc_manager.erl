@@ -108,7 +108,7 @@ connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
             connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
-%% This should not be called untilt the local dc's ring is merged
+%% This should not be called until the local dc's ring is merged
 -spec start_bg_processes(atom()) -> ok.
 start_bg_processes(MetaDataName) ->
     %% Start the meta-data senders

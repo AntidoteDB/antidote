@@ -92,7 +92,7 @@
 %% The merge function should take as input a Dict, where each entry is a PartitionId
 %% with the vaue being the dict input through the put functions. The output should
 %% be a dict, with the same structure as the dict added by the put functions.
-%% The idea behind this is that first the vnodes data for each phyiscal node is merged
+%% The idea behind this is that first the vnodes data for each physical node is merged
 %% then is broadcast, then the phyisical nodes meta-data is merged.  This way
 %% network traffic is lowered.
 %%
@@ -286,7 +286,7 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
             RemoteDict = dict:from_list(ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME))),
             LocalDict = dict:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
             %% Be sure that you are only checking active nodes
-            %% This isnt the most efficent way to do this because are checking the list
+            %% This isn't the most efficient way to do this because are checking the list
             %% of nodes and partitions every time to see if any have been removed/added
             %% This is only done if the ring is expected to change, but should be done
             %% differently (check comment in get_node_and_partition_list())

@@ -30,7 +30,7 @@
 %% All updates are broadcast to all nodes in the DC and stored locally
 %% in memory and on disk at each node so that reading is just looking in an ets table
 %% Updates are synchronous and should be one at a time for the whole DC
-%% otherwise concurrent updates could overwrite eachother
+%% otherwise concurrent updates could overwrite each other
 
 -module(stable_meta_data_server).
 -behaviour(gen_server).

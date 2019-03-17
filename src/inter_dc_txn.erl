@@ -130,7 +130,7 @@ partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigne
 
 %% These are interdc message ids, as non-neg-integers, encoded as unsigned
 %% They are of a fixed binary size, looping back to zero
-%% once the max size is reached (by triming the bits on the left)
+%% once the max size is reached (by trimming the bits on the left)
 -spec req_id_to_bin(non_neg_integer()) -> binary().
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
