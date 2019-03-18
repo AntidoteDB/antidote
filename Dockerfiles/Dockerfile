@@ -1,4 +1,4 @@
-FROM erlang:19
+FROM erlang:21
 
 ENV HANDOFF_PORT "8099"
 ENV PB_PORT "8087"
@@ -21,7 +21,7 @@ RUN set -xe \
   && git checkout $ANTIDOTE_BRANCH \
   && make rel \
   && cp -R _build/default/rel/antidote /opt/ \
-  && sed -e '$i,{kernel, [{inet_dist_listen_min, 9100}, {inet_dist_listen_max, 9100}]}' /usr/src/antidote/_build/default/rel/antidote/releases/0.0.1/sys.config > /opt/antidote/releases/0.0.1/sys.config \
+  && sed -e '$i,{kernel, [{inet_dist_listen_min, 9100}, {inet_dist_listen_max, 9100}]}' /usr/src/antidote/_build/default/rel/antidote/releases/0.0.2/sys.config > /opt/antidote/releases/0.0.2/sys.config \
   && rm -rf /usr/src/antidote /var/lib/apt/lists/*
 
 ADD ./start_and_attach.sh /opt/antidote/
