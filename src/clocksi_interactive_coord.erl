@@ -764,7 +764,7 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
                     updated_partitions=UpdatedPartitions
                 }
         end
-                     end,
+    end,
 
     NewCoordState = lists:foldl(
         ExecuteUpdates,
