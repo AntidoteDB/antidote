@@ -1,13 +1,12 @@
 language: erlang
 otp_release:
-  - 19.3
-  - 20.3
-  - 21.0
+  - 21.2
 install:
   - make
 script:
   - make test
   - make dialyzer
   - make lint
+  - rebar3 as test coveralls send
 sudo: required
 dist: trusty

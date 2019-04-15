@@ -8,7 +8,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean relclean
+distclean: clean
 	$(REBAR) clean --all
 
 cleantests:
@@ -18,7 +18,7 @@ cleantests:
 test:
 	mkdir -p logs
 	${REBAR} eunit
-	${REBAR} cover
+	${REBAR} cover --verbose
 
 docs:
 	${REBAR} doc

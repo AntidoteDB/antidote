@@ -1,6 +1,6 @@
 {application, vectorclock,
- [{description, "An vectorclock library for Erlang"},
-  {vsn, "0.1.0"},
+ [{description, "A vectorclock library for Erlang"},
+  {vsn, "0.0.2"},
   {registered, []},
   {applications,
    [kernel,
