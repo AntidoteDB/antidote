@@ -62,7 +62,20 @@ from_list(List) ->
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();
 max([V]) -> V;
-max([V1, V2|T]) -> max([merge(fun erlang:max/2, V1, V2)|T]).
+max([V1, V2|T]) -> max([max2(V1, V2)|T]).
+
+%% component-wise maximum of two clocks
+-spec max2(vectorclock(), vectorclock()) -> vectorclock().
+max2(V1, V2) ->
+  FoldFun =
+    fun(DC, A, Acc) ->
+      B = get_clock_of_dc(DC, Acc),
+      case A > B of
+        true -> Acc#{DC => A};
+        false -> Acc
+      end
+    end,
+  maps:fold(FoldFun, V2, V1).
 
 -spec min([vectorclock()]) -> vectorclock().
 min([]) -> new();
