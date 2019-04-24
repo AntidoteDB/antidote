@@ -28,7 +28,7 @@
 -include("gpb.hrl").
 
 %% enumerated types
--type 'CRDT_type'() :: 'COUNTER' | 'ORSET' | 'LWWREG' | 'MVREG' | 'GMAP' | 'RWSET' | 'RRMAP' | 'FATCOUNTER' | 'FLAG_EW' | 'FLAG_DW'.
+-type 'CRDT_type'() :: 'COUNTER' | 'ORSET' | 'LWWREG' | 'MVREG' | 'GMAP' | 'RWSET' | 'RRMAP' | 'FATCOUNTER' | 'FLAG_EW' | 'FLAG_DW' | 'BCOUNTER'.
 -type 'ApbSetUpdate.SetOpType'() :: 'ADD' | 'REMOVE'.
 -export_type(['CRDT_type'/0, 'ApbSetUpdate.SetOpType'/0]).
 
@@ -1345,6 +1345,8 @@ e_enum_CRDT_type('FLAG_EW', Bin, _TrUserData) ->
     <<Bin/binary, 13>>;
 e_enum_CRDT_type('FLAG_DW', Bin, _TrUserData) ->
     <<Bin/binary, 14>>;
+e_enum_CRDT_type('BCOUNTER', Bin, _TrUserData) ->
+    <<Bin/binary, 15>>;
 e_enum_CRDT_type(V, Bin, _TrUserData) ->
     e_varint(V, Bin).
 
@@ -6912,6 +6914,7 @@ d_enum_CRDT_type(11) -> 'RRMAP';
 d_enum_CRDT_type(12) -> 'FATCOUNTER';
 d_enum_CRDT_type(13) -> 'FLAG_EW';
 d_enum_CRDT_type(14) -> 'FLAG_DW';
+d_enum_CRDT_type(15) -> 'BCOUNTER';
 d_enum_CRDT_type(V) -> V.
 
 'd_enum_ApbSetUpdate.SetOpType'(1) -> 'ADD';
@@ -8382,6 +8385,7 @@ v_enum_CRDT_type('FATCOUNTER', _Path, _TrUserData) ->
     ok;
 v_enum_CRDT_type('FLAG_EW', _Path, _TrUserData) -> ok;
 v_enum_CRDT_type('FLAG_DW', _Path, _TrUserData) -> ok;
+v_enum_CRDT_type('BCOUNTER', _Path, _TrUserData) -> ok;
 v_enum_CRDT_type(V, Path, TrUserData)
     when is_integer(V) ->
     v_type_sint32(V, Path, TrUserData);
@@ -8521,7 +8525,8 @@ get_msg_defs() ->
     [{{enum, 'CRDT_type'},
       [{'COUNTER', 3}, {'ORSET', 4}, {'LWWREG', 5},
        {'MVREG', 6}, {'GMAP', 8}, {'RWSET', 10}, {'RRMAP', 11},
-       {'FATCOUNTER', 12}, {'FLAG_EW', 13}, {'FLAG_DW', 14}]},
+       {'FATCOUNTER', 12}, {'FLAG_EW', 13}, {'FLAG_DW', 14},
+       {'BCOUNTER', 15}]},
      {{enum, 'ApbSetUpdate.SetOpType'},
       [{'ADD', 1}, {'REMOVE', 2}]},
      {{msg, 'ApbErrorResp'},
@@ -9025,7 +9030,8 @@ find_msg_def(_) -> error.
 find_enum_def('CRDT_type') ->
     [{'COUNTER', 3}, {'ORSET', 4}, {'LWWREG', 5},
      {'MVREG', 6}, {'GMAP', 8}, {'RWSET', 10}, {'RRMAP', 11},
-     {'FATCOUNTER', 12}, {'FLAG_EW', 13}, {'FLAG_DW', 14}];
+     {'FATCOUNTER', 12}, {'FLAG_EW', 13}, {'FLAG_DW', 14},
+     {'BCOUNTER', 15}];
 find_enum_def('ApbSetUpdate.SetOpType') ->
     [{'ADD', 1}, {'REMOVE', 2}];
 find_enum_def(_) -> error.
@@ -9052,7 +9058,8 @@ enum_symbol_by_value_CRDT_type(10) -> 'RWSET';
 enum_symbol_by_value_CRDT_type(11) -> 'RRMAP';
 enum_symbol_by_value_CRDT_type(12) -> 'FATCOUNTER';
 enum_symbol_by_value_CRDT_type(13) -> 'FLAG_EW';
-enum_symbol_by_value_CRDT_type(14) -> 'FLAG_DW'.
+enum_symbol_by_value_CRDT_type(14) -> 'FLAG_DW';
+enum_symbol_by_value_CRDT_type(15) -> 'BCOUNTER'.
 
 
 enum_value_by_symbol_CRDT_type('COUNTER') -> 3;
@@ -9064,7 +9071,8 @@ enum_value_by_symbol_CRDT_type('RWSET') -> 10;
 enum_value_by_symbol_CRDT_type('RRMAP') -> 11;
 enum_value_by_symbol_CRDT_type('FATCOUNTER') -> 12;
 enum_value_by_symbol_CRDT_type('FLAG_EW') -> 13;
-enum_value_by_symbol_CRDT_type('FLAG_DW') -> 14.
+enum_value_by_symbol_CRDT_type('FLAG_DW') -> 14;
+enum_value_by_symbol_CRDT_type('BCOUNTER') -> 15.
 
 'enum_symbol_by_value_ApbSetUpdate.SetOpType'(1) ->
     'ADD';
