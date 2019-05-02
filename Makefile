@@ -2,18 +2,33 @@ REBAR := rebar3
 
 .PHONY: rel deps test
 
-all: deps compile
+all: compile
 
-compile: deps
+compile:
 	@${REBAR} compile
-
-deps:
-	@${REBAR} deps
 
 clean:
 	@${REBAR} clean
 
-include tools.mk
+distclean: clean
+	$(REBAR) clean --all
 
-typer:
-	typer --annotate -I ../ --plt $(PLT) -r src
+test:
+	mkdir -p logs
+	${REBAR} eunit
+	${REBAR} cover --verbose
+
+docs:
+	${REBAR} doc
+
+xref: compile
+	${REBAR} xref
+
+dialyzer:
+	${REBAR} dialyzer
+
+# style checks
+lint:
+	${REBAR} as lint lint
+
+check: distclean test dialyzer lint

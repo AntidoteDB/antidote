@@ -69,7 +69,7 @@ is_type(T) ->
 -spec type() -> reg.
 type() -> reg.
 
--spec to_ops(term(),term()) -> [].
+-spec to_ops(term(), term()) -> [].
 to_ops(_, _) ->
     [].
 

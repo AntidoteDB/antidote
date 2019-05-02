@@ -73,11 +73,11 @@ dirty_value(#antidote_set{set=Set, adds = Adds, rems=Rems}) ->
 %% @doc Adds an element to the local set container.
 -spec add(term(), antidote_set()) -> antidote_set().
 add(Elem, #antidote_set{adds=Adds}=Fset) ->
-    Fset#antidote_set{adds=sets:add_element(Elem,Adds)}.
+    Fset#antidote_set{adds=sets:add_element(Elem, Adds)}.
 
 -spec remove(term(), antidote_set()) -> antidote_set().
 remove(Elem, #antidote_set{rems=Rems}=Fset) ->
-    Fset#antidote_set{rems=sets:add_element(Elem,Rems)}.
+    Fset#antidote_set{rems=sets:add_element(Elem, Rems)}.
 
 -spec contains(term(), antidote_set()) -> boolean().
 contains(Elem, #antidote_set{set=Set}) ->
@@ -111,17 +111,17 @@ add_op_test() ->
     New = antidotec_set:new([]),
     Set1 = antidotec_set:dirty_value(New),
     ?assertEqual([], Set1),
-    OneElement = antidotec_set:add(<<"value1">>,New),
+    OneElement = antidotec_set:add(<<"value1">>, New),
     Set2 = antidotec_set:dirty_value(OneElement),
     ?assertEqual([<<"value1">>], Set2).
 
 add_op_existing_set_test() ->
-    New = antidotec_set:new([<<"elem1">>,<<"elem2">>,<<"elem3">>]),
+    New = antidotec_set:new([<<"elem1">>, <<"elem2">>, <<"elem3">>]),
     ThreeElemSet = antidotec_set:dirty_value(New),
     ?assertEqual([<<"elem1">>, <<"elem2">>, <<"elem3">>], lists:sort(ThreeElemSet)),
-    AddElem = antidotec_set:add(<<"elem4">>,New),
-    S1 = antidotec_set:remove(<<"elem4">>,AddElem),
-    S2 = antidotec_set:remove(<<"elem2">>,S1),
+    AddElem = antidotec_set:add(<<"elem4">>, New),
+    S1 = antidotec_set:remove(<<"elem4">>, AddElem),
+    S2 = antidotec_set:remove(<<"elem2">>, S1),
     TwoElemSet = antidotec_set:dirty_value(S2),
     ?assertEqual([<<"elem1">>, <<"elem3">>], lists:sort(TwoElemSet)).
 
