@@ -87,9 +87,9 @@ generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 generate_downstream(Key, {increment, Amount}, BCounter) when Amount < 0->
-		generate_downstream(Key, {decrement, {-Amount, empty}}, BCounter);
+     generate_downstream(Key, {decrement, {-Amount, empty}}, BCounter);
 generate_downstream(Key, {increment, Amount}, BCounter)->
-		generate_downstream(Key, {increment, {Amount, empty}}, BCounter);
+     generate_downstream(Key, {increment, {Amount, empty}}, BCounter);
 
 %% @doc Processes a trasfer operation between two owners of the
 %% counter.
