@@ -139,7 +139,7 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 
 init([]) ->
     Path = filename:join(
-         app_helper:get_env(riak_core, platform_data_dir), ?TABLE_NAME),
+         application:get_env(riak_core, platform_data_dir, undefined), ?TABLE_NAME),
 
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
