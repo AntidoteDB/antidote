@@ -50,9 +50,9 @@
 %% Public API
 %% ===================================================================
 
-%% This is just a helper fsm for meta_data_sender.
+%% This is just a helper server for meta_data_sender.
 %% See the meta_data_sender file for information on how to use the meta-data
-%% This is a separate fsm from meta_data_sender, which will be triggered
+%% This is a separate server from meta_data_sender, which will be triggered
 %% by meta_data_sender to broadcast the data.
 %% It also keeps track of the names of physical nodes in the cluster.
 
@@ -60,10 +60,9 @@
 start_link(Name) ->
     gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [Name], []).
 
-%% Add a list of DCs to this DC
--spec send_meta_data(atom(), atom(), atom(), dict:dict()) -> ok.
-send_meta_data(Name, DestinationNodeId, NodeId, Dict) ->
-    gen_server:cast({global, generate_server_name(DestinationNodeId)}, {update_meta_data, Name, NodeId, Dict}).
+-spec send_meta_data(atom(), atom(), atom(), any()) -> ok.
+send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
+    gen_server:cast({global, generate_server_name(DestinationNodeId)}, {update_meta_data, Name, NodeId, Data}).
 
 -spec remove_node(atom(), atom()) -> ok.
 remove_node(Name, NodeId) ->
@@ -81,8 +80,8 @@ init([Name]) ->
     Table = ets:new(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
     {ok, #state{table=Table}}.
 
-handle_cast({update_meta_data, Name, NodeId, Dict}, State) ->
-    true = ets:insert(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, Dict}),
+handle_cast({update_meta_data, Name, NodeId, Data}, State) ->
+    true = ets:insert(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, Data}),
     {noreply, State};
 
 handle_cast({update_meta_data_new, Name, NodeId}, State) ->

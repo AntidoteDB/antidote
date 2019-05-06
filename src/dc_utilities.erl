@@ -174,6 +174,7 @@ ensure_all_vnodes_running(VnodeType) ->
         true -> ok;
         false ->
             logger:debug("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            %TODO: Extract into configuration constant
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
     end.
@@ -197,6 +198,7 @@ bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
     case Err of
         true ->
             logger:debug("Vnode not up retrying, ~p, ~p", [VMaster, P]),
+            %TODO: Extract into configuration constant
             timer:sleep(1000),
             bcast_vnode_check_up(VMaster, Request, [P|Rest]);
         false ->
@@ -217,16 +219,16 @@ ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType, {hello}, get_all_partitions()).
 
-%% Prints to the console the staleness between this DC and all
+%% Prints to the logging framework the staleness between this DC and all
 %% other DCs that it is connected to
 -spec check_staleness() -> ok.
 check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
-    dict:fold(fun(DcId, Time, _Acc) ->
-                  io:format("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]),
-                  ok
-              end, ok, SS).
+    PrintFun = fun(DcId, Time) -> 
+        logger:debug("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]) end,
+    _ = vectorclock:map(PrintFun, SS),
+    ok.
 
 %% Loops until a process with the given name is registered locally
 -spec check_registered(atom()) -> ok.
@@ -245,9 +247,10 @@ check_registered(Name) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
+    case meta_data_sender:get_merged_data(stable, vectorclock:new()) of
         undefined ->
-            %% The snapshot isn't realy yet, need to wait for startup
+            %% The snapshot isn't ready yet, need to wait for startup
+            %TODO: Extract into configuration constant
             timer:sleep(10),
             get_stable_snapshot();
         SS ->
@@ -260,27 +263,19 @@ get_stable_snapshot() ->
                     %% For gentlerain use the same format as clocksi
                     %% But, replicate GST to all entries in the dict
                     StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
+                    case vectorclock:size(StableSnapshot) of
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = dict:fold(
-                                         fun(_Key, Value, Acc) ->
-                                                 [Value | Acc ]
-                                         end, [], StableSnapshot),
-                            GST = lists:min(ListTime),
-                            {ok, dict:map(
-                                   fun(_K, _V) ->
-                                           GST
-                                   end,
-                                   StableSnapshot)}
+                            GST = vectorclock:min_clock(StableSnapshot),
+                            {ok, vectorclock:set_clock_of_all_dcs(GST, StableSnapshot)}
                     end
             end
     end.
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta_dict(stable, Partition) of
+    case meta_data_sender:get_meta(stable, Partition, vectorclock:new()) of
         undefined ->
             %% The partition isn't ready yet, wait for startup
             timer:sleep(10),
@@ -294,9 +289,7 @@ get_partition_snapshot(Partition) ->
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-    %% dict:is_empty/1 is not available, hence using dict:size/1
-    %% to check whether it is empty
-    case dict:size(StableSnapshot) of
+    case vectorclock:size(StableSnapshot) of
         0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas
@@ -308,11 +301,7 @@ get_scalar_stable_time() ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the
             %% number of DCs in advance, which is not possible now.
-            ListTime = dict:fold(
-                         fun(_Key, Value, Acc) ->
-                                 [Value | Acc ]
-                         end, [], StableSnapshot),
-            GST = lists:min(ListTime),
+            GST = vectorclock:min_clock(StableSnapshot),
             {ok, GST, StableSnapshot}
     end.
 

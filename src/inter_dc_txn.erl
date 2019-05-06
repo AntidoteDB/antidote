@@ -66,7 +66,7 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   partition = Partition,
   prev_log_opid = PrevLogOpId,
   log_records = [],
-  snapshot = dict:new(),
+  snapshot = vectorclock:new(),
   timestamp = Timestamp
 }.
 

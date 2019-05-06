@@ -34,8 +34,7 @@
  {<<"riak_core">>,{pkg,<<"riak_core_ng">>,<<"3.1.1">>},0},
  {<<"riak_ensemble">>,{pkg,<<"riak_ensemble_ng">>,<<"2.4.4">>},1},
  {<<"riak_sysmon">>,{pkg,<<"riak_sysmon">>,<<"2.1.7">>},1},
- {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2},
- {<<"vectorclock">>,{pkg,<<"vectorclock">>,<<"0.1.0">>},0}]}.
+ {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2}]}.
 [
 {pkg_hash,[
  {<<"accept">>, <<"2505B60BCB992CA79BD03AB7B8FEC8A520A47D9730F286DF1A479CC98B03F94B">>},
@@ -67,6 +66,5 @@
  {<<"riak_core">>, <<"098CEEF293F9F232E724DD8745916F2E4CE0F14CB8EDD1653E8425A14F0DD0B6">>},
  {<<"riak_ensemble">>, <<"F9E04052F4A7FAAD20F008DFF18D34D3552513000410CE9C5941B4F7361741E8">>},
  {<<"riak_sysmon">>, <<"AF420DF0F7569E1F12BCD465745164CB6189EB93F118D5CDB3F90FEB3F8BF47D">>},
- {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>},
- {<<"vectorclock">>, <<"CBC79A44193756CF20B9AC8DDB9F268FAF1FE84D00C396DB447373E6D1FEDFC5">>}]}
+ {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>}]}
 ].

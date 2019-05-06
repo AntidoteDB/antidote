@@ -906,12 +906,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            logger:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            logger:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            logger:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            logger:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->
