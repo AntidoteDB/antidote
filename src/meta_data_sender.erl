@@ -111,22 +111,36 @@ start(Name) ->
 
 -spec update_meta_with(atom(), partition_id(), term(), term(), fun((term(), term()) -> term()) | undefined) -> ok | undefined.
 update_meta_with(Name, Partition, NewData, Default, Func) ->
-    case ets:info(get_name(Name, ?META_TABLE_NAME)) of
+    MetaTableName = get_name(Name, ?META_TABLE_NAME),
+    case ets:info(MetaTableName) of
         undefined ->
             undefined;
         _ ->
             Result = Func(NewData, get_meta(Name, Partition, Default)),
-            true = ets:insert(get_name(Name, ?META_TABLE_NAME), {Partition, Result}),
+            true = ets:insert(MetaTableName, {Partition, Result}),
             ok
     end.
 
+-spec put_meta(atom(), partition_id(), term()) -> ok | undefined.
+put_meta(Name, Partition, NewData) ->
+    MetaTableName = get_name(Name, ?META_TABLE_NAME),
+    case ets:info(MetaTableName) of
+        undefined ->
+            undefined;
+        _ ->
+            true = ets:insert(MetaTableName, {Partition, NewData}),
+            ok
+    end.
+
+
 -spec get_meta(atom(), partition_id(), term()) -> term() | undefined.
 get_meta(Name, Partition, Default) ->
-    case ets:info(get_name(Name, ?META_TABLE_NAME)) of
+    MetaTableName = get_name(Name, ?META_TABLE_NAME),
+    case ets:info(MetaTableName) of
     undefined ->
         undefined;
     _ ->
-        case ets:lookup(get_name(Name, ?META_TABLE_NAME), Partition) of
+        case ets:lookup(MetaTableName, Partition) of
             [] ->
                 Default;
             [{Partition, Other}] ->
@@ -192,7 +206,7 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        fold_function = FoldFun,
                                        name = Name,
                                        should_check_nodes = CheckNodes}) ->
-    {WillChange, Data} = get_meta_data(Name, MergeFun, StoreFun, CheckNodes),
+    {WillChange, Data} = get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = LookupFun(local_merged, Data),
     MyNode = node(),
@@ -277,8 +291,8 @@ check_nodes(Name, RemoteDict, LocalDict, NodeList, PartitionList) ->
                               end, ok, PartitionErase),
                     {NewDict, NewLocalDict}.
 
--spec get_meta_data(atom(), fun((term()) -> term()), fun(), boolean()) -> {boolean(), term()} | not_ready.
-get_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
+-spec get_merged_meta_data(atom(), fun((term()) -> term()), fun(), boolean()) -> {boolean(), term()} | not_ready.
+get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
     case tables_ready(Name) of
         false ->
             not_ready;
@@ -336,115 +350,136 @@ get_name(Name, TableName) ->
 
 -ifdef(TEST).
 
-%% This test checks to make sure that merging is done correctly for multiple partitions
-%% It uses the functions in stable_time_functions.erl
-merge_test() ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    _Table = ets:new(get_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+
+meta_data_sender_test() ->
+    {setup,
+     fun start/0,
+     fun stop/1,
+     fun empty_test/1
+    }.
+
+start() ->
+    [Name, _UpdateFunc, _MergeFunc, _StoreFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(), 
+    _Table  = ets:new(get_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
     _Table2 = ets:new(get_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     _Table3 = ets:new(node_table, [set, named_table]),
     _Table4 = ets:new(get_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    true = ets:insert(node_table, {nodes, [n1]}),
-    true = ets:insert(node_table, {testnum, test1}),
-    true = ets:insert(node_table, {partitions, [p1, p2]}),
-    update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
-    {false, Dict1} = get_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
+    ok.
 
-    true = ets:insert(node_table, {nodes, [n1, n2]}),
-    true = ets:insert(node_table, {partitions, [p1, p2, p3]}),
-    update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}]), vectorclock:new(), fun (X, _Y) -> X end),
-    {false, Dict2} = get_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
-    ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
+stop(_) -> ok.
+
+-spec set_nodes_and_partitions_and_willchange([node()], [partition_id()], boolean()) -> ok.
+set_nodes_and_partitions_and_willchange(Nodes, Partitions, WillChange) ->
+    true = ets:insert(node_table, {nodes, Nodes}),
+    true = ets:insert(node_table, {willchange, WillChange}),
+    true = ets:insert(node_table, {partitions, Partitions}),
     ok.
 
 %% Basic empty test
-empty_test() ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    true = ets:insert(node_table, {nodes, [n1]}),
-    true = ets:insert(node_table, {testnum, test1}),
-    true = ets:insert(node_table, {partitions, [p1, p2, p3]}),
+empty_test(_) ->
+    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
-    update_meta_with(Name, p1, vectorclock:from_list([]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, vectorclock:from_list([]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p3, vectorclock:from_list([]), vectorclock:new(), fun (X, _Y) -> X end),
+    put_meta(Name, p1, vectorclock:new()),
+    put_meta(Name, p2, vectorclock:new()),
+    put_meta(Name, p3, vectorclock:new()),
 
-    {false, Dict1} = get_meta_data(Name, MergeFunc, StoreFunc, false),
+    {false, Dict1} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
     LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    ?assertEqual(LocalMerged1, vectorclock:from_list([])).
+    ?assert(vectorclock:eq(LocalMerged1, vectorclock:new())).
 
-%% Be sure that when you are missing a partition in your meta_data that you get a 0 value
-missing_test() ->
-    [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    true = ets:insert(node_table, {nodes, [n1]}),
-    true = ets:insert(node_table, {testnum, test1}),
-    true = ets:insert(node_table, {partitions, [p1, p2, p3]}),
-    true = ets:delete(get_name(Name, ?META_TABLE_NAME), p2),
 
-    update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p3, vectorclock:from_list([{dc1, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+% %% This test checks to make sure that merging is done correctly for multiple partitions
+% %% It uses the functions in stable_time_functions.erl
+% merge_test() ->
+%     [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+%     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
+%     true = ets:insert(node_table, {nodes, [n1]}),
+%     true = ets:insert(node_table, {testnum, test1}),
+%     true = ets:insert(node_table, {partitions, [p1, p2]}),
+%     update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     {false, Dict1} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
+%     LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
+%     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
 
-    {false, Dict1} = get_meta(Name, MergeFunc, true),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    io:format("val ~w~n", [vectorclock:to_list(LocalMerged1)]),
-    ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 0}])).
+%     true = ets:insert(node_table, {nodes, [n1, n2]}),
+%     true = ets:insert(node_table, {partitions, [p1, p2, p3]}),
+%     update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     {false, Dict2} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
+%     LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
+%     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
+%     ok.
 
-%% This test checks to make sure that merging is done correctly for multiple partitions
-%% when you have a node that is removed from the cluster
-%% It uses the functions in stable_time_functions.erl
-merge_node_change_test() ->
-    [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    true = ets:delete(get_name(Name, ?META_TABLE_NAME), p3),
-    true = ets:insert(node_table, {nodes, [n1]}),
-    true = ets:insert(node_table, {testnum, test2}),
-    true = ets:insert(node_table, {partitions, [p1, p2]}),
 
-    update_meta_with(Name, p1, dict:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, dict:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
-    {true, Dict1} = get_meta(Name, MergeFunc, false),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    io:format("~w", [vectorclock:to_list(LocalMerged1)]),
-    ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
+% %% Be sure that when you are missing a partition in your meta_data that you get a 0 value
+% missing_test() ->
+%     [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+%     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
+%     true = ets:insert(node_table, {nodes, [n1]}),
+%     true = ets:insert(node_table, {testnum, test1}),
+%     true = ets:insert(node_table, {partitions, [p1, p2, p3]}),
+%     true = ets:delete(get_name(Name, ?META_TABLE_NAME), p2),
 
-    true = ets:insert(node_table, {nodes, [n1, n2]}),
-    true = ets:insert(node_table, {partitions, [p1, p3]}),
-    update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}]), vectorclock:new(), fun (X, _Y) -> X end),
-    {true, Dict2} = get_meta(Name, MergeFunc, true),
-    LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
-    ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
-    ok.
+%     update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p3, vectorclock:from_list([{dc1, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
 
-merge_node_delete_test() ->
-    [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    true = ets:insert(node_table, {nodes, [n1]}),
-    true = ets:insert(node_table, {testnum, test2}),
-    true = ets:insert(node_table, {partitions, [p1, p2]}),
+%     {false, Dict1} = get_meta(Name, MergeFunc, true),
+%     LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
+%     io:format("val ~w~n", [vectorclock:to_list(LocalMerged1)]),
+%     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 0}])).
 
-    update_meta_with(Name, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
-    update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+% %% This test checks to make sure that merging is done correctly for multiple partitions
+% %% when you have a node that is removed from the cluster
+% %% It uses the functions in stable_time_functions.erl
+% merge_node_change_test() ->
+%     [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+%     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
+%     true = ets:delete(get_name(Name, ?META_TABLE_NAME), p3),
+%     true = ets:insert(node_table, {nodes, [n1]}),
+%     true = ets:insert(node_table, {testnum, test2}),
+%     true = ets:insert(node_table, {partitions, [p1, p2]}),
 
-    {true, Dict1} = get_meta(Name, MergeFunc, false),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    io:format("~w", [vectorclock:to_list(LocalMerged1)]),
-    ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
+%     update_meta_with(Name, p1, dict:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p2, dict:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     {true, Dict1} = get_meta(Name, MergeFunc, false),
+%     LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
+%     io:format("~w", [vectorclock:to_list(LocalMerged1)]),
+%     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
 
-    {true, Dict2} = get_meta(Name, MergeFunc, true),
-    LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
-    io:format("~w", [vectorclock:to_list(LocalMerged2)]),
-    ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
+%     true = ets:insert(node_table, {nodes, [n1, n2]}),
+%     true = ets:insert(node_table, {partitions, [p1, p3]}),
+%     update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     {true, Dict2} = get_meta(Name, MergeFunc, true),
+%     LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
+%     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
+%     ok.
+
+% merge_node_delete_test() ->
+%     [Name, _UpdateFunc, MergeFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+%     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
+%     true = ets:insert(node_table, {nodes, [n1]}),
+%     true = ets:insert(node_table, {testnum, test2}),
+%     true = ets:insert(node_table, {partitions, [p1, p2]}),
+
+%     update_meta_with(Name, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}]), vectorclock:new(), fun (X, _Y) -> X end),
+%     update_meta_with(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}]), vectorclock:new(), fun (X, _Y) -> X end),
+
+%     {true, Dict1} = get_meta(Name, MergeFunc, false),
+%     LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
+%     io:format("~w", [vectorclock:to_list(LocalMerged1)]),
+%     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
+
+%     {true, Dict2} = get_meta(Name, MergeFunc, true),
+%     LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
+%     io:format("~w", [vectorclock:to_list(LocalMerged2)]),
+%     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 
 get_node_list_t() ->

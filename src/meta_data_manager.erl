@@ -62,7 +62,7 @@ start_link(Name) ->
 
 -spec send_meta_data(atom(), atom(), atom(), any()) -> ok.
 send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
-    gen_server:cast({global, generate_server_name(DestinationNodeId)}, {update_meta_data, Name, NodeId, Data}).
+    gen_server:cast({global, generate_server_name(DestinationNodeId)}, {send_meta_data, Name, NodeId, Data}).
 
 -spec remove_node(atom(), atom()) -> ok.
 remove_node(Name, NodeId) ->
@@ -70,7 +70,7 @@ remove_node(Name, NodeId) ->
 
 -spec add_new_meta_data(atom(), atom()) -> ok.
 add_new_meta_data(Name, NodeId) ->
-    gen_server:cast({global, generate_server_name(node())}, {update_meta_data_new, Name, NodeId}).
+    gen_server:cast({global, generate_server_name(node())}, {add_new_meta_data, Name, NodeId}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -80,11 +80,12 @@ init([Name]) ->
     Table = ets:new(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
     {ok, #state{table=Table}}.
 
-handle_cast({update_meta_data, Name, NodeId, Data}, State) ->
+handle_cast({send_meta_data, Name, NodeId, Data}, State) ->
     true = ets:insert(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, Data}),
     {noreply, State};
 
-handle_cast({update_meta_data_new, Name, NodeId}, State) ->
+handle_cast({add_new_meta_data, Name, NodeId}, State) ->
+    % TODO Use default? And/or check if already present??
     ets:insert_new(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, undefined}),
     {noreply, State};
 
