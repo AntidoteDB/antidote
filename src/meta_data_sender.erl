@@ -299,8 +299,8 @@ get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
             not_ready;
         true ->
             {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
-            Remote = dict:from_list(ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME))),
-            Local = dict:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
+            Remote = maps:from_list(ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME))),
+            Local = maps:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
             %% Be sure that you are only checking active nodes
             %% This isn't the most efficient way to do this because are checking the list
             %% of nodes and partitions every time to see if any have been removed/added
@@ -312,7 +312,7 @@ get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
                     false ->
                         {Remote, Local}
                     end,
-            LocalMerged = MergeFun(NewLocal),
+            LocalMerged = MergeFun(NewRemote, NewLocal),
             {WillChange, StoreFun(local_merged, LocalMerged, NewRemote)}
     end.
 
@@ -389,9 +389,9 @@ empty_test(_) ->
     put_meta(Name, p2, vectorclock:new()),
     put_meta(Name, p3, vectorclock:new()),
 
-    {false, Dict1} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
-    ?assert(vectorclock:eq(LocalMerged1, vectorclock:new())).
+    {false, Dict} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
+    LocalMerged = vectorclock:get_clock_of_dc(local_merged, Dict),
+    ?assertEqual(vectorclock:to_list(LocalMerged), []).
 
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
@@ -482,17 +482,9 @@ get_node_list_t() ->
     Nodes.
 
 get_node_and_partition_list_t() ->
-    [{testnum, TestNum}] = ets:lookup(node_table, testnum),
-    case TestNum of
-        test1 ->
-            [{nodes, Nodes}] = ets:lookup(node_table, nodes),
-            [{partitions, Partitions}] = ets:lookup(node_table, partitions),
-            {Nodes, Partitions, false};
-        test2 ->
-            [{nodes, Nodes}] = ets:lookup(node_table, nodes),
-            [{partitions, Partitions}] = ets:lookup(node_table, partitions),
-            {Nodes, Partitions, true}
-    end.
-
+    [{willchange, WillChange}] = ets:lookup(node_table, willchange),
+    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+    [{partitions, Partitions}] = ets:lookup(node_table, partitions),
+    {Nodes, Partitions, WillChange}.
 
 -endif.
