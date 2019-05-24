@@ -34,6 +34,10 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+-include_lib("antidote_channels/include/antidote_channel.hrl").
+
+-define(CHAN_LIB, channel_zeromq).
+
 %% API
 -export([
   broadcast/1,
@@ -51,7 +55,7 @@
   code_change/3]).
 
 %% State
--record(state, {socket}). %% socket :: erlzmq_socket()
+-record(state, {channel :: channel()}).
 
 %%%% API --------------------------------------------------------------------+
 
@@ -85,8 +89,8 @@ get_address_list() ->
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
 
 -spec broadcast(#interdc_txn{}) -> ok.
-broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
+broadcast(#interdc_txn{partition = P}=Txn) ->
+  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:partition_to_bin(P), Txn}) of
     {'EXIT', _Reason} -> logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
@@ -96,14 +100,24 @@ broadcast(Txn) ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  logger:info("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+    {_, Port} = get_address(),
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+    Config = #pub_sub_channel_config{
+        namespace = <<>>,
+        network_params = #zmq_params{
+            pubPort = Port
+        }
+    },
 
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+    {ok, Channel} = ?CHAN_LIB:start_link(Config),
+    {ok, #state{channel = Channel}}.
+
+handle_call({publish, Partition, Message}, _From, State) ->
+    ok = ?CHAN_LIB:publish(State#state.channel, Partition, Message),
+    {reply, ok, State}.
+
+
+terminate(_Reason, State) -> ?CHAN_LIB:stop(State#state.channel).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
