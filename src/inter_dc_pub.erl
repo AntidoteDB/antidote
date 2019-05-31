@@ -36,8 +36,6 @@
 
 -include_lib("antidote_channels/include/antidote_channel.hrl").
 
--define(CHAN_LIB, channel_zeromq).
-
 %% API
 -export([
   broadcast/1,
@@ -102,22 +100,25 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     {_, Port} = get_address(),
 
-    Config = #pub_sub_channel_config{
-        namespace = <<>>,
-        network_params = #zmq_params{
-            pubPort = Port
+    Config = #{
+        module => channel_zeromq,
+        pattern => pub_sub,
+        namespace => <<>>,
+        network_params => #{
+            host => {0,0,0,0},
+            port => Port
         }
     },
 
-    {ok, Channel} = ?CHAN_LIB:start_link(Config),
+    {ok, Channel} = antidote_channel:start_link(Config),
     {ok, #state{channel = Channel}}.
 
 handle_call({publish, Partition, Message}, _From, State) ->
-    ok = ?CHAN_LIB:publish(State#state.channel, Partition, Message),
+    ok = antidote_channel:send(State#state.channel, #pub_sub_msg{topic = Partition, payload = Message}),
     {reply, ok, State}.
 
 
-terminate(_Reason, State) -> ?CHAN_LIB:stop(State#state.channel).
+terminate(_Reason, State) -> antidote_channel:stop(State#state.channel).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

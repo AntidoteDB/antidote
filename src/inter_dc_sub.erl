@@ -57,9 +57,6 @@
     channels :: dict:dict(dcid(), pid()) % DCID -> socket
 }).
 
-%%TODO: replace with antidote_channel
--define(CHAN_LIB, channel_zeromq).
-
 %%%% API --------------------------------------------------------------------+
 
 %% TODO: persist added DCs in case of a node failure, reconnect on node restart.
@@ -88,10 +85,11 @@ handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
 
 handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
-    {reply, Resp, NewState};
+    {reply, Resp, NewState}.
 
-handle_call(Msg, _From, State) ->
-    {reply, inter_dc_sub_vnode:deliver_txn(Msg), State}.
+handle_cast(#interdc_txn{} = Msg, State) ->
+    inter_dc_sub_vnode:deliver_txn(Msg),
+    {noreply, State};
 
 handle_cast(_Request, State) -> {noreply, State}.
 
@@ -100,13 +98,13 @@ handle_info(_Msg, State) ->
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
-    F = fun({_, Channels}) -> lists:foreach(fun ?CHAN_LIB:stop/1, Channels) end,
+    F = fun({_, Channels}) -> lists:foreach(fun antidote_channel:stop/1, Channels) end,
     lists:foreach(F, dict:to_list(State#state.channels)).
 
 del_dc(DCID, State) ->
     case dict:find(DCID, State#state.channels) of
         {ok, Channels} ->
-            lists:foreach(fun ?CHAN_LIB:stop/1, Channels),
+            lists:foreach(fun antidote_channel:stop/1, Channels),
             {ok, State#state{channels = dict:erase(DCID, State#state.channels)}};
         error ->
             {ok, State}
@@ -119,7 +117,7 @@ connect_to_nodes([Node | Rest], Acc) ->
         {ok, Channel} ->
             connect_to_nodes(Rest, [Channel | Acc]);
         connection_error ->
-            lists:foreach(fun ?CHAN_LIB:stop/1, Acc),
+            lists:foreach(fun antidote_channel:stop/1, Acc),
             connection_error
     end.
 
@@ -127,22 +125,24 @@ connect_to_node([]) ->
     logger:error("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([Address | Rest]) ->
-    case ?CHAN_LIB:is_alive(Address) of
+    case antidote_channel:is_alive(channel_zeromq, Address) of
         true ->
             PartBin = lists:map(
                 fun(P) ->
                     inter_dc_txn:partition_to_bin(P)
                 end, dc_utilities:get_my_partitions()),
 
-            Config = #pub_sub_channel_config{
-                topics = PartBin,
-                namespace = <<>>,
-                network_params = #zmq_params{
-                    publishersAddresses = [Address]
-                },
-                subscriber = self()
+            Config = #{
+                module => channel_zeromq,
+                pattern => pub_sub,
+                handler => self(),
+                topics => PartBin,
+                namespace => <<>>,
+                network_params => #{
+                    publishersAddresses => [Address]
+                }
             },
-            ?CHAN_LIB:start_link(Config);
+            antidote_channel:start_link(Config);
 
         false ->
             connect_to_node(Rest)
