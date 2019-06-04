@@ -216,7 +216,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
-    case materializer:belongs_to_snapshot_op(LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime) 
+    case materializer:belongs_to_snapshot_op(LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime)
             orelse (TxId == Op#clocksi_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
@@ -233,7 +233,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
             %% Result is true if the op should be included in the snapshot
             %% NewTime is the vectorclock of the snapshot with the time of Op included
                 {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
-                                
+
                                   Res1 = try vectorclock:get_clock_of_dc(DcIdOp, SnapshotTime) of
                                              TimeSS ->
                                                  case TimeSS < TimeOp of
@@ -242,7 +242,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
                                                      false ->
                                                          Acc
                                                  end
-                                         catch 
+                                         catch
                                             Error  ->
                                                  logger:error("Could not find DC in SS ~p: ", [SnapshotTime, Error]),
                                                  false

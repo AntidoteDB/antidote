@@ -38,7 +38,7 @@
 %% The functions merge by taking the minimum of all entries per node per DC
 
 export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, fun vectorclock:set_clock_of_dc/3, vectorclock:new(), vectorclock:new()].
+    [stable, fun update_func_min/2, fun get_min_time/1, fun maps:put/3, vectorclock:new(), vectorclock:new()].
 
 update_func_min(Last, Time) ->
     case Last of
@@ -48,30 +48,19 @@ update_func_min(Last, Time) ->
             Time >= Last
     end.
 
-%% This assumes the dicts being sent have all DCs
+%% This assumes the meta data being sent have all DCs
 get_min_time(Dict) ->
-    ?debugVal(Dict),
     {MinDict, FoundUndefined} =
-        vectorclock:fold(fun(NodeId, NodeDict, {Acc1, Undefined}) ->
+        vectorclock:fold(fun(NodeId, NodeDict, {Acc, Undefined}) ->
                       case NodeDict of
                           undefined ->
-                              logger:debug("missing a time for node ~p", [NodeId]),
-                              ?debugMsg("missing a time"),
-                              {Acc1, true};
+                              logger:debug("missing entry for node ~p", [NodeId]),
+                              {Acc, true};
                           _ ->
-                          ?debugVal(NodeDict),
-                          RetDict =
-                              vectorclock:fold(fun(DcId, Time, Acc2) ->
-                                            PrevTime = try vectorclock:get_clock_of_dc(DcId, Acc2) 
-                                                       catch _ -> Time
-                                                       end,
-                                            vectorclock:set_clock_of_dc(DcId, min(Time, PrevTime), Acc2)
-                                        end, Acc1, NodeDict),
-                          ?debugVal(RetDict),
+                          RetDict = vectorclock:min2(Acc, NodeDict),
                           {RetDict, Undefined}
                       end
                   end, {vectorclock:new(), false}, Dict),
-    ?debugVal(MinDict),
     %% This means we didn't get updated from all nodes/partitions so 0 is the stable time
     case FoundUndefined of
         true ->

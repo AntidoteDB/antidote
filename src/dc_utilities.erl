@@ -225,7 +225,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
-    PrintFun = fun(DcId, Time) -> 
+    PrintFun = fun(DcId, Time) ->
         logger:debug("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]) end,
     _ = vectorclock:map(PrintFun, SS),
     ok.
