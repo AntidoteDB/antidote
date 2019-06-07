@@ -38,7 +38,7 @@
 %% The functions merge by taking the minimum of all entries per node per DC
 
 export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, fun maps:put/3, vectorclock:new(), vectorclock:new()].
+    [stable, fun update_func_min/2, fun get_min_time/1, fun vectorclock:get/2, fun vectorclock:set/3, fun maps:put/3, vectorclock:new(),vectorclock:new(), vectorclock:new()].
 
 update_func_min(Last, Time) ->
     case Last of

@@ -241,12 +241,7 @@ tables_ready(Name) ->
         undefined ->
             false;
         _ ->
-            case ets:info(get_name(Name, ?META_TABLE_NAME)) of
-                undefined ->
-                    false;
-                _ ->
-                    true
-                end
+            true
     end.
 
 -spec check_nodes(atom(), maps:maps(), maps:maps(), [atom()], [any()]) -> {any(), any()}.
@@ -290,7 +285,7 @@ get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
         true ->
             {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
             Remote = maps:from_list(ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME))),
-            Local = maps:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
+            Local = maps:new(), %maps:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
             %% Be sure that you are only checking active nodes
             %% This isn't the most efficient way to do this because are checking the list
             %% of nodes and partitions every time to see if any have been removed/added
@@ -357,7 +352,7 @@ meta_data_sender_test_() ->
     }.
 
 start() ->
-    [Name, _UpdateFunc, _MergeFunc, _StoreFunc, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, _MergeFunc, _LookupFunc, _StoreFunc, _FoldFunc, _Default, _InitialLocal, InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     _Table  = ets:new(get_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
     _Table2 = ets:new(get_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     _Table3 = ets:new(node_table, [set, named_table, public]),
@@ -376,7 +371,7 @@ set_nodes_and_partitions_and_willchange(Nodes, Partitions, WillChange) ->
 
 %% Basic empty test
 empty_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(Name, p1, vectorclock:new()),
@@ -390,7 +385,7 @@ empty_test(_) ->
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 merge_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], false),
 
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
@@ -400,7 +395,7 @@ merge_test(_) ->
     ?assertEqual(LocalMerged, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 merge_additional_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p2, p3], false),
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
@@ -411,7 +406,7 @@ merge_additional_test(_) ->
 
 %% Be sure that when you are missing a partition in your meta_data that you get a 0 value
 missing_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}])),
@@ -426,7 +421,7 @@ missing_test(_) ->
 %% when you have a node that is removed from the cluster
 %% It uses the functions in stable_time_functions.erl
 merge_node_change_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
@@ -438,7 +433,7 @@ merge_node_change_test(_) ->
     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 merge_node_change_additional_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p3], true),
 
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
@@ -449,7 +444,7 @@ merge_node_change_additional_test(_) ->
     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 10}, {dc2, 10}])).
 
 merge_node_delete_test(_) ->
-    [Name, _UpdateFunc, MergeFunc, StoreFunc, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    [Name, _UpdateFunc, MergeFunc, _LookupFunc, StoreFunc, _FoldFunc, _Default, _InitialLocal, _InitialMerged] = stable_time_functions:export_funcs_and_vals(),
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
     put_meta(Name, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
