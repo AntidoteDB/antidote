@@ -97,7 +97,7 @@ get_smaller_from_id(Id, Time, {List, _Size}) ->
 get_smaller_from_id_internal(_Id, _Time, []) ->
   undefined;
 get_smaller_from_id_internal(Id, Time, [{Clock, Val}|Rest]) ->
-  ValTime = vectorclock:get_clock_of_dc(Id, Clock),
+  ValTime = vectorclock:get(Id, Clock),
   case ValTime =< Time of
     true ->
       {Clock, Val};

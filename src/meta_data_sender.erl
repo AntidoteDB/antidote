@@ -384,8 +384,8 @@ empty_test(_) ->
     put_meta(Name, p3, vectorclock:new()),
 
     {false, Dict} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged = vectorclock:get_clock_of_dc(local_merged, Dict),
-    ?assertEqual(LocalMerged, vectorclock:from_list([])).
+    LocalMerged = vectorclock:get(local_merged, Dict),
+    ?assertEqual(vectorclock:to_list(LocalMerged), []).
 
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
@@ -395,9 +395,8 @@ merge_test(_) ->
 
     put_meta(Name, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
-
-    {false, Vc} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged = vectorclock:get_clock_of_dc(local_merged, Vc),
+    {false, Dict} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
+    LocalMerged = vectorclock:get(local_merged, Dict),
     ?assertEqual(LocalMerged, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 merge_additional_test(_) ->
@@ -407,7 +406,7 @@ merge_additional_test(_) ->
     put_meta(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
     put_meta(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
     {false, Dict} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged = vectorclock:get_clock_of_dc(local_merged, Dict),
+    LocalMerged = vectorclock:get(local_merged, Dict),
     ?assertEqual(LocalMerged, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 %% Be sure that when you are missing a partition in your meta_data that you get a 0 value
@@ -420,7 +419,7 @@ missing_test(_) ->
     remove_partition(Name, p2), %TODO clean up test fixture
 
     {false, Dict} = get_merged_meta_data(Name, MergeFunc, StoreFunc, true),
-    LocalMerged = vectorclock:get_clock_of_dc(local_merged, Dict),
+    LocalMerged = vectorclock:get(local_merged, Dict),
     ?assertEqual(LocalMerged, vectorclock:from_list([{dc1, 0}])).
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
@@ -435,7 +434,7 @@ merge_node_change_test(_) ->
     remove_partition(Name, p3),
 
     {true, Dict1} = get_merged_meta_data(Name, MergeFunc, StoreFunc, false),
-    LocalMerged1 = vectorclock:get_clock_of_dc(local_merged, Dict1),
+    LocalMerged1 = vectorclock:get(local_merged, Dict1),
     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 merge_node_change_additional_test(_) ->
@@ -446,7 +445,7 @@ merge_node_change_additional_test(_) ->
     put_meta(Name, p2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
     put_meta(Name, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
     {true, Dict2} = get_merged_meta_data(Name, MergeFunc, StoreFunc, true),
-    LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
+    LocalMerged2 = vectorclock:get(local_merged, Dict2),
     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 10}, {dc2, 10}])).
 
 merge_node_delete_test(_) ->
@@ -462,7 +461,7 @@ merge_node_delete_test(_) ->
     ?assertEqual(LocalMerged1, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
 
     {true, Dict2} = get_merged_meta_data(Name, MergeFunc, StoreFunc, true),
-    LocalMerged2 = vectorclock:get_clock_of_dc(local_merged, Dict2),
+    LocalMerged2 = vectorclock:get(local_merged, Dict2),
     ?assertEqual(LocalMerged2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])).
 
 

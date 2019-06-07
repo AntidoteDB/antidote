@@ -202,7 +202,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     TxId = Transaction#transaction.txn_id,
                                     DcId = ?DC_META_UTIL:get_my_dc_id(),
 
-                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                    CausalClock = ?VECTORCLOCK:set(
                                         DcId,
                                         CommitTime,
                                         Transaction#transaction.vec_snapshot_time
@@ -687,7 +687,7 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
                                  end
                          end,
     DcId = ?DC_META_UTIL:get_my_dc_id(),
-    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+    LocalClock = ?VECTORCLOCK:get(DcId, SnapshotTime),
     Name = case StayAlive of
                true ->
                    generate_name(From);
@@ -837,7 +837,7 @@ reply_to_client(State = #coord_state{
                             _Result = execute_post_commit_hooks(ClientOps),
                             %% TODO: What happens if commit hook fails?
                             DcId = ?DC_META_UTIL:get_my_dc_id(),
-                            CausalClock = ?VECTORCLOCK:set_clock_of_dc(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                            CausalClock = ?VECTORCLOCK:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                             case IsStatic of
                                 false ->
                                     {ok, {TxId, CausalClock}};
@@ -908,7 +908,7 @@ get_snapshot_time() ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
     DcId = ?DC_META_UTIL:get_my_dc_id(),
-    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+    SnapshotTime = vectorclock:set(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
 

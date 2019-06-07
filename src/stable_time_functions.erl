@@ -65,7 +65,7 @@ get_min_time(Dict) ->
     case FoundUndefined of
         true ->
             vectorclock:fold(fun(NodeId, _Val, Acc) ->
-                          vectorclock:set_clock_of_dc(NodeId, 0, Acc)
+                          vectorclock:set(NodeId, 0, Acc)
                       end, vectorclock:new(), MinDict);
         false ->
             MinDict
