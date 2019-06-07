@@ -48,10 +48,10 @@ get(Key, VectorClock) ->
 set(Key, Value, VectorClock) ->
   VectorClock#{Key => Value}.
 
--spec set_clock_of_all_dcs(non_neg_integer(), vectorclock()) -> vectorclock().
-set_clock_of_all_dcs(Value, VectorClock) ->
-    Fun = fun (_K, _V) -> Value end,
-    map(Fun, VectorClock).
+-spec set_all(non_neg_integer(), vectorclock()) -> vectorclock().
+set_all(Value, VectorClock) ->
+  Fun = fun(_K, _V) -> Value end,
+  map(Fun, VectorClock).
 
 -spec from_list([{vc_node(), non_neg_integer()}]) -> vectorclock().
 from_list(List) -> maps:from_list(List).
