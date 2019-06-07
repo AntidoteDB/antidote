@@ -236,14 +236,14 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     %% VST = vector stable time with entries for each dc
     {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
     DcId = dc_meta_data_utilities:get_my_dc_id(),
-    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    Dt = vectorclock:get(DcId, ClientClock),
     case Dt =< GST of
         true ->
             %% Set all entries in snapshot as GST
-            ST = vectorclock:set_clock_of_all_dcs(GST, VST),
+            ST = vectorclock:set_all(GST, VST),
             %% ST doesnot contain entry for local dc, hence explicitly
             %% add it in snapshot time
-            SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
+            SnapshotTime = vectorclock:set(DcId, GST, ST),
             {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}], false),
             case obtain_objects(Objects, TxId, StateOrValue) of
                 {ok, Res} ->

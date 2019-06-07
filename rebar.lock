@@ -34,7 +34,11 @@
  {<<"riak_core">>,{pkg,<<"riak_core_ng">>,<<"3.1.1">>},0},
  {<<"riak_ensemble">>,{pkg,<<"riak_ensemble_ng">>,<<"2.4.4">>},1},
  {<<"riak_sysmon">>,{pkg,<<"riak_sysmon">>,<<"2.1.7">>},1},
- {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2}]}.
+ {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2},
+ {<<"vectorclock">>,
+  {git,"https://github.com/AntidoteDB/vectorclock",
+       {ref,"c547dcb4090098f6e683833e638dc03fc345930c"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"accept">>, <<"2505B60BCB992CA79BD03AB7B8FEC8A520A47D9730F286DF1A479CC98B03F94B">>},

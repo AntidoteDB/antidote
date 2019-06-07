@@ -629,7 +629,7 @@ get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
         case OpType of
             commit ->
                 #commit_log_payload{commit_time = {DCID, TxCommitTime}} = LogPayload,
-                vectorclock:set_clock_of_dc(DCID, TxCommitTime, PrevMaxVector);
+                vectorclock:set(DCID, TxCommitTime, PrevMaxVector);
             update ->
                 %% Update the per bucket opid count
                 Bucket = LogPayload#update_log_payload.bucket,

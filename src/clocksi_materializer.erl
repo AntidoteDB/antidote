@@ -221,7 +221,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
         true ->
             %% If not, check if it should be included in the new snapshot
             %% Replace the snapshot time of the dc where the transaction committed with the commit time
-            OpSSCommit = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OperationSnapshotTime),
+            OpSSCommit = vectorclock:set(OpDc, OpCommitTime, OperationSnapshotTime),
             %% PrevTime2 is the time of the previous snapshot, if there was none, it usues the snapshot time
             %% of the new operation
             PrevTime2 = case PrevTime of
@@ -234,7 +234,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
             %% NewTime is the vectorclock of the snapshot with the time of Op included
                 {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
                                 
-                                  Res1 = try vectorclock:get_clock_of_dc(DcIdOp, SnapshotTime) of
+                                  Res1 = try vectorclock:get(DcIdOp, SnapshotTime) of
                                              TimeSS ->
                                                  case TimeSS < TimeOp of
                                                      true ->

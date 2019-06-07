@@ -268,7 +268,7 @@ get_stable_snapshot() ->
                             {ok, StableSnapshot};
                         _ ->
                             GST = vectorclock:min_clock(StableSnapshot),
-                            {ok, vectorclock:set_clock_of_all_dcs(GST, StableSnapshot)}
+                            {ok, vectorclock:set_all(GST, StableSnapshot)}
                     end
             end
     end.

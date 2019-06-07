@@ -38,7 +38,7 @@
 %% The functions merge by taking the minimum of all entries per node per DC
 
 export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun vectorclock:max2/2, fun vectorclock:set_clock_of_dc/3, vectorclock:new(), vectorclock:new()].
+    [stable, fun update_func_min/2, fun vectorclock:max2/2, fun vectorclock:set/3, vectorclock:new(), vectorclock:new()].
 
 update_func_min(Last, Time) ->
     case Last of
@@ -59,14 +59,14 @@ get_min_time(Dict) ->
                           _ ->
                           RetDict =
                               vectorclock:fold(fun(DcId, Time, Acc2) ->
-                                            PrevTime = try vectorclock:get_clock_of_dc(DcId, Acc2) 
+                                            PrevTime = try vectorclock:get(DcId, Acc2) 
                                                        catch _ -> Time
                                                        end,
                                             case PrevTime >= Time of
                                                 true ->
-                                                    vectorclock:set_clock_of_dc(DcId, Time, Acc2);
+                                                    vectorclock:set(DcId, Time, Acc2);
                                                 false ->
-                                                    vectorclock:set_clock_of_dc(DcId, PrevTime, Acc2)
+                                                    vectorclock:set(DcId, PrevTime, Acc2)
                                             end
                                         end, Acc1, NodeDict),
                           {RetDict, Undefined}
@@ -76,7 +76,7 @@ get_min_time(Dict) ->
     case FoundUndefined of
         true ->
             vectorclock:fold(fun(NodeId, _Val, Acc) ->
-                          vectorclock:set_clock_of_dc(NodeId, 0, Acc)
+                          vectorclock:set(NodeId, 0, Acc)
                       end, vectorclock:new(), MinDict);
         false ->
             MinDict
