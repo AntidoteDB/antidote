@@ -41,7 +41,6 @@
 
 -export([start_link/9,
     start/1,
-    update_meta_with/5,
     put_meta/3,
     get_meta/3,
     get_node_list/0,
@@ -78,7 +77,8 @@
 %% There will be one instance of this state machine running on each physical machine.
 %% During execution of the system, vnodes may be continually writing to the meta data item.
 %%
-%% At a period, defined in antidote.hrl, it will trigger itself to send the meta-data.
+%% Periodically, as defined by META_DATA_SLEEP in antidote.hrl, it will trigger
+%% itself to send the meta-data.
 %% This will cause the meta-data to be broadcast to all other physical nodes in
 %% the cluster.  Before sending the meta-data, it calls the merge function on the
 %% meta-data stored by each vnode located at this partition.
@@ -108,18 +108,6 @@ start_link(Name, UpdateFun, MergeFun, LookupFun, StoreFun, FoldFun, Default, Ini
 -spec start(atom()) -> ok.
 start(Name) ->
     gen_statem:call(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)), start).
-
--spec update_meta_with(atom(), partition_id(), term(), term(), fun((term(), term()) -> term()) | undefined) -> ok | undefined.
-update_meta_with(Name, Partition, NewData, Default, Func) ->
-    MetaTableName = get_name(Name, ?META_TABLE_NAME),
-    case ets:info(MetaTableName) of
-        undefined ->
-            undefined;
-        _ ->
-            Result = Func(NewData, get_meta(Name, Partition, Default)),
-            true = ets:insert(MetaTableName, {Partition, Result}),
-            ok
-    end.
 
 -spec put_meta(atom(), partition_id(), term()) -> ok | undefined.
 put_meta(Name, Partition, NewData) ->
@@ -177,9 +165,10 @@ get_merged_data(Name, Default) ->
 %% ===================================================================
 
 init([Name, UpdateFun, MergeFun, LookupFun, StoreFun, FoldFun, Default, InitialLocal, InitialMerged]) ->
-    Table = ets:new(get_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    MetaTable = ets:new(get_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    _StableTable = ets:new(get_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
-    {ok, send_meta_data, #state{table = Table,
+    {ok, send_meta_data, #state{table = MetaTable,
                                 last_result = InitialLocal,
                                 update_function = UpdateFun,
                                 merge_function = MergeFun,
@@ -285,7 +274,7 @@ get_merged_meta_data(Name, MergeFun, StoreFun, CheckNodes) ->
         true ->
             {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
             Remote = maps:from_list(ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME))),
-            Local = maps:new(), %maps:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
+            Local = maps:from_list(ets:tab2list(get_name(Name, ?META_TABLE_NAME))),
             %% Be sure that you are only checking active nodes
             %% This isn't the most efficient way to do this because are checking the list
             %% of nodes and partitions every time to see if any have been removed/added
