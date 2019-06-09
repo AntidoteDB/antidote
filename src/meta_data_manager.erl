@@ -32,7 +32,6 @@
 -include("antidote.hrl").
 
 -export([start_link/1,
-         generate_server_name/1,
          remove_node/2,
          send_meta_data/4,
          add_new_meta_data/2]).
@@ -58,39 +57,38 @@
 
 -spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Name) ->
-    gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [Name], []).
+    gen_server:start_link({global, generate_server_name(Name, node())}, ?MODULE, [Name], []).
 
 -spec send_meta_data(atom(), atom(), atom(), any()) -> ok.
 send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
-    gen_server:cast({global, generate_server_name(DestinationNodeId)}, {send_meta_data, Name, NodeId, Data}).
+    gen_server:cast({global, generate_server_name(Name, DestinationNodeId)}, {send_meta_data, NodeId, Data}).
 
 -spec remove_node(atom(), atom()) -> ok.
 remove_node(Name, NodeId) ->
-    gen_server:cast({global, generate_server_name(node())}, {remove_node, Name, NodeId}).
+    gen_server:cast({global, generate_server_name(Name, node())}, {remove_node, NodeId}).
 
 -spec add_new_meta_data(atom(), atom()) -> ok.
 add_new_meta_data(Name, NodeId) ->
-    gen_server:cast({global, generate_server_name(node())}, {add_new_meta_data, Name, NodeId}).
+    gen_server:cast({global, generate_server_name(Name, node())}, {add_new_meta_data, NodeId}).
 
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
 
 init([Name]) ->
-    Table = ets:new(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
-    {ok, #state{table=Table}}.
+    Table = ets:new(meta_data_sender:get_table_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    {ok, #state{table = Table}}.
 
-handle_cast({send_meta_data, Name, NodeId, Data}, State) ->
-    true = ets:insert(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, Data}),
+handle_cast({send_meta_data, NodeId, Data}, State = #state{table = Table}) ->
+    true = ets:insert(Table, {NodeId, Data}),
     {noreply, State};
 
-handle_cast({add_new_meta_data, Name, NodeId}, State) ->
-    % TODO Use default? And/or check if already present??
-    ets:insert_new(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), {NodeId, undefined}),
+handle_cast({add_new_meta_data, NodeId}, State = #state{table = Table}) ->
+    ets:insert_new(Table, {NodeId, undefined}),
     {noreply, State};
 
-handle_cast({remove_node, Name, NodeId}, State) ->
-    ets:delete(meta_data_sender:get_name(Name, ?REMOTE_META_TABLE_NAME), NodeId),
+handle_cast({remove_node, NodeId}, State = #state{table = Table}) ->
+    ets:delete(Table, NodeId),
     {noreply, State};
 
 handle_cast(_Info, State) ->
@@ -110,5 +108,5 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-generate_server_name(Node) ->
-    list_to_atom("meta_manager" ++ atom_to_list(Node)).
+generate_server_name(Name, Node) ->
+    list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE) ++ atom_to_list(Node)).
