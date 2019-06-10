@@ -34,7 +34,7 @@
 -export([start_link/1,
          remove_node/2,
          send_meta_data/4,
-         add_new_meta_data/2]).
+         add_node/3]).
 -export([init/1,
          handle_cast/2,
          handle_call/3,
@@ -49,10 +49,8 @@
 %% Public API
 %% ===================================================================
 
-%% This is just a helper server for meta_data_sender.
-%% See the meta_data_sender file for information on how to use the meta-data
-%% This is a separate server from meta_data_sender, which will be triggered
-%% by meta_data_sender to broadcast the data.
+%% This is a helper server for meta_data_sender, which will be triggered
+%% by meta_data_sender to broadcast the data to the other nodes.
 %% It also keeps track of the names of physical nodes in the cluster.
 
 -spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
@@ -67,9 +65,9 @@ send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
 remove_node(Name, NodeId) ->
     gen_server:cast({global, generate_server_name(Name, node())}, {remove_node, NodeId}).
 
--spec add_new_meta_data(atom(), atom()) -> ok.
-add_new_meta_data(Name, NodeId) ->
-    gen_server:cast({global, generate_server_name(Name, node())}, {add_new_meta_data, NodeId}).
+-spec add_node(atom(), atom(), any()) -> ok.
+add_node(Name, NodeId, Initial) ->
+    gen_server:cast({global, generate_server_name(Name, node())}, {add_node, NodeId, Initial}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -83,8 +81,8 @@ handle_cast({send_meta_data, NodeId, Data}, State = #state{table = Table}) ->
     true = ets:insert(Table, {NodeId, Data}),
     {noreply, State};
 
-handle_cast({add_new_meta_data, NodeId}, State = #state{table = Table}) ->
-    ets:insert_new(Table, {NodeId, undefined}),
+handle_cast({add_node, NodeId, Initial}, State = #state{table = Table}) ->
+    ets:insert_new(Table, {NodeId, Initial}),
     {noreply, State};
 
 handle_cast({remove_node, NodeId}, State = #state{table = Table}) ->

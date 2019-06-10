@@ -38,7 +38,7 @@
 %% The functions merge by taking the minimum of all entries per node per DC
 
 export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, fun vectorclock:get/2, fun maps:put/3, fun vectorclock:fold/3, vectorclock:new(), vectorclock:new(), vectorclock:new()].
+    [stable, fun update_func_min/2, fun get_min_time/1, fun vectorclock:get/2, fun vectorclock:set/3, fun vectorclock:fold/3, vectorclock:new(), vectorclock:new(), vectorclock:new()].
 
 update_func_min(Last, Time) ->
     case Last of
@@ -64,9 +64,7 @@ get_min_time(Dict) ->
     %% This means we didn't get updated from all nodes/partitions so 0 is the stable time
     case FoundUndefined of
         true ->
-            vectorclock:fold(fun(NodeId, _Val, Acc) ->
-                          vectorclock:set(NodeId, 0, Acc)
-                      end, vectorclock:new(), MinDict);
+            vectorclock:set_all(0, MinDict);
         false ->
             MinDict
     end.
