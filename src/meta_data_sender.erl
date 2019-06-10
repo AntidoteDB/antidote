@@ -160,7 +160,7 @@ send_meta_data(state_timeout, timeout, State) ->
 send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        name = Name,
                                        should_check_nodes = CheckNodes}) ->
-    {WillChange, Data} = get_merged_meta_data(Name, fun Name:merge/1, Name:default(), CheckNodes),
+    {WillChange, Data} = get_merged_meta_data(Name, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = maps:get(local_merged, Data),
     MyNode = node(),
@@ -169,7 +169,7 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                        end, NodeList),
 
     MergedDict = Name:merge(Data),
-    {HasChanged, NewResult} = update_stable(LastResult, MergedDict, fun Name:update/2, fun Name:lookup/2, fun Name:store/3, fun Name:fold/3),
+    {HasChanged, NewResult} = update_stable(LastResult, MergedDict, Name),
     Store = case HasChanged of
                 true ->
                     true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
@@ -221,8 +221,8 @@ update(Name, MetaData, Entries, AddFun, RemoveFun, Initial) ->
     NewMetaData.
 
 %% @private
--spec get_merged_meta_data(atom(), fun((term()) -> term()), any(), boolean()) -> {boolean(), term()} | not_ready.
-get_merged_meta_data(Name, MergeFun, Default, CheckNodes) ->
+-spec get_merged_meta_data(atom(), boolean()) -> {boolean(), term()} | not_ready.
+get_merged_meta_data(Name, CheckNodes) ->
     case remote_table_ready(Name) of
         false ->
             not_ready;
@@ -238,22 +238,22 @@ get_merged_meta_data(Name, MergeFun, Default, CheckNodes) ->
             {NewRemote, NewLocal} = case CheckNodes of
                     true ->
                         {update(Name, Remote, NodeList, fun meta_data_manager:add_node/3, fun meta_data_manager:remove_node/2, undefined),
-                         update(Name, Local, PartitionList, fun put_meta/3, fun remove_partition/2, Default)};
+                         update(Name, Local, PartitionList, fun put_meta/3, fun remove_partition/2, Name:default())};
                     false ->
                         {Remote, Local}
                     end,
-            LocalMerged = MergeFun(NewLocal),
+            LocalMerged = Name:merge(NewLocal),
             {WillChange, maps:put(local_merged, LocalMerged, NewRemote)}
     end.
 
 %% @private
--spec update_stable(term(), term(), fun((term(), term()) -> boolean()), fun(), fun(), fun()) -> {boolean(), term()}.
-update_stable(LastResult, NewData, UpdateFun, LookupFun, StoreFun, FoldFun) ->
-    FoldFun(fun(DcId, Time, {Bool, Acc}) ->
-                  Last = LookupFun(DcId, LastResult),
-                  case UpdateFun(Last, Time) of
+-spec update_stable(term(), term(), atom()) -> {boolean(), term()}.
+update_stable(LastResult, NewData, Name) ->
+    Name:fold(fun(DcId, Time, {Bool, Acc}) ->
+                  Last = Name:lookup(DcId, LastResult),
+                  case Name:update(Last, Time) of
                       true ->
-                          {true, StoreFun(DcId, Time, Acc)};
+                          {true, Name:store(DcId, Time, Acc)};
                       false ->
                           {Bool, Acc}
                   end
@@ -306,20 +306,19 @@ meta_data_sender_test_() ->
     }.
 
 start() ->
-    Name = stable_time_functions,
-    _Table  = ets:new(get_table_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    _Table2 = ets:new(get_table_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
+    MetaType = stable_time_functions,
+    _Table  = ets:new(get_table_name(MetaType, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    _Table2 = ets:new(get_table_name(MetaType, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     _Table3 = ets:new(node_table, [set, named_table, public]),
-    _Table4 = ets:new(get_table_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
-    true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, Name:initial_merged()}),
-    ok.
+    _Table4 = ets:new(get_table_name(MetaType, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    true = ets:insert(get_table_name(MetaType, ?META_TABLE_STABLE_NAME), {merged_data, MetaType:initial_merged()}),
+    MetaType.
 
-stop(_) ->
-    Name = stable_time_functions,
-    true = ets:delete(get_table_name(Name, ?META_TABLE_STABLE_NAME)),
-    true = ets:delete(get_table_name(Name, ?META_TABLE_NAME)),
+stop(MetaType) ->
+    true = ets:delete(get_table_name(MetaType, ?META_TABLE_STABLE_NAME)),
+    true = ets:delete(get_table_name(MetaType, ?META_TABLE_NAME)),
     true = ets:delete(node_table),
-    true = ets:delete(get_table_name(Name, ?REMOTE_META_TABLE_NAME)),
+    true = ets:delete(get_table_name(MetaType, ?REMOTE_META_TABLE_NAME)),
     ok.
 
 -spec set_nodes_and_partitions_and_willchange([node()], [partition_id()], boolean()) -> ok.
@@ -330,90 +329,83 @@ set_nodes_and_partitions_and_willchange(Nodes, Partitions, WillChange) ->
     ok.
 
 %% Basic empty test
-empty_test(_) ->
-    MetaType = stable_time_functions,
+empty_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(MetaType, p1, vectorclock:new()),
     put_meta(MetaType, p2, vectorclock:new()),
     put_meta(MetaType, p3, vectorclock:new()),
 
-    {false, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), false),
+    {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual([], vectorclock:to_list(LocalMerged)).
 
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
-merge_test(_) ->
-    MetaType = stable_time_functions,
+merge_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], false),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
-    {false, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), false),
+    {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
-merge_additional_test(_) ->
-    MetaType = stable_time_functions,
+merge_additional_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p2, p3], false),
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
-    {false, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), false),
+    {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
 %% Be sure that when you are missing a partition in your meta_data that you get a 0 value for the vectorclock.
-missing_test(_) ->
-    MetaType = stable_time_functions,
+missing_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}])),
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 10}])),
     remove_partition(MetaType, p2),
 
-    {false, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), true),
+    {false, Meta} = get_merged_meta_data(MetaType, true),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 0}]), LocalMerged).
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 %% when you have a node that is removed from the cluster.
-merge_node_change_test(_) ->
-    MetaType = stable_time_functions,
+merge_node_change_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
 
-    {true, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), false),
+    {true, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
-merge_node_change_additional_test(_) ->
-    MetaType = stable_time_functions,
+merge_node_change_additional_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p3], true),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
-    {true, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), true),
+    {true, Meta} = get_merged_meta_data(MetaType, true),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 10}, {dc2, 10}]), LocalMerged).
 
-merge_node_delete_test(_) ->
-    MetaType = stable_time_functions,
+merge_node_delete_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
 
-    {true, Meta} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), false),
+    {true, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?assertEqual(vectorclock:from_list([{dc1, 0}, {dc2, 0}]), LocalMerged),
 
-    {true, Meta2} = get_merged_meta_data(MetaType, fun MetaType:merge/1, MetaType:default(), true),
+    {true, Meta2} = get_merged_meta_data(MetaType, true),
     LocalMerged2 = maps:get(local_merged, Meta2),
     ?assertEqual( vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
 
