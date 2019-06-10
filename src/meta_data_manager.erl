@@ -42,8 +42,7 @@
          terminate/2,
          code_change/3]).
 
--record(state, {
-      table :: ets:tid()}).
+-record(state, {table :: ets:tid()}).
 
 %% ===================================================================
 %% Public API
@@ -57,14 +56,17 @@
 start_link(Name) ->
     gen_server:start_link({global, generate_server_name(Name, node())}, ?MODULE, [Name], []).
 
+%% Send meta data entries to another nodes.
 -spec send_meta_data(atom(), atom(), atom(), any()) -> ok.
 send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
     gen_server:cast({global, generate_server_name(Name, DestinationNodeId)}, {send_meta_data, NodeId, Data}).
 
+%% Remove node from the meta data exchange.
 -spec remove_node(atom(), atom()) -> ok.
 remove_node(Name, NodeId) ->
     gen_server:cast({global, generate_server_name(Name, node())}, {remove_node, NodeId}).
 
+%% Add node to the meta data exchange.
 -spec add_node(atom(), atom(), any()) -> ok.
 add_node(Name, NodeId, Initial) ->
     gen_server:cast({global, generate_server_name(Name, node())}, {add_node, NodeId, Initial}).
@@ -98,13 +100,12 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%% @private
 terminate(_Reason, _State) ->
     ok.
 
-%% @private
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% @private
 generate_server_name(Name, Node) ->
     list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE) ++ atom_to_list(Node)).

@@ -26,21 +26,43 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% These functions are used to instantiate a meta_data_sender for vectorclocks.
+
 -module(stable_time_functions).
 -include_lib("eunit/include/eunit.hrl").
 -include("antidote.hrl").
 
--export([update_func_min/2,
-         get_min_time/1,
-         export_funcs_and_vals/0]).
+-export([update/2,
+         merge/1,
+         lookup/2,
+         fold/3,
+         store/3,
+         default/0,
+         initial_local/0,
+         initial_merged/0]).
 
-%% These functions are input to create a meta_data_sender
-%% The functions merge by taking the minimum of all entries per node per DC
+default() ->
+    vectorclock:new().
 
-export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, fun vectorclock:get/2, fun vectorclock:set/3, fun vectorclock:fold/3, vectorclock:new(), vectorclock:new(), vectorclock:new()].
+initial_merged() ->
+    vectorclock:new().
 
-update_func_min(Last, Time) ->
+initial_local() ->
+    vectorclock:new().
+
+fold(X, Y, Z) ->
+    vectorclock:fold(X, Y, Z).
+
+lookup(X, Y) ->
+    vectorclock:get(X, Y).
+
+store(X, Y, Z) ->
+    vectorclock:set(X, Y, Z).
+
+
+%% Checks whether entry should be updated.
+-spec update(integer(), integer()) -> boolean().
+update(Last, Time) ->
     case Last of
         undefined ->
             true;
@@ -48,23 +70,25 @@ update_func_min(Last, Time) ->
             Time >= Last
     end.
 
+%% The function merges all entries in a map of vectorclocks by taking the minimum of all entries per node per DC
 %% This assumes the meta data being sent have all DCs
-get_min_time(Dict) ->
-    {MinDict, FoundUndefined} =
-        vectorclock:fold(fun(NodeId, NodeDict, {Acc, Undefined}) ->
-                      case NodeDict of
+-spec merge(maps:maps()) -> vectorclock:vectorclock().
+merge(VcMap) ->
+    {MinVC, FoundUndefined} =
+        maps:fold(fun(NodeId, NodeVC, {Acc, Undefined}) ->
+                      case NodeVC of
                           undefined ->
                               logger:debug("missing entry for node ~p", [NodeId]),
                               {Acc, true};
                           _ ->
-                          RetDict = vectorclock:min2(Acc, NodeDict),
-                          {RetDict, Undefined}
+                          MinVC = vectorclock:min2(Acc, NodeVC),
+                          {MinVC, Undefined}
                       end
-                  end, {vectorclock:new(), false}, Dict),
+                  end, {vectorclock:new(), false}, VcMap),
     %% This means we didn't get updated from all nodes/partitions so 0 is the stable time
     case FoundUndefined of
         true ->
-            vectorclock:set_all(0, MinDict);
+            vectorclock:set_all(0, MinVC);
         false ->
-            MinDict
+            MinVC
     end.

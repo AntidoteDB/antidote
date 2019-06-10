@@ -247,7 +247,7 @@ check_registered(Name) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable, vectorclock:new()) of
+    case meta_data_sender:get_merged_data(stable_time_functions, vectorclock:new()) of
         undefined ->
             %% The snapshot isn't ready yet, need to wait for startup
             %TODO: Extract into configuration constant
@@ -275,7 +275,7 @@ get_stable_snapshot() ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta(stable, Partition, vectorclock:new()) of
+    case meta_data_sender:get_meta(stable_time_functions, Partition, vectorclock:new()) of
         undefined ->
             %% The partition isn't ready yet, wait for startup
             timer:sleep(10),

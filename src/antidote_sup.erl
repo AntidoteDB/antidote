@@ -93,12 +93,12 @@ init(_Args) ->
 
 
     MetaDataManagerSup = {meta_data_manager_sup,
-                          {meta_data_manager_sup, start_link, [stable]},
+                          {meta_data_manager_sup, start_link, [stable_time_functions]},
                           permanent, 5000, supervisor,
                           [meta_data_manager_sup]},
 
     MetaDataSenderSup = {meta_data_sender_sup,
-                         {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
+                         {meta_data_sender_sup, start_link, [[stable_time_functions]]},
                          permanent, 5000, supervisor,
                          [meta_data_sender_sup]},
 
