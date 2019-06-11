@@ -202,7 +202,7 @@ remote_table_ready(Name) ->
     end.
 
 %% @private
--spec update(atom(), maps:maps(), [atom()], fun((atom(), atom(), T) -> any()), fun((atom(), atom()) -> any()), T) -> maps:maps().
+-spec update(atom(), map(), [atom()], fun((atom(), atom(), T) -> any()), fun((atom(), atom()) -> any()), T) -> map().
 update(Name, MetaData, Entries, AddFun, RemoveFun, Initial) ->
     {NewMetaData, NodeErase} = lists:foldl(fun(NodeId, {Acc, Acc2}) ->
                             AccNew = case maps:find(NodeId, MetaData) of
