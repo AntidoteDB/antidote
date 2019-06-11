@@ -72,7 +72,7 @@ update(Last, Time) ->
 
 %% The function merges all entries in a map of vectorclocks by taking the minimum of all entries per node per DC
 %% This assumes the meta data being sent have all DCs
--spec merge(maps:maps()) -> vectorclock:vectorclock().
+-spec merge(map()) -> vectorclock:vectorclock().
 merge(VcMap) ->
     {MinVC, FoundUndefined} =
         maps:fold(fun(NodeId, NodeVC, {Acc, Undefined}) ->
