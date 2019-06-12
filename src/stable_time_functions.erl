@@ -70,6 +70,7 @@ update(Last, Time) ->
             Time >= Last
     end.
 
+
 %% The function merges all entries in a map of vectorclocks by taking the minimum of all entries per node per DC
 %% This assumes the meta data being sent have all DCs
 -spec merge(maps:maps()) -> vectorclock:vectorclock().
@@ -81,7 +82,7 @@ merge(VcMap) ->
                               logger:debug("missing entry for node ~p", [NodeId]),
                               {Acc, true};
                           _ ->
-                          MinVC = vectorclock:min2(Acc, NodeVC),
+                          MinVC = union_min(Acc, NodeVC),
                           {MinVC, Undefined}
                       end
                   end, {vectorclock:new(), false}, VcMap),
@@ -92,3 +93,13 @@ merge(VcMap) ->
         false ->
             MinVC
     end.
+
+union_min(V1, V2) ->
+    FoldFun = fun (DC, A, Acc) ->
+        B = vectorclock:get(DC, Acc),
+        case A < B orelse B == 0 of
+            true -> vectorclock:set(A, DC, Acc);
+            false -> Acc
+        end
+    end,
+    vectorclock:fold(FoldFun,V2, V1).
