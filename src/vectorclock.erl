@@ -44,9 +44,12 @@ new() -> maps:new().
 get(Key, VectorClock) ->
   maps:get(Key, VectorClock, 0).
 
--spec set(vc_node(), pos_integer(), vectorclock()) -> vectorclock().
-set(Key, Value, VectorClock) when Value > 0 ->
-  VectorClock#{Key => Value}.
+-spec set(vc_node(), non_neg_integer(), vectorclock()) -> vectorclock().
+set(Key, Value, VectorClock) ->
+  case Value of
+      0 -> maps:remove(Key, VectorClock);
+      _ -> VectorClock#{Key => Value}
+  end.
 
 -spec set_all(pos_integer(), vectorclock()) -> vectorclock().
 set_all(Value, VectorClock) when Value > 0  ->
@@ -113,7 +116,7 @@ min2(V1, V2) ->
     end,
     maps:fold(FoldFun, new(), V1).
 
--spec size(vectorclock()) -> pos_integer().
+-spec size(vectorclock()) -> non_neg_integer().
 size(V) -> maps:size(V).
 
 -spec for_all_keys(fun ((pos_integer(), pos_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
@@ -259,7 +262,8 @@ vectorclock_set_test() ->
     V2 = from_list([{1, 1}, {2, 2}, {3, 3}]),
     V3 = from_list([{1, 1}, {2, 4}]),
     ?assertEqual(V2, set(3, 3, V1)),
-    ?assertEqual(V3, set(2, 4, V1)).
+    ?assertEqual(V3, set(2, 4, V1)),
+    ?assertEqual(V1, set(3, 0, V2)).
 
 vectorclock_setall_test() ->
     V1 = from_list([{1, 5}, {8, 4}, {3, 5}, {9, 6}]),
