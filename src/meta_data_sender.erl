@@ -344,6 +344,7 @@ empty_test(MetaType) ->
 %% This test checks to make sure that merging is done correctly for multiple partitions
 merge_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], false),
+    ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
@@ -370,12 +371,13 @@ missing_test(MetaType) ->
 
     {false, Meta} = get_merged_meta_data(MetaType, true),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 0}]), LocalMerged).
+    ?assertEqual(vectorclock:from_list([]), LocalMerged).
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 %% when you have a node that is removed from the cluster.
 merge_node_change_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
+    ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
@@ -397,13 +399,13 @@ merge_node_change_additional_test(MetaType) ->
 merge_node_delete_test(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
-    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
 
     {true, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 0}, {dc2, 0}]), LocalMerged),
+    ?assertEqual(vectorclock:from_list([]), LocalMerged),
 
     {true, Meta2} = get_merged_meta_data(MetaType, true),
     LocalMerged2 = maps:get(local_merged, Meta2),

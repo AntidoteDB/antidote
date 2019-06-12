@@ -232,31 +232,17 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
                         end,
             %% Result is true if the op should be included in the snapshot
             %% NewTime is the vectorclock of the snapshot with the time of Op included
-                {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
-
-                                  Res1 = try vectorclock:get(DcIdOp, SnapshotTime) of
-                                             TimeSS ->
-                                                 case TimeSS < TimeOp of
+            {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
+                                        TimeSS = vectorclock:get(DcIdOp, SnapshotTime),
+                                        Res1 =  case TimeSS < TimeOp of
                                                      true ->
                                                          false;
                                                      false ->
                                                          Acc
-                                                 end
-                                         catch
-                                            Error  ->
-                                                 logger:error("Could not find DC in SS ~p: ", [SnapshotTime, Error]),
-                                                 false
-                                         end,
-                                  Res2 = vectorclock:update_with(DcIdOp, fun(Val) ->
-                                                                    case TimeOp > Val of
-                                                                        true ->
-                                                                            TimeOp;
-                                                                        false ->
-                                                                            Val
-                                                                    end
-                                                             end, TimeOp, PrevTime3),
-                                  {Res1, Res2}
-                          end, {true, PrevTime2}, OpSSCommit),
+                                                 end,
+                                        Res2 = vectorclock:update_with(DcIdOp, fun(Val) -> max(TimeOp, Val) end, TimeOp, PrevTime3),
+                                        {Res1, Res2}
+                                    end, {true, PrevTime2}, OpSSCommit),
             case Result of
                 true ->
                     {true, false, NewTime};

@@ -75,31 +75,12 @@ update(Last, Time) ->
 %% This assumes the meta data being sent have all DCs
 -spec merge(map()) -> vectorclock:vectorclock().
 merge(VcMap) ->
-    {MinVC, FoundUndefined} =
-        maps:fold(fun(NodeId, NodeVC, {Acc, Undefined}) ->
-                      case NodeVC of
-                          undefined ->
-                              logger:debug("missing entry for node ~p", [NodeId]),
-                              {Acc, true};
-                          _ ->
-                          MinVC = union_min(Acc, NodeVC),
-                          {MinVC, Undefined}
-                      end
-                  end, {vectorclock:new(), false}, VcMap),
-    %% This means we didn't get updated from all nodes/partitions so 0 is the stable time
-    case FoundUndefined of
-        true ->
-            vectorclock:set_all(0, MinVC);
+    case all_defined(VcMap) of
+        true -> vectorclock:min(maps:values(VcMap));
         false ->
-            MinVC
+            logger:debug("missing entries: ~p", [VcMap]),
+            vectorclock:new()
     end.
 
-union_min(V1, V2) ->
-    FoldFun = fun (DC, A, Acc) ->
-        B = vectorclock:get(DC, Acc),
-        case A < B orelse B == 0 of
-            true -> vectorclock:set(A, DC, Acc);
-            false -> Acc
-        end
-    end,
-    vectorclock:fold(FoldFun,V2, V1).
+all_defined(VcMap) ->
+    maps:fold(fun (_K, V, Acc) -> Acc andalso V =/= undefined end, true, VcMap).

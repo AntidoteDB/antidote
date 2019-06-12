@@ -37,7 +37,7 @@
  {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2},
  {<<"vectorclock">>,
   {git,"https://github.com/AntidoteDB/vectorclock",
-       {ref,"c547dcb4090098f6e683833e638dc03fc345930c"}},
+       {ref,"ab58c741099a074f7d7b1d49f509211e0d175d8a"}},
   0}]}.
 [
 {pkg_hash,[

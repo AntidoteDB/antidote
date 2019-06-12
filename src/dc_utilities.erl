@@ -267,7 +267,8 @@ get_stable_snapshot() ->
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            GST = vectorclock:min_clock(StableSnapshot),
+                            DCs = dc_meta_data_utilities:get_dc_ids(true),
+                            GST = vectorclock:min_clock(StableSnapshot, DCs),
                             {ok, vectorclock:set_all(GST, StableSnapshot)}
                     end
             end
@@ -286,7 +287,7 @@ get_partition_snapshot(Partition) ->
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
--spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
+-spec get_scalar_stable_time() -> {ok, pos_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
     case vectorclock:size(StableSnapshot) of
@@ -298,11 +299,9 @@ get_scalar_stable_time() ->
             Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
             {ok, Now, StableSnapshot};
         _ ->
-            %% This is correct only if stablesnapshot has entries for
-            %% all DCs. Inorder to check that we need to configure the
-            %% number of DCs in advance, which is not possible now.
-            GST = vectorclock:min_clock(StableSnapshot),
-            {ok, GST, StableSnapshot}
+            DCs = dc_meta_data_utilites:get_dc_ids(true),
+            GST = vectorclock:min_clock(StableSnapshot, DCs),
+            {ok, GST, vectorclock:set_all(GST, StableSnapshot)}
     end.
 
 %% Loops until a process with the given name is registered globally
