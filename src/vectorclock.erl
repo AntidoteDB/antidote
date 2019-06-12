@@ -27,13 +27,13 @@
 
 -export([all_dots_greater/2, all_dots_smaller/2, conc/2,
      eq/2, fold/3, from_list/1, ge/2, get/2,
-     gt/2, le/2, lt/2, map/2, max/1, max2/2, min/1, min2/2,
-     min_clock/1, new/0, set_all/2,
+     gt/2, le/2, lt/2, map/2, max/1, min/1,
+     min_clock/2, new/0, set_all/2,
      set/3, size/1, to_list/1, update_with/4]).
 
 -type vc_node() :: term().
 
--type vectorclock() :: #{vc_node() => non_neg_integer()}.
+-type vectorclock() :: #{vc_node() => pos_integer()}.
 
 -export_type([vectorclock/0]).
 
@@ -44,35 +44,37 @@ new() -> maps:new().
 get(Key, VectorClock) ->
   maps:get(Key, VectorClock, 0).
 
--spec set(vc_node(), non_neg_integer(), vectorclock()) -> vectorclock().
-set(Key, Value, VectorClock) ->
+-spec set(vc_node(), pos_integer(), vectorclock()) -> vectorclock().
+set(Key, Value, VectorClock) when Value > 0 ->
   VectorClock#{Key => Value}.
 
--spec set_all(non_neg_integer(), vectorclock()) -> vectorclock().
-set_all(Value, VectorClock) ->
+-spec set_all(pos_integer(), vectorclock()) -> vectorclock().
+set_all(Value, VectorClock) when Value > 0  ->
   Fun = fun(_K, _V) -> Value end,
   map(Fun, VectorClock).
 
--spec from_list([{vc_node(), non_neg_integer()}]) -> vectorclock().
+-spec from_list([{vc_node(), pos_integer()}]) -> vectorclock().
 from_list(List) -> maps:from_list(List).
 
--spec to_list(vectorclock()) -> [{vc_node(), non_neg_integer()}].
+-spec to_list(vectorclock()) -> [{vc_node(), pos_integer()}].
 to_list(VectorClock) -> maps:to_list(VectorClock).
 
--spec map(fun((vc_node(), non_neg_integer()) -> non_neg_integer()), vectorclock()) -> vectorclock().
+-spec map(fun((vc_node(), pos_integer()) -> pos_integer()), vectorclock()) -> vectorclock().
 map(Fun, VectorClock) -> maps:map(Fun, VectorClock).
 
--spec fold(fun ((vc_node(), non_neg_integer(), X) -> X), X, vectorclock()) -> X.
+-spec fold(fun ((vc_node(), pos_integer(), X) -> X), X, vectorclock()) -> X.
 fold(Fun, Init, VectorClock) ->
     maps:fold(Fun, Init, VectorClock).
 
--spec update_with(vc_node(), fun((vc_node()) -> non_neg_integer()), non_neg_integer(), vectorclock()) -> vectorclock().
+-spec update_with(vc_node(), fun((pos_integer()) -> pos_integer()), pos_integer(), vectorclock()) -> vectorclock().
 update_with(Key, Fun, Init, VectorClock) ->
     maps:update_with(Key, Fun, Init, VectorClock).
 
--spec min_clock(vectorclock()) -> non_neg_integer().
-min_clock(VectorClock) ->
-    lists:min(maps:values(VectorClock)).
+-spec min_clock(vectorclock(), [vc_node()]) -> non_neg_integer().
+min_clock(_VectorClock, []) ->
+    0;
+min_clock(VectorClock, Nodes) ->
+    lists:min([get(Node, VectorClock) || Node <- Nodes]).
 
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();
@@ -93,39 +95,28 @@ max2(V1, V2) ->
     maps:fold(FoldFun, V2, V1).
 
 -spec min([vectorclock()]) -> vectorclock().
-
 min([]) -> new();
 min([V]) -> V;
 min([V1, V2 | T]) ->
-    min([merge(fun erlang:min/2, V1, V2) | T]).
+    min([min2(V1, V2) | T]).
 
 %% component-wise minimum of two clocks
 -spec min2(vectorclock(), vectorclock()) -> vectorclock().
-
 min2(V1, V2) ->
     FoldFun = fun (DC, A, Acc) ->
-        B = maps:get(DC, Acc, not_found),
-        case A < B orelse B == not_found of
-            true -> Acc#{DC => A};
-            false -> Acc
+        B = get(DC, V2),
+        C = min(A, B),
+        case C of
+            0 -> Acc;
+            _ -> Acc#{DC => C}
         end
     end,
-    maps:fold(FoldFun, V2, V1).
+    maps:fold(FoldFun, new(), V1).
 
--spec size(vectorclock()) -> non_neg_integer().
+-spec size(vectorclock()) -> pos_integer().
 size(V) -> maps:size(V).
 
--spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
-merge(F, V1, V2) ->
-    AllDCs = maps:keys(maps:merge(V1, V2)),
-    Func = fun (DC) ->
-       A = get(DC, V1),
-       B = get(DC, V2),
-       {DC, F(A, B)}
-       end,
-    from_list(lists:map(Func, AllDCs)).
-
--spec for_all_keys(fun ((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
+-spec for_all_keys(fun ((pos_integer(), pos_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
     AllDCs = maps:keys(maps:merge(V1, V2)),
     Func = fun (DC) ->
@@ -236,17 +227,6 @@ vectorclock_max_test() ->
     ?assertEqual((eq(max([V1, V2, V3]), Expected123)), true),
     ?assertEqual((eq(max([V1, V2, V3]), Unexpected123)), false).
 
-vectorclock_min2_test() ->
-    V1 = from_list([{1, 5}, {2, 4}]),
-    V2 = from_list([{1, 6}, {2, 3}]),
-    V3 = from_list([{1, 3}, {3, 2}]),
-    Expected12 = from_list([{1, 5}, {2, 3}]),
-    Expected23 = from_list([{1, 3}, {2, 3}, {3, 2}]),
-    Expected13 = from_list([{1, 3}, {2, 4}, {3, 2}]),
-    ?assertEqual(min2(V1, V2), Expected12),
-    ?assertEqual(min2(V2, V3), Expected23),
-    ?assertEqual(min2(V1, V3), Expected13).
-
 vectorclock_min_test() ->
     V1 = from_list([{1, 5}, {2, 4}]),
     V2 = from_list([{1, 6}, {2, 3}]),
@@ -288,7 +268,9 @@ vectorclock_setall_test() ->
 
 vectorclock_minclock_test() ->
     V1 = from_list([{1, 5}, {8, 4}, {3, 5}, {9, 6}]),
-    ?assertEqual(4, min_clock(V1)).
+    ?assertEqual(4, min_clock(V1, [1, 8, 3, 9])),
+    ?assertEqual(0, min_clock(V1, [])),
+    ?assertEqual(0, min_clock(V1, [1, 8, 3, 9, 10])).
 
 vectorclock_size_test() ->
     V1 = from_list([{1, 5}, {8, 4}, {3, 5}, {9, 6}]),
