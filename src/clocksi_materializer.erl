@@ -216,12 +216,12 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
-    case materializer:belongs_to_snapshot_op(
-           LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime) or (TxId == Op#clocksi_payload.txid) of
+    case materializer:belongs_to_snapshot_op(LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime)
+            orelse (TxId == Op#clocksi_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
             %% Replace the snapshot time of the dc where the transaction committed with the commit time
-            OpSSCommit = dict:store(OpDc, OpCommitTime, OperationSnapshotTime),
+            OpSSCommit = vectorclock:set(OpDc, OpCommitTime, OperationSnapshotTime),
             %% PrevTime2 is the time of the previous snapshot, if there was none, it usues the snapshot time
             %% of the new operation
             PrevTime2 = case PrevTime of
@@ -232,30 +232,17 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
                         end,
             %% Result is true if the op should be included in the snapshot
             %% NewTime is the vectorclock of the snapshot with the time of Op included
-                {Result, NewTime} =
-                dict:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
-                                  Res1 = case dict:find(DcIdOp, SnapshotTime) of
-                                             {ok, TimeSS} ->
-                                                 case TimeSS < TimeOp of
+            {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
+                                        TimeSS = vectorclock:get(DcIdOp, SnapshotTime),
+                                        Res1 =  case TimeSS < TimeOp of
                                                      true ->
                                                          false;
                                                      false ->
                                                          Acc
-                                                 end;
-                                             error ->
-                                                 logger:error("Could not find DC in SS ~p", [SnapshotTime]),
-                                                 false
-                                         end,
-                                  Res2 = dict:update(DcIdOp, fun(Val) ->
-                                                                    case TimeOp > Val of
-                                                                        true ->
-                                                                            TimeOp;
-                                                                        false ->
-                                                                            Val
-                                                                    end
-                                                             end, TimeOp, PrevTime3),
-                                  {Res1, Res2}
-                          end, {true, PrevTime2}, OpSSCommit),
+                                                 end,
+                                        Res2 = vectorclock:update_with(DcIdOp, fun(Val) -> max(TimeOp, Val) end, TimeOp, PrevTime3),
+                                        {Res1, Res2}
+                                    end, {true, PrevTime2}, OpSSCommit),
             case Result of
                 true ->
                     {true, false, NewTime};

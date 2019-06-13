@@ -270,7 +270,7 @@ connect_cluster(Nodes) ->
               time_utils:wait_until_registered(Node1, inter_dc_sub),
               time_utils:wait_until_registered(Node1, meta_data_sender_sup),
               time_utils:wait_until_registered(Node1, meta_data_manager_sup),
-              ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
+              ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable_time_functions]),
               ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
           end, Clusters),
 
