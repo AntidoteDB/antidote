@@ -291,18 +291,19 @@ get_table_name(Name, TableName) ->
 -ifdef(TEST).
 
 meta_data_sender_test_() ->
-    {setup,
+    {foreach,
      fun start/0,
      fun stop/1,
-     {with, [
-        fun empty_test/1,
-        fun merge_test/1,
-        fun merge_additional_test/1,
-        fun missing_test/1,
-        fun merge_node_change_test/1,
-        fun merge_node_change_additional_test/1,
-        fun merge_node_delete_test/1
-    ]}
+     [
+        fun empty_test_/1,
+        fun merge_test_/1,
+        fun merge_additional_test_/1,
+        fun missing_test_/1,
+        fun merge_node_change_test_/1,
+        fun merge_node_change_additional_test_/1,
+        fun merge_node_delete_test_/1,
+        fun merge_node_delete_another_test_/1
+    ]
     }.
 
 start() ->
@@ -329,7 +330,7 @@ set_nodes_and_partitions_and_willchange(Nodes, Partitions, WillChange) ->
     ok.
 
 %% Basic empty test
-empty_test(MetaType) ->
+empty_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(MetaType, p1, vectorclock:new()),
@@ -338,31 +339,31 @@ empty_test(MetaType) ->
 
     {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual([], vectorclock:to_list(LocalMerged)).
+    ?_assertEqual([], vectorclock:to_list(LocalMerged)).
 
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
-merge_test(MetaType) ->
+merge_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], false),
-    ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
+    %ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
     {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
-merge_additional_test(MetaType) ->
+merge_additional_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p2, p3], false),
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
     {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
 %% Be sure that when you are missing a partition in your meta_data that you get a 0 value for the vectorclock.
-missing_test(MetaType) ->
+missing_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}])),
@@ -371,22 +372,21 @@ missing_test(MetaType) ->
 
     {false, Meta} = get_merged_meta_data(MetaType, true),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([]), LocalMerged).
+    ?_assertEqual(vectorclock:from_list([]), LocalMerged).
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 %% when you have a node that is removed from the cluster.
-merge_node_change_test(MetaType) ->
+merge_node_change_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
-    ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
     put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
 
     {true, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
 
-merge_node_change_additional_test(MetaType) ->
+merge_node_change_additional_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1, n2], [p1, p3], true),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
@@ -394,9 +394,9 @@ merge_node_change_additional_test(MetaType) ->
     put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
     {true, Meta} = get_merged_meta_data(MetaType, true),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([{dc1, 10}, {dc2, 10}]), LocalMerged).
+    ?_assertEqual(vectorclock:from_list([{dc1, 10}, {dc2, 10}]), LocalMerged).
 
-merge_node_delete_test(MetaType) ->
+merge_node_delete_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
     put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
@@ -405,11 +405,19 @@ merge_node_delete_test(MetaType) ->
 
     {true, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
-    ?assertEqual(vectorclock:from_list([]), LocalMerged),
+    ?_assertEqual(vectorclock:from_list([]), LocalMerged).
+
+
+merge_node_delete_another_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
 
     {true, Meta2} = get_merged_meta_data(MetaType, true),
     LocalMerged2 = maps:get(local_merged, Meta2),
-    ?assertEqual( vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
+    ?_assertEqual( vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
 
 get_node_list_t() ->
     [{nodes, Nodes}] = ets:lookup(node_table, nodes),
