@@ -30,7 +30,7 @@
 %% All updates are broadcast to all nodes in the DC and stored locally
 %% in memory and on disk at each node so that reading is just looking in an ets table
 %% Updates are synchronous and should be one at a time for the whole DC
-%% otherwise concurrent updates could overwrite eachother
+%% otherwise concurrent updates could overwrite each other
 
 -module(stable_meta_data_server).
 -behaviour(gen_server).
@@ -139,7 +139,7 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 
 init([]) ->
     Path = filename:join(
-         app_helper:get_env(riak_core, platform_data_dir), ?TABLE_NAME),
+         application:get_env(riak_core, platform_data_dir, undefined), ?TABLE_NAME),
 
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),

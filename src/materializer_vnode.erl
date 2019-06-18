@@ -347,7 +347,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
                            SnapshotDictA
                    end,
     %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
-    %% insert requests for the same snapshot could have occured
+    %% insert requests for the same snapshot could have occurred
     ShouldInsert =
         case vector_orddict:size(SnapshotDict) > 0 of
             true ->

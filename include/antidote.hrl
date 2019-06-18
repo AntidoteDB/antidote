@@ -84,7 +84,7 @@
 %% The first 3 elements in the tuple are the following meta-data:
 %% First is the key itself
 %% Second is a tuple defined as {the number of update operations stored in the tupe, the size of the tuple}
-%% Thrid is a counter that keeps track of how many update operations have been performed on this key
+%% Third is a counter that keeps track of how many update operations have been performed on this key
 %% Fourth is where the first update operation is stored
 %% The remaining elements are update operations
 -define(FIRST_OP, 4).

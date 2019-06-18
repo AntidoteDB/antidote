@@ -17,15 +17,15 @@
        {ref,"573d583930c4b1134e504bec83926d188112b401"}},
   0},
  {<<"exometer_core">>,{pkg,<<"basho_exometer_core">>,<<"1.0.5">>},1},
- {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.7">>},1},
+ {<<"folsom">>,{pkg,<<"folsom">>,<<"0.8.8">>},1},
  {<<"gen_fsm_compat">>,{pkg,<<"gen_fsm_compat">>,<<"0.3.0">>},1},
  {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},2},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"lager">>,{pkg,<<"lager">>,<<"3.6.9">>},0},
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.7.0">>},0},
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.3.0">>},2},
  {<<"pbkdf2">>,{pkg,<<"pbkdf2">>,<<"2.0.0">>},1},
  {<<"poolboy">>,{pkg,<<"basho_poolboy">>,<<"0.8.4">>},1},
- {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.2.2">>},0},
+ {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.4.0">>},0},
  {<<"prometheus_process_collector">>,
   {pkg,<<"prometheus_process_collector">>,<<"1.4.3">>},
   0},
@@ -35,7 +35,7 @@
  {<<"riak_ensemble">>,{pkg,<<"riak_ensemble_ng">>,<<"2.4.4">>},1},
  {<<"riak_sysmon">>,{pkg,<<"riak_sysmon">>,<<"2.1.7">>},1},
  {<<"setup">>,{pkg,<<"setup">>,<<"2.0.2">>},2},
- {<<"vectorclock">>,{pkg,<<"vectorclock">>,<<"0.1.0">>},0}]}.
+ {<<"vectorclock">>,{pkg,<<"vectorclock">>,<<"0.2.0">>},0}]}.
 [
 {pkg_hash,[
  {<<"accept">>, <<"2505B60BCB992CA79BD03AB7B8FEC8A520A47D9730F286DF1A479CC98B03F94B">>},
@@ -52,15 +52,15 @@
  {<<"elli">>, <<"7842861819869EBBFF7230BC77ECF2DF551AE3EAEF5FDE6B01A7561CACCB811E">>},
  {<<"elli_prometheus">>, <<"FF41EA8D88D1EBD1CD7A6D43FCC02B33B47FF20272C097B9D3A3CCCD79980C05">>},
  {<<"exometer_core">>, <<"8B37B9B07815B964E67C8D789D823B57E10DAF375EC146016527AECFC13D03C7">>},
- {<<"folsom">>, <<"A885F0AEEE4C84270954C88A55A5A473D6B2C7493E32FFDC5765412DD555A951">>},
+ {<<"folsom">>, <<"9A2B02010F6727CB1948EF34E21CB66F3554B63355C3A31E8BCB10FB172C3170">>},
  {<<"gen_fsm_compat">>, <<"5903549F67D595F58A7101154CBE0FDD46955FBFBE40813F1E53C23A970FF5F4">>},
  {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
- {<<"lager">>, <<"387BCD836DC0C8AD9C6D90A0E0CE5B29676847950CBC527BCCC194A02028DE8E">>},
+ {<<"lager">>, <<"563AB17CD32134A3DD17EC3B3622E6D8F827506AA4F8C489158879BED87D980B">>},
  {<<"parse_trans">>, <<"09765507A3C7590A784615CFD421D101AEC25098D50B89D7AA1D66646BC571C1">>},
  {<<"pbkdf2">>, <<"11C23279FDED5C0027AB3996CFAE77805521D7EF4BABDE2BD7EC04A9086CF499">>},
  {<<"poolboy">>, <<"45C306FF1C9F6451730DD21642EDF55FA72EBD5E2FE4A38D8D8A56B8EA21A256">>},
- {<<"prometheus">>, <<"A830E77B79DC6D28183F4DB050A7CAC926A6C58F1872F9EF94A35CD989ACEEF8">>},
+ {<<"prometheus">>, <<"6DCB11FC80FAF873CB2297664720414AED16B0A4FC3A1A15AE538D66F84CCC34">>},
  {<<"prometheus_process_collector">>, <<"657386E8F142FC817347D95C1F3A05AB08710F7DF9E7F86DB6FACAED107ED929">>},
  {<<"ranch">>, <<"6B1FAB51B49196860B733A49C07604465A47BDB78AA10C1C16A3D199F7F8C881">>},
  {<<"rand_compat">>, <<"011646BC1F0B0C432FE101B816F25B9BBB74A085713CEE1DAFD2D62E9415EAD3">>},
@@ -68,5 +68,5 @@
  {<<"riak_ensemble">>, <<"F9E04052F4A7FAAD20F008DFF18D34D3552513000410CE9C5941B4F7361741E8">>},
  {<<"riak_sysmon">>, <<"AF420DF0F7569E1F12BCD465745164CB6189EB93F118D5CDB3F90FEB3F8BF47D">>},
  {<<"setup">>, <<"1203F4CDA11306C2E34434244576DED0A7BBFB0908D9A572356C809BD0CDF085">>},
- {<<"vectorclock">>, <<"CBC79A44193756CF20B9AC8DDB9F268FAF1FE84D00C396DB447373E6D1FEDFC5">>}]}
+ {<<"vectorclock">>, <<"6C4A9D44895F51BB99910DBE31FC691BF05FA6B2BF84986F6E3BDE4BD18F6CBA">>}]}
 ].

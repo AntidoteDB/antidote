@@ -87,7 +87,7 @@ init_metrics() ->
 calculate_staleness() ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
     CurrentClock = to_microsec(os:timestamp()),
-    Staleness = dict:fold(fun(_K, C, Max) ->
+    Staleness = vectorclock:fold(fun(_K, C, Max) ->
                                    max(CurrentClock - C, Max)
                            end, 0, SS),
     round(Staleness/(1000)). %% To millisecs

@@ -108,7 +108,7 @@ connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
             connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
-%% This should not be called untilt the local dc's ring is merged
+%% This should not be called until the local dc's ring is merged
 -spec start_bg_processes(atom()) -> ok.
 start_bg_processes(MetaDataName) ->
     %% Start the meta-data senders
@@ -220,7 +220,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
                       case Res of
                           ok ->
-                            Value = vectorclock:get_clock_of_dc(DCID, SS),
+                            Value = vectorclock:get(DCID, SS),
                             wait_for_stable_snapshot(DCID, Value),
                             ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
                           _ ->
@@ -267,7 +267,7 @@ wait_for_stable_snapshot(DCID, MinValue) ->
     true -> ok;
     false ->
       {ok, SS} = dc_utilities:get_stable_snapshot(),
-      Value = vectorclock:get_clock_of_dc(DCID, SS),
+      Value = vectorclock:get(DCID, SS),
       case Value > MinValue of
         true ->
           logger:info("Connected to DC ~p", [DCID]),

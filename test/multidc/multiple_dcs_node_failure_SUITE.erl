@@ -212,9 +212,7 @@ update_during_cluster_failure_test(Config) ->
 
             %% Take the max of the commit times to be sure
             %% to read all updates
-            Time = dict:merge(fun(_K, T1, T2) ->
-                max(T1, T2)
-            end, CommitTime, CommitTime3a),
+            Time = vectorclock:max([CommitTime, CommitTime3a]),
 
             check_read_key(Node1, Key, Type, 4, Time, static, Bucket),
             ct:log("Done Read in Node1"),

@@ -98,7 +98,7 @@ load_env_meta_data() ->
                           end
                   end, stable_meta_data_server:read_all_meta_data()).
 
-%% Store an enviroment variable on disk
+%% Store an environment variable on disk
 -spec store_env_meta_data(atom(), term()) -> ok.
 store_env_meta_data(Name, Value) ->
     stable_meta_data_server:broadcast_meta_data_env({env, Name}, Value).

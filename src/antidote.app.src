@@ -2,7 +2,7 @@
 {application, antidote,
  [
   {description, "A transactional CRDT database"},
-  {vsn, "0.0.2"},
+  {vsn, "0.2.0"},
   {registered, []},
   {applications, [
                   kernel,

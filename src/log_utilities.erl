@@ -124,7 +124,7 @@ log_record_version() -> ?LOG_RECORD_VERSION.
 %% Check the version of the log record and convert
 %% to a different version if necessary
 %% Checked when loading the log from disk, or
-%% when log messages are recieved from another DC
+%% when log messages are received from another DC
 -spec check_log_record_version(#log_record{}) -> #log_record{}.
 check_log_record_version(LogRecord) ->
     %% Only support one version for now
