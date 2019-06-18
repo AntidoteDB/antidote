@@ -87,7 +87,7 @@ handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
     {reply, Resp, NewState}.
 
-handle_cast(#interdc_txn{} = Msg, State) ->
+handle_cast(#pub_sub_msg{payload = #interdc_txn{} = Msg} , State) ->
     inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State};
 
@@ -125,8 +125,8 @@ connect_to_node([]) ->
     logger:error("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([Address | Rest]) ->
-    case antidote_channel:is_alive(channel_zeromq, Address) of
-        true ->
+    case antidote_channel:is_alive(channel_zeromq, pub_sub, #{address => Address}) of
+        {true,_} ->
             PartBin = lists:map(
                 fun(P) ->
                     inter_dc_txn:partition_to_bin(P)

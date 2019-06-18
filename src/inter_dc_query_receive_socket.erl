@@ -36,6 +36,7 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("antidote_channels/include/antidote_channel.hrl").
 
 %% API
 -export([
@@ -54,7 +55,7 @@
   code_change/3]).
 
 %% State
--record(state, {socket, id, next}). %% socket :: erlzmq_socket()
+-record(state, {channel}). %% socket :: erlzmq_socket()
 
 %%%% API --------------------------------------------------------------------+
 
@@ -100,68 +101,70 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     {_, Port} = get_address(),
-    Socket = zmq_utils:create_bind_socket(xrep, true, Port),
+    Config = #{
+        module => channel_zeromq,
+        pattern => rpc,
+        load_balanced => true,
+        handler => self(),
+        network_params => #{
+            host => {0,0,0,0},
+            port => Port
+        }
+    },
+    {ok, Channel} = antidote_channel:start_link(Config),
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
     logger:info("Log reader started on port ~p", [Port]),
-    {ok, #state{socket = Socket, next=getid}}.
+    {ok, #state{channel = Channel}}.
 
-%% Handle the remote request
-%% ZMQ requests come in 3 parts
-%% 1st the Id of the sender, 2nd an empty binary, 3rd the binary msg
-handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
-    {noreply, State#state{next = blankmsg, id=Id}};
-handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
-    {noreply, State#state{next=getmsg}};
-handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) ->
+
+handle_info(Info, State) ->
+    logger:info("got weird info ~p", [Info]),
+    {noreply, State}.
+
+handle_cast(#rpc_msg{request_id = RRef, request_payload = Payload}, #state{channel = Channel} = State) ->
     %% Decode the message
-    {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
+    {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(Payload),
     %% Create a response
     QueryState =
-      fun(RequestType) ->
-        #inter_dc_query_state{
-          request_type = RequestType,
-          zmq_id = Id,
-          request_id_num_binary = ReqId,
-          local_pid = self()}
-      end,
+        fun(RequestType) ->
+            #inter_dc_query_state{
+                request_type = RequestType,
+                request_ref = RRef,
+                request_id_num_binary = ReqId,
+                local_pid = self()}
+        end,
     case RestMsg of
         <<?LOG_READ_MSG, QueryBinary/binary>> ->
             ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
         <<?CHECK_UP_MSG>> ->
-            ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
+            antidote_channel:reply(Channel, RRef, make_message(<<?OK_MSG>>, ReqId));
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
         %% TODO: Handle other types of requests
         _ ->
             ErrorBinary = term_to_binary(bad_request),
-            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Id, ReqId, Socket)
+            antidote_channel:reply(Channel, RRef, <<?ERROR_MSG, ErrorBinary/binary>>)
     end,
-    {noreply, State#state{next=getid}};
-handle_info(Info, State) ->
-    logger:info("got weird info ~p", [Info]),
-    {noreply, State}.
-
-handle_call(_Request, _From, State) -> {noreply, State}.
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+    {noreply, State};
 
 handle_cast({send_response, BinaryResponse,
-         #inter_dc_query_state{request_type = ReqType, zmq_id = Id,
-                   request_id_num_binary = ReqId}}, State=#state{socket = Socket}) ->
-    finish_send_response(<<ReqType, BinaryResponse/binary>>, Id, ReqId, Socket),
+         #inter_dc_query_state{request_type = ReqType, request_ref = RRef,
+                   request_id_num_binary = ReqId}}, #state{channel = Channel} = State) ->
+
+    antidote_channel:reply(Channel, RRef, make_message(BinaryResponse, ReqId, ReqType)),
     {noreply, State};
 
 handle_cast(_Request, State) -> {noreply, State}.
 
+handle_call(_Request, _From, State) -> {noreply, State}.
+
+terminate(_Reason, State) -> antidote_channel:stop(State#state.channel).
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(<<_:8, _:_*8>>, binary(), binary(), erlzmq:erlzmq_socket()) -> ok.
-finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
-    %% Must send a response in 3 parts with ZMQ
-    %% 1st Id, 2nd empty binary, 3rd the binary message
-    VersionBinary = ?MESSAGE_VERSION,
-    Msg = <<VersionBinary/binary, ReqId/binary, BinaryResponse/binary>>,
-    ok = erlzmq:send(Socket, Id, [sndmore]),
-    ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, Msg).
+make_message(BinaryResponse, RequestId) ->
+    <<?MESSAGE_VERSION/binary, RequestId/binary, BinaryResponse/binary>>.
+
+make_message(BinaryResponse, RequestId, RequestType) ->
+    <<?MESSAGE_VERSION/binary, RequestId/binary, RequestType, BinaryResponse/binary>>.
