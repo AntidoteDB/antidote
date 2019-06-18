@@ -659,7 +659,7 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
 %% @doc TODO
 start_tx_internal(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
-    ok = case IsStatic of
+    _ = case IsStatic of
         true -> ok;
         false -> From ! {ok, TransactionId}
     end,
