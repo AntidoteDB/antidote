@@ -77,7 +77,7 @@ create_dc(Nodes) ->
     wait_until_ring_converged(Nodes),
     wait_until(hd(Nodes), fun wait_init:check_ready/1),
     %% starts metadata services needed for intra-dc communication
-    ok = inter_dc_manager:start_bg_processes(stable),
+    ok = inter_dc_manager:start_bg_processes(stable_time_functions),
     ok.
 
 %% Start receiving updates from other DCs
