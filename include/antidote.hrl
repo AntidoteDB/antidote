@@ -215,9 +215,7 @@
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
-%%chash:index_as_int() is the same as riak_core_apl:index().
-%%If it is changed in the future this should be fixed also.
--type index_node() :: {chash:index_as_int(), node()}.
+-type index_node() :: {any(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_num() :: non_neg_integer().

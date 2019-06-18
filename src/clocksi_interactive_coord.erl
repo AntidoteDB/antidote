@@ -659,7 +659,7 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
 %% @doc TODO
 start_tx_internal(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
-    case IsStatic of
+    ok = case IsStatic of
         true -> ok;
         false -> From ! {ok, TransactionId}
     end,
@@ -807,17 +807,17 @@ prepare_2pc(State = #coord_state{
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(State = #coord_state{
-    from=From,
-    state=TxState,
-    is_static=IsStatic,
-    stay_alive=StayAlive,
-    client_ops=ClientOps,
-    commit_time=CommitTime,
-    full_commit=FullCommit,
-    transaction=Transaction,
-    return_accumulator=ReturnAcc
-}) ->
-    case From of
+        from=From,
+        state=TxState,
+        is_static=IsStatic,
+        stay_alive=StayAlive,
+        client_ops=ClientOps,
+        commit_time=CommitTime,
+        full_commit=FullCommit,
+        transaction=Transaction,
+        return_accumulator=ReturnAcc
+    }) ->
+    _ = case From of
         undefined ->
             ok;
 

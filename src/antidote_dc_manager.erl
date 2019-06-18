@@ -54,7 +54,7 @@
 create_dc(Nodes) ->
     logger:info("Creating DC ring ~p", [Nodes]),
     %% Ensure each node owns 100% of it's own ring
-    [[Node] = owners_according_to(Node) || Node <- Nodes],
+    _ = [[Node] = owners_according_to(Node) || Node <- Nodes],
     %% Join nodes
     [Node1|OtherNodes] = Nodes,
     case OtherNodes of
@@ -75,7 +75,7 @@ create_dc(Nodes) ->
     wait_until_nodes_agree_about_ownership(Nodes),
     ok = wait_until_no_pending_changes(Nodes),
     wait_until_ring_converged(Nodes),
-    wait_until(hd(Nodes), fun wait_init:check_ready/1),
+    ok = wait_until(hd(Nodes), fun wait_init:check_ready/1),
     %% starts metadata services needed for intra-dc communication
     ok = inter_dc_manager:start_bg_processes(stable),
     ok.
@@ -165,7 +165,7 @@ maybe_wait_for_changes(Node) ->
 wait_until_no_pending_changes(Nodes) ->
     logger:info("Wait until no pending changes on ~p", [Nodes]),
     F = fun() ->
-                rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
+                _ = rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
                 {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
                 Changes = [ riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings ],
                 BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)

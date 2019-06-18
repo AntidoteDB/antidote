@@ -62,8 +62,8 @@ handle_cast(_Req, State) ->
     {noreply, State}.
 
 handle_info(periodic_update, OldTimer) ->
-    erlang:cancel_timer(OldTimer),
-    update_staleness(),
+    _ = erlang:cancel_timer(OldTimer),
+    _ = update_staleness(),
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, Timer}.
 
