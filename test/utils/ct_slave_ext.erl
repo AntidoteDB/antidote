@@ -254,7 +254,6 @@ get_cmd(Node, Flags) ->
 spawn_local_node(Node, Options) ->
     #options{env=Env,erl_flags=ErlFlags} = Options,
     Cmd = get_cmd(Node, ErlFlags),
-    ct:pal("Starting Node ~p with Env ~p and Cmd ~p", [Node, Env, Cmd]),
     PortOpds =
         [stream, {env, Env}] ++
         case Options#options.working_dir of

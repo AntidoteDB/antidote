@@ -3,7 +3,7 @@
  {<<"antidote_crdt">>,{pkg,<<"antidote_crdt">>,<<"0.1.2">>},0},
  {<<"antidote_pb_codec">>,
   {git,"https://github.com/AntidoteDB/antidote_pb_codec",
-       {ref,"46337e463d6542ea018df27fe5406992bf6d587c"}},
+       {ref,"5220850a7ee13f8613ecd924eb3b4495f3a4df0f"}},
   0},
  {<<"antidotec_pb">>,{pkg,<<"antidotec_pb">>,<<"0.2.4">>},0},
  {<<"basho_stats">>,{pkg,<<"basho_stats">>,<<"1.0.3">>},1},

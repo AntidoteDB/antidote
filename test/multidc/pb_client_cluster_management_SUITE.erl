@@ -73,36 +73,82 @@ all() -> [
 -spec send_pb_message(pid(), antidote_pb_codec:request()) -> any().
 send_pb_message(Pid, Message) ->
     EncMsg = antidote_pb_codec:encode_message(Message),
-    send_pb_message_raw(Pid, EncMsg).
+    ResponseRaw = antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, infinity}),
+    antidote_pb_codec:decode_response(ResponseRaw).
 
-send_pb_message_raw(Pid, EncMsg) ->
-    antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, infinity}).
 
 %% Single object rea
 setup_cluster_test(Config) ->
     NodeNames = [dev1, dev2, dev3, dev4],
-    Nodes = [test_utils:start_node(Node, Config) || Node <- NodeNames],
+    Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
     [Node1, Node2, Node3, Node4] = Nodes,
-    [NodeAddr1, NodeAddr2, NodeAddr3, NodeAddr4] = [atom_to_list(N) || N <- Nodes],
 
     ct:pal("Check1"),
 
+    % join cluster 1:
+    P1 = spawn_link(fun() ->
+        {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev1) + 2),
+        ct:pal("joining dev1, dev2"),
+        Response = send_pb_message(Pb, {create_dc, [Node1, Node2]}),
+        ct:pal("joined dev1, dev2: ~p", [Response]),
+        {opresponse,ok} = Response,
+        _Disconnected = antidotec_pb_socket:stop(Pb)
+    end),
+
+    % join cluster 2:
+    P2 = spawn_link(fun() ->
+        {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev3) + 2),
+        ct:pal("joining dev3, dev4"),
+        Response = send_pb_message(Pb, {create_dc, [Node3, Node4]}),
+        ct:pal("joined dev3, dev4: ~p", [Response]),
+        {opresponse,ok} = Response,
+        _Disconnected = antidotec_pb_socket:stop(Pb)
+    end),
+
+    wait_for_process(P1),
+    wait_for_process(P2),
+
+    % get descriptor of cluster 2:
+    {ok, Pb3} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev3) + 2),
+    ct:pal("get_connection_descriptor dev3"),
+    Response3 = send_pb_message(Pb3, {get_connection_descriptor}),
+    ct:pal("get_connection_descriptor dev3: ~p", [Response3]),
+    {get_connection_descriptor_resp, {ok, Descriptor3}} = Response3,
+
+
+    % use descriptor to connect both dcs
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev1) + 2),
-    ct:pal("Check2"),
-    Response1 = send_pb_message_raw(Pb1, antidote_pb_codec:encode_create_DC([Node1, Node2])),
-    ct:pal("Check3"),
-    ct:pal("Response = ~p", [Response1]),
-    _Disconnected = antidotec_pb_socket:stop(Pb1),
+    ct:pal("connecting clusters"),
+    Response1 = send_pb_message(Pb1, {connect_to_dcs, [Descriptor3]}),
+    ct:pal("connected clusters: ~p", [Response1]),
+    ?assertEqual({opresponse,ok}, Response1),
+
+
 
     Bucket = ?BUCKET_BIN,
     Bound_object = {<<"key1">>, antidote_crdt_counter_pn, Bucket},
 
-    % test whether we can do a simple query:
+    % write counter on dev4:
+    {ok, Pb4} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev4) + 2),
+    {ok, TxId4} = antidotec_pb:start_transaction(Pb3, ignore, []),
+    ok = antidotec_pb:update_objects(Pb3, [{Bound_object, increment, 4711}], TxId4),
+    {ok, CommitTime} = antidotec_pb:commit_transaction(Pb3, TxId4),
 
-    {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(dev1) + 2),
-    {ok, TxId} = antidotec_pb:start_transaction(Pb, ignore, []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pb, [Bound_object], TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pb, TxId),
+    % read counter on dev1
+    {ok, TxId1} = antidotec_pb:start_transaction(Pb1, CommitTime, []),
+    {ok, [Counter]} = antidotec_pb:read_objects(Pb1, [Bound_object], TxId1),
+    {ok, _} = antidotec_pb:commit_transaction(Pb1, TxId1),
 
-    _Disconnected = antidotec_pb_socket:stop(Pb),
-    ?assertMatch(true, antidotec_counter:is_type(Val)).
+    ?assertMatch(true, antidotec_counter:is_type(Counter)),
+    ?assertEqual(4711, antidotec_counter:value(Counter)),
+
+    _Disconnected1 = antidotec_pb_socket:stop(Pb1),
+    _Disconnected3 = antidotec_pb_socket:stop(Pb3),
+    _Disconnected3 = antidotec_pb_socket:stop(Pb4).
+
+
+wait_for_process(P) ->
+    MonitorRef = monitor(process, P),
+    receive
+        {_Tag, MonitorRef, _Type, _Object, _Info} -> ok
+    end.
