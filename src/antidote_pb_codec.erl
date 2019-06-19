@@ -506,6 +506,10 @@ decode_response(#'ApbStaticReadObjectsResp'{objects = Objects,
   {read_objects, Values} = decode_response(Objects),
   {commit_transaction, TimeStamp} = decode_response(CommitTime),
   {static_read_objects_resp, Values, TimeStamp};
+decode_response(#'ApbGetConnectionDescriptorResp'{success = false, errorcode = E}) ->
+  {get_connection_descriptor_resp, {error, decode_error_code(E)}};
+decode_response(#'ApbGetConnectionDescriptorResp'{descriptor = Descriptor}) ->
+  {get_connection_descriptor_resp, {ok, Descriptor}};
 decode_response(Other) ->
   erlang:error({"Unexpected message:", Other}).
 
