@@ -107,7 +107,8 @@ handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=Stat
         true ->
             {SKey, Bucket} = Key,
             BObj = {SKey, ?DATA_TYPE, Bucket},
-            antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
+            % try to transfer locks, might return {error,no_permissions} if not enough permissions are available locally
+            _ = antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
             {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
@@ -125,7 +126,7 @@ handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue
     end.
 
 handle_info(transfer_periodic, #state{req_queue=RQ0, transfer_timer=OldTimer}=State) ->
-    erlang:cancel_timer(OldTimer),
+    _ = erlang:cancel_timer(OldTimer),
     RQ = clear_pending_req(RQ0, ?REQUEST_TIMEOUT),
     RQNew = orddict:fold(
               fun(Key, Queue, Accum) ->

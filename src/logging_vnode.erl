@@ -80,8 +80,10 @@
 
 -ignore_xref([start_vnode/1]).
 
+-type disklog() :: term(). %Actually: disklog(), which is not exported
+
 -record(state, {partition :: partition_id(),
-        logs_map :: dict:dict(log_id(), disk_log:log()),
+        logs_map :: dict:dict(log_id(), disklog()),
         enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
         op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
         recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
@@ -865,7 +867,7 @@ terminate(_Reason, _State) ->
 %%      Return: true if all logs are empty. false if at least one log
 %%              contains data.
 %%
--spec no_elements([log_id()], dict:dict(log_id(), disk_log:log())) -> boolean().
+-spec no_elements([log_id()], dict:dict(log_id(), disklog())) -> boolean().
 no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
@@ -893,7 +895,7 @@ no_elements([LogId|Rest], Map) ->
 %%                               the log in the system. dict:dict() type.
 %%                      MaxVector: The version vector time of the last
 %%                               operation appended to the logs
--spec open_logs(string(), [preflist()], dict:dict(log_id(), disk_log:log()), cache_id(), vectorclock()) -> {dict:dict(log_id(), disk_log:log()), vectorclock()} | {error, reason()}.
+-spec open_logs(string(), [preflist()], dict:dict(log_id(), disklog()), cache_id(), vectorclock()) -> {dict:dict(log_id(), disklog()), vectorclock()} | {error, reason()}.
 open_logs(_LogFile, [], Map, _ClockTable, MaxVector) ->
     {Map, MaxVector};
 open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
@@ -924,7 +926,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
 %%
--spec get_log_from_map(dict:dict(log_id(), disk_log:log()), partition(), log_id()) ->
+-spec get_log_from_map(dict:dict(log_id(), disklog()), partition(), log_id()) ->
                               {ok, log()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, _Partition, LogId) ->
     case dict:find(LogId, Map) of

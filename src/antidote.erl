@@ -55,11 +55,11 @@
 
 %% Public API
 
--spec start() -> {ok, _} | {error, term()}.
+-spec start() -> {ok, [atom()]} | {error, reason()}.
 start() ->
     application:ensure_all_started(antidote).
 
--spec stop() -> ok.
+-spec stop() -> ok | {error, reason()}.
 stop() ->
     application:stop(antidote).
 

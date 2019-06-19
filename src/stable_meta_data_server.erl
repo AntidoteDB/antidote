@@ -150,16 +150,17 @@ init([]) ->
                        _ ->
                           false
                    end,
-    case LoadFromDisk of
+    UpdatedTable = case LoadFromDisk of
         true ->
-            Table = dets:to_ets(DetsTable, Table),
-            logger:info("Loaded meta data from disk");
+            TableFromDets = dets:to_ets(DetsTable, Table),
+            logger:info("Loaded meta data from disk"),
+            TableFromDets;
         false ->
             ok = dets:delete_all_objects(DetsTable),
             Table
     end,
     ok = dets:sync(DetsTable),
-    {ok, #state{table = Table, dets_table = DetsTable}}.
+    {ok, #state{table = UpdatedTable, dets_table = DetsTable}}.
 
 handle_cast(_Info, State) ->
     {noreply, State}.

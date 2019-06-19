@@ -217,7 +217,7 @@ update(Name, MetaData, Entries, AddFun, RemoveFun, Initial) ->
                             {AccNew, Acc2New}
                             end, {maps:new(), MetaData}, Entries),
     %% Remove entries that no longer exist
-    maps:map(fun(NodeId, _Val) -> ok = RemoveFun(Name, NodeId) end, NodeErase),
+    _ = maps:map(fun(NodeId, _Val) -> ok = RemoveFun(Name, NodeId) end, NodeErase),
     NewMetaData.
 
 %% @private

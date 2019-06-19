@@ -274,7 +274,7 @@ get_stable_snapshot() ->
             end
     end.
 
--spec get_partition_snapshot(partition_id()) -> snapshot_time().
+-spec get_partition_snapshot(partition_id()) -> vectorclock:vectorclock().
 get_partition_snapshot(Partition) ->
     case meta_data_sender:get_meta(stable_time_functions, Partition, vectorclock:new()) of
         undefined ->
@@ -299,7 +299,7 @@ get_scalar_stable_time() ->
             Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
             {ok, Now, StableSnapshot};
         _ ->
-            DCs = dc_meta_data_utilites:get_dc_ids(true),
+            DCs = dc_meta_data_utilities:get_dc_ids(true),
             GST = vectorclock:min_clock(StableSnapshot, DCs),
             {ok, GST, vectorclock:set_all(GST, StableSnapshot)}
     end.
