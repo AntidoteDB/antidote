@@ -304,7 +304,11 @@ descriptors(Clusters) ->
 web_ports(dev1) -> 10015;
 web_ports(dev2) -> 10025;
 web_ports(dev3) -> 10035;
-web_ports(dev4) -> 10045.
+web_ports(dev4) -> 10045;
+web_ports(clusterdev1) -> 10115;
+web_ports(clusterdev2) -> 10125;
+web_ports(clusterdev3) -> 10135;
+web_ports(clusterdev4) -> 10145.
 
 %% Build clusters
 join_cluster(Nodes) ->
