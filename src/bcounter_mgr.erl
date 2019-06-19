@@ -107,7 +107,8 @@ handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=Stat
         true ->
             {SKey, Bucket} = Key,
             BObj = {SKey, ?DATA_TYPE, Bucket},
-            {ok, _} = antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
+            % try to transfer locks, might return {error,no_permissions} if not enough permissions are available locally
+            _ = antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
             {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
