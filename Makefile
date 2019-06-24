@@ -13,7 +13,17 @@ deps:
 clean:
 	@${REBAR} clean
 
-include tools.mk
+test: compile
+	${REBAR} eunit
 
-typer:
-	typer --annotate -I ../ --plt $(PLT) -r src
+docs:
+	${REBAR} edoc
+
+xref:	compile
+	${REBAR} xref
+
+dialyzer:	compile
+	${REBAR} dialyzer
+
+lint:
+	${REBAR} as lint lint

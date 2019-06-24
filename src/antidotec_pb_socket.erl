@@ -212,9 +212,9 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
     {Request, Pkt} = encode_request_message(Request0),
     case gen_tcp:send(State#state.sock, Pkt) of
         ok ->
-            maybe_reply({noreply,State#state{active = Request}});
+            maybe_reply({noreply,  State#state{active = Request}});
         {error, Reason} ->
-            lager:warning("Socket error while sending request: ~p.", [Reason]),
+            logger:warning("Socket error while sending request: ~p.", [Reason]),
             gen_tcp:close(State#state.sock)
     end.
 
