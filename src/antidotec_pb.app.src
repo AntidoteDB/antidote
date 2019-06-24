@@ -8,7 +8,6 @@
                   stdlib,
                   antidote_pb_codec
                  ]},
-  {maintainers, ["Annette Bieniusa", "Goncalo Tomas", "Peter Zeller", "Albert Schimpf"]},
   {licenses, ["Apache 2.0"]},
   {links,[{"Github","https://github.com/AntidoteDB/antidote-erlang-client"}]},
   {env, []}
