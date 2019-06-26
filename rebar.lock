@@ -3,7 +3,7 @@
  {<<"amqp_client">>,{pkg,<<"amqp_client">>,<<"3.7.14">>},1},
  {<<"antidote_channels">>,
   {git,"https://github.com/balegas/antidote_channels",
-       {ref,"d48432aad5983ff96cb16605f2e10bcd859c01ed"}},
+       {ref,"3a9467d66140ea09464cec3574e4f87381525b72"}},
   0},
  {<<"antidote_crdt">>,{pkg,<<"antidote_crdt">>,<<"0.1.2">>},0},
  {<<"antidote_pb_codec">>,{pkg,<<"antidote_pb_codec">>,<<"0.0.5">>},0},

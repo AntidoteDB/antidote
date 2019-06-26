@@ -9,20 +9,19 @@
                   stdlib,
                   riak_core,
                   cuttlefish,
-                  erlzmq,
                   rand_compat,
                   runtime_tools,
                   tools,
                   prometheus,
                   elli,
                   elli_prometheus,
-                  prometheus_process_collector
+                  prometheus_process_collector,
+                  antidote_channels
                  ]},
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
-        antidote_crdt,
-        ranch
+        antidote_crdt
     ]},
 
   {mod, { antidote_app, []}},
