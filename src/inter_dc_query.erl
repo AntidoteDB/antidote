@@ -229,8 +229,8 @@ connect_to_node([]) ->
     connection_error;
 
 % TODO: Message being encoded multiple times. Must create parameter in antidote_channel to accept binary messages.
-connect_to_node([{Host, Port} = Address| Rest]) ->
-    case antidote_channel:is_alive(channel_zeromq, rpc, #{address => Address}) of
+connect_to_node([{Host, Port} | Rest]) ->
+    case antidote_channel:is_alive(channel_zeromq, #rpc_channel_zmq_params{host = Host, port = Port}) of
         true ->
             case check_protocol_version(Host, Port) of
                 true ->

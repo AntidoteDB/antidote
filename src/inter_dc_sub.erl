@@ -37,20 +37,20 @@
 
 %% API
 -export([
-  add_dc/2,
-  del_dc/1
+    add_dc/2,
+    del_dc/1
 ]).
 
 %% Server methods
 -export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3
-  ]).
+    init/1,
+    start_link/0,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 %% State
 -record(state, {
@@ -87,7 +87,7 @@ handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
     {reply, Resp, NewState}.
 
-handle_cast(#pub_sub_msg{payload = #interdc_txn{} = Msg} , State) ->
+handle_cast(#pub_sub_msg{payload = #interdc_txn{} = Msg}, State) ->
     inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State};
 
@@ -124,9 +124,9 @@ connect_to_nodes([Node | Rest], Acc) ->
 connect_to_node([]) ->
     logger:error("Unable to subscribe to DC"),
     connection_error;
-connect_to_node([Address | Rest]) ->
-    case antidote_channel:is_alive(channel_zeromq, pub_sub, #{address => Address}) of
-        {true,_} ->
+connect_to_node([{Host, Port} = Address | Rest]) ->
+    case antidote_channel:is_alive(channel_zeromq, #pub_sub_zmq_params{host = Host, port = Port}) of
+        true ->
             PartBin = lists:map(
                 fun(P) ->
                     inter_dc_txn:partition_to_bin(P)
