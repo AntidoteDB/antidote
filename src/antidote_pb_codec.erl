@@ -84,7 +84,9 @@
 | {static_update_objects, {Clock :: binary(), Properties :: list(), Updates :: [update()]}}
 | {static_read_objects, {Clock :: binary(), Properties :: list(), Objects :: [bound_object()]}}
 | {read_objects, {Objects :: [bound_object()], TxId :: binary()}}
-| {get_connection_descriptor, Descriptor :: binary()}.
+| {create_dc, NodeNames :: [node()]}
+| {get_connection_descriptor, Descriptor :: binary()}
+| {connect_to_dcs, Desriptors :: [binary()]}.
 
 -type response() ::
   {error_response, {ErrorCode :: error_code(), Message :: binary()}}
@@ -192,7 +194,15 @@ encode_message({static_read_objects_response, {ok, Results, CommitTime}}) ->
 encode_message({read_objects_response, Resp}) ->
   encode_read_objects_response(Resp);
 encode_message({operation_response, Resp}) ->
-  encode_operation_response(Resp).
+  encode_operation_response(Resp);
+encode_message({get_connection_descriptor}) ->
+  encode_get_connection_descriptor();
+encode_message({get_connection_descriptor_resp, Resp}) ->
+  encode_get_connection_descriptor_resp(Resp);
+encode_message({create_dc, Nodes}) ->
+  encode_create_DC(Nodes);
+encode_message({connect_to_dcs, Descriptors}) ->
+  encode_connect_to_DCs(Descriptors).
 
 -spec decode_message(sendable()) -> message().
 decode_message(#'ApbStartTransaction'{properties = Properties, timestamp = Clock}) ->
@@ -215,11 +225,13 @@ decode_message(#'ApbReadObjects'{boundobjects = Objects, transaction_descriptor 
   {read_objects, {[decode_bound_object(O) || O <- Objects], binary_to_term(TxId)}};
 
 decode_message(#'ApbCreateDC'{nodes = Nodes}) ->
-  {create_dc, [list_to_atom(N) || N <- Nodes]};
+  {create_dc, [binary_to_atom(N, utf8) || N <- Nodes]};
 decode_message(#'ApbGetConnectionDescriptor'{}) ->
   {get_connection_descriptor};
+decode_message(#'ApbGetConnectionDescriptorResp'{success = false, errorcode = E}) ->
+  {get_connection_descriptor_resp, {error, decode_error_code(E)}};
 decode_message(#'ApbGetConnectionDescriptorResp'{descriptor = Descriptor}) ->
-  {get_connection_descriptor, Descriptor};
+  {get_connection_descriptor_resp, {ok, Descriptor}};
 decode_message(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
   {connect_to_dcs, [binary_to_term(D) || D <- Descriptors]};
 
@@ -494,8 +506,12 @@ decode_response(#'ApbStaticReadObjectsResp'{objects = Objects,
   {read_objects, Values} = decode_response(Objects),
   {commit_transaction, TimeStamp} = decode_response(CommitTime),
   {static_read_objects_resp, Values, TimeStamp};
+decode_response(#'ApbGetConnectionDescriptorResp'{success = false, errorcode = E}) ->
+  {get_connection_descriptor_resp, {error, decode_error_code(E)}};
+decode_response(#'ApbGetConnectionDescriptorResp'{descriptor = Descriptor}) ->
+  {get_connection_descriptor_resp, {ok, Descriptor}};
 decode_response(Other) ->
-  erlang:error("Unexpected message: ~p", [Other]).
+  erlang:error({"Unexpected message:", Other}).
 
 %%%%%%%%%%%%%%%%%%%%%%
 %% Reading objects
@@ -783,7 +799,12 @@ decode_map_entry(#'ApbMapEntry'{key = KeyEnc, value = ValueEnc}) ->
 %% Cluster Management
 
 encode_create_DC(Nodes) ->
-    #'ApbCreateDC'{nodes = Nodes}.
+    #'ApbCreateDC'{nodes = [if
+      is_atom(N) -> atom_to_binary(N, utf8);
+      is_list(N) -> list_to_binary(N);
+      is_binary(N) -> N;
+      true -> throw({invalid_node_value, N})
+    end || N <- Nodes]}.
 decode_create_DC(#'ApbCreateDC'{nodes = Nodes}) ->
     Nodes.
 
