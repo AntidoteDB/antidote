@@ -3,9 +3,6 @@ REBAR = rebar3
 
 all: compile
 
-
-
-
 compile:
 	$(REBAR) compile
 
@@ -22,6 +19,9 @@ dialyzer:
 shell:
 	$(REBAR) shell
 
+# style checks
+lint:
+	${REBAR} as lint lint
 
 _build/gpb:
 	mkdir -p _build/
@@ -29,8 +29,6 @@ _build/gpb:
 
 _build/gpb/bin/protoc-erl: _build/gpb
 	(cd _build/gpb && make)
-
-
 
 generate_pb: proto/antidote.proto _build/gpb/bin/protoc-erl
 	_build/gpb/bin/protoc-erl -I. proto/antidote.proto -o-hrl include -o-erl src -modsuffix _pb -strbin

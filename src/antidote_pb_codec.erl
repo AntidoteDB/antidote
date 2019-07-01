@@ -28,17 +28,17 @@
 -export([encode/2,
   decode/2,
   decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1, encode_error_resp/2, decode_error_resp/1, encode_message/1,
-  decode_message/1, encode_create_DC/1, decode_create_DC/1, encode_get_connection_descriptor/0, decode_get_connection_descriptor/1,
+  decode_message/1, encode_create_dc/1, decode_create_dc/1, encode_get_connection_descriptor/0, decode_get_connection_descriptor/1,
   encode_get_connection_descriptor_resp/1, decode_get_connection_descriptor_resp/1,
-  encode_connect_to_DCs/1, decode_connect_to_DCs/1
+  encode_connect_to_dcs/1, decode_connect_to_dcs/1
   ]).
 
 -define(TYPE_COUNTER, counter).
 -define(TYPE_SET, set).
 
 
--define(assert_binary(X), case is_binary(X) of true -> ok; false -> throw({not_binary, X}) end).
--define(assert_all_binary(Xs), [?assert_binary(X) || X <- Xs]).
+-define(ASSERT_BINARY(X), case is_binary(X) of true -> ok; false -> throw({not_binary, X}) end).
+-define(ASSERT_ALL_BINARY(Xs), [?ASSERT_BINARY(X) || X <- Xs]).
 
 % encoding on wire (used to be decode_msg and encode_msg)
 
@@ -98,72 +98,72 @@
 -type message() :: request() | response().
 
 
-messageTypeToCode('ApbErrorResp')             -> 0;
-messageTypeToCode('ApbRegUpdate')             -> 107;
-messageTypeToCode('ApbGetRegResp')            -> 108;
-messageTypeToCode('ApbCounterUpdate')         -> 109;
-messageTypeToCode('ApbGetCounterResp')        -> 110;
-messageTypeToCode('ApbOperationResp')         -> 111;
-messageTypeToCode('ApbSetUpdate')             -> 112;
-messageTypeToCode('ApbGetSetResp')            -> 113;
-messageTypeToCode('ApbTxnProperties')         -> 114;
-messageTypeToCode('ApbBoundObject')           -> 115;
-messageTypeToCode('ApbReadObjects')           -> 116;
-messageTypeToCode('ApbUpdateOp')              -> 117;
-messageTypeToCode('ApbUpdateObjects')         -> 118;
-messageTypeToCode('ApbStartTransaction')      -> 119;
-messageTypeToCode('ApbAbortTransaction')      -> 120;
-messageTypeToCode('ApbCommitTransaction')     -> 121;
-messageTypeToCode('ApbStaticUpdateObjects')   -> 122;
-messageTypeToCode('ApbStaticReadObjects')     -> 123;
-messageTypeToCode('ApbStartTransactionResp')  -> 124;
-messageTypeToCode('ApbReadObjectResp')        -> 125;
-messageTypeToCode('ApbReadObjectsResp')       -> 126;
-messageTypeToCode('ApbCommitResp')            -> 127;
-messageTypeToCode('ApbStaticReadObjectsResp') -> 128;
-messageTypeToCode('ApbCreateDC')                    -> 129;
-messageTypeToCode('ApbConnectToDCs')                -> 130;
-messageTypeToCode('ApbGetConnectionDescriptor')     -> 131;
-messageTypeToCode('ApbGetConnectionDescriptorResp') -> 132.
+message_type_to_code('ApbErrorResp')             -> 0;
+message_type_to_code('ApbRegUpdate')             -> 107;
+message_type_to_code('ApbGetRegResp')            -> 108;
+message_type_to_code('ApbCounterUpdate')         -> 109;
+message_type_to_code('ApbGetCounterResp')        -> 110;
+message_type_to_code('ApbOperationResp')         -> 111;
+message_type_to_code('ApbSetUpdate')             -> 112;
+message_type_to_code('ApbGetSetResp')            -> 113;
+message_type_to_code('ApbTxnProperties')         -> 114;
+message_type_to_code('ApbBoundObject')           -> 115;
+message_type_to_code('ApbReadObjects')           -> 116;
+message_type_to_code('ApbUpdateOp')              -> 117;
+message_type_to_code('ApbUpdateObjects')         -> 118;
+message_type_to_code('ApbStartTransaction')      -> 119;
+message_type_to_code('ApbAbortTransaction')      -> 120;
+message_type_to_code('ApbCommitTransaction')     -> 121;
+message_type_to_code('ApbStaticUpdateObjects')   -> 122;
+message_type_to_code('ApbStaticReadObjects')     -> 123;
+message_type_to_code('ApbStartTransactionResp')  -> 124;
+message_type_to_code('ApbReadObjectResp')        -> 125;
+message_type_to_code('ApbReadObjectsResp')       -> 126;
+message_type_to_code('ApbCommitResp')            -> 127;
+message_type_to_code('ApbStaticReadObjectsResp') -> 128;
+message_type_to_code('ApbCreateDC')                    -> 129;
+message_type_to_code('ApbConnectToDCs')                -> 130;
+message_type_to_code('ApbGetConnectionDescriptor')     -> 131;
+message_type_to_code('ApbGetConnectionDescriptorResp') -> 132.
 
-messageCodeToType(0)   -> 'ApbErrorResp';
-messageCodeToType(107) -> 'ApbRegUpdate';
-messageCodeToType(108) -> 'ApbGetRegResp';
-messageCodeToType(109) -> 'ApbCounterUpdate';
-messageCodeToType(110) -> 'ApbGetCounterResp';
-messageCodeToType(111) -> 'ApbOperationResp';
-messageCodeToType(112) -> 'ApbSetUpdate';
-messageCodeToType(113) -> 'ApbGetSetResp';
-messageCodeToType(114) -> 'ApbTxnProperties';
-messageCodeToType(115) -> 'ApbBoundObject';
-messageCodeToType(116) -> 'ApbReadObjects';
-messageCodeToType(117) -> 'ApbUpdateOp';
-messageCodeToType(118) -> 'ApbUpdateObjects';
-messageCodeToType(119) -> 'ApbStartTransaction';
-messageCodeToType(120) -> 'ApbAbortTransaction';
-messageCodeToType(121) -> 'ApbCommitTransaction';
-messageCodeToType(122) -> 'ApbStaticUpdateObjects';
-messageCodeToType(123) -> 'ApbStaticReadObjects';
-messageCodeToType(124) -> 'ApbStartTransactionResp';
-messageCodeToType(125) -> 'ApbReadObjectResp';
-messageCodeToType(126) -> 'ApbReadObjectsResp';
-messageCodeToType(127) -> 'ApbCommitResp';
-messageCodeToType(128) -> 'ApbStaticReadObjectsResp';
-messageCodeToType(129) -> 'ApbCreateDC';
-messageCodeToType(130) -> 'ApbConnectToDCs';
-messageCodeToType(131) -> 'ApbGetConnectionDescriptor';
-messageCodeToType(132) -> 'ApbGetConnectionDescriptorResp'.
+message_code_to_type(0)   -> 'ApbErrorResp';
+message_code_to_type(107) -> 'ApbRegUpdate';
+message_code_to_type(108) -> 'ApbGetRegResp';
+message_code_to_type(109) -> 'ApbCounterUpdate';
+message_code_to_type(110) -> 'ApbGetCounterResp';
+message_code_to_type(111) -> 'ApbOperationResp';
+message_code_to_type(112) -> 'ApbSetUpdate';
+message_code_to_type(113) -> 'ApbGetSetResp';
+message_code_to_type(114) -> 'ApbTxnProperties';
+message_code_to_type(115) -> 'ApbBoundObject';
+message_code_to_type(116) -> 'ApbReadObjects';
+message_code_to_type(117) -> 'ApbUpdateOp';
+message_code_to_type(118) -> 'ApbUpdateObjects';
+message_code_to_type(119) -> 'ApbStartTransaction';
+message_code_to_type(120) -> 'ApbAbortTransaction';
+message_code_to_type(121) -> 'ApbCommitTransaction';
+message_code_to_type(122) -> 'ApbStaticUpdateObjects';
+message_code_to_type(123) -> 'ApbStaticReadObjects';
+message_code_to_type(124) -> 'ApbStartTransactionResp';
+message_code_to_type(125) -> 'ApbReadObjectResp';
+message_code_to_type(126) -> 'ApbReadObjectsResp';
+message_code_to_type(127) -> 'ApbCommitResp';
+message_code_to_type(128) -> 'ApbStaticReadObjectsResp';
+message_code_to_type(129) -> 'ApbCreateDC';
+message_code_to_type(130) -> 'ApbConnectToDCs';
+message_code_to_type(131) -> 'ApbGetConnectionDescriptor';
+message_code_to_type(132) -> 'ApbGetConnectionDescriptorResp'.
 
 
 -spec encode_msg(sendable()) -> iolist().
 encode_msg(Msg) ->
   MsgType = element(1, Msg),
-  [messageTypeToCode(MsgType), [antidote_pb:encode_msg(Msg)]].
+  [message_type_to_code(MsgType), [antidote_pb:encode_msg(Msg)]].
 
 
 -spec decode_msg(integer(), binary()) -> sendable().
 decode_msg(Code, Msg) ->
-  MsgType = messageCodeToType(Code),
+  MsgType = message_code_to_type(Code),
   antidote_pb:decode_msg(Msg, MsgType).
 
 -spec encode_message(message()) -> sendable().
@@ -302,13 +302,13 @@ encode(read_object_resp, Resp) ->
 encode(static_read_objects_response, {ok, Results, CommitTime}) ->
   encode_static_read_objects_response(Results, CommitTime);
 encode(create_DC, Nodes) ->
-  encode_create_DC(Nodes);
+  encode_create_dc(Nodes);
 encode(get_connection_descriptor, {}) ->
   encode_get_connection_descriptor();
 encode(get_connection_descriptor_resp, Resp) ->
   encode_get_connection_descriptor_resp(Resp);
 encode(connect_to_DCs, {Descriptors}) ->
-  encode_connect_to_DCs(Descriptors);
+  encode_connect_to_dcs(Descriptors);
 encode(error_code, Code) ->
   encode_error_code(Code);
 encode(_Other, _) ->
@@ -643,16 +643,16 @@ decode_read_object_resp(#'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Va
 % set updates
 
 encode_set_update({add, Elem}) ->
-  ?assert_binary(Elem),
+  ?ASSERT_BINARY(Elem),
   #'ApbSetUpdate'{optype = 'ADD', adds = [Elem]};
 encode_set_update({add_all, Elems}) ->
-  ?assert_all_binary(Elems),
+  ?ASSERT_ALL_BINARY(Elems),
   #'ApbSetUpdate'{optype = 'ADD', adds = Elems};
 encode_set_update({remove, Elem}) ->
-  ?assert_binary(Elem),
+  ?ASSERT_BINARY(Elem),
   #'ApbSetUpdate'{optype = 'REMOVE', rems = [Elem]};
 encode_set_update({remove_all, Elems}) ->
-  ?assert_all_binary(Elems),
+  ?ASSERT_ALL_BINARY(Elems),
   #'ApbSetUpdate'{optype = 'REMOVE', rems = Elems}.
 
 decode_set_update(Update) ->
@@ -751,7 +751,7 @@ decode_map_nested_update(#'ApbMapNestedUpdate'{key = KeyEnc, update = UpdateEnc}
   {{Key, Type}, Update}.
 
 encode_map_key({Key, Type}) ->
-  ?assert_binary(Key),
+  ?ASSERT_BINARY(Key),
   #'ApbMapKey'{
     key  = Key,
     type = encode_type(Type)
@@ -782,9 +782,9 @@ decode_map_entry(#'ApbMapEntry'{key = KeyEnc, value = ValueEnc}) ->
 
 %% Cluster Management
 
-encode_create_DC(Nodes) ->
+encode_create_dc(Nodes) ->
     #'ApbCreateDC'{nodes = Nodes}.
-decode_create_DC(#'ApbCreateDC'{nodes = Nodes}) ->
+decode_create_dc(#'ApbCreateDC'{nodes = Nodes}) ->
     Nodes.
 
 encode_get_connection_descriptor() ->
@@ -810,9 +810,9 @@ decode_get_connection_descriptor_resp(#'ApbGetConnectionDescriptorResp'{
     }) ->
     {Success, Descriptor, ErrorCode}.
 
-encode_connect_to_DCs(Descriptors) ->
+encode_connect_to_dcs(Descriptors) ->
     #'ApbConnectToDCs'{descriptors = Descriptors}.
-decode_connect_to_DCs(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
+decode_connect_to_dcs(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
     Descriptors.
 
 
@@ -927,13 +927,13 @@ error_messages_test() ->
   Resp3 = antidote_pb_codec:decode_response(Msg3),
   ?assertMatch(Resp3, {error, unknown}).
 
--define(TestCrdtOperationCodec(Type, Op, Param),
+-define(TEST_CRDT_OP_CODEC(Type, Op, Param),
   ?assertEqual(
     {{<<"key">>, Type, <<"bucket">>}, Op, Param},
     decode_update_op(encode_update_op({<<"key">>, Type, <<"bucket">>}, Op, Param)))
 ).
 
--define(TestCrdtResponseCodec(Type, ExpectedType, Val),
+-define(TEST_CRDT_RESP_CODEC(Type, ExpectedType, Val),
   ?assertEqual(
     {ExpectedType, Val},
     decode_read_object_resp(encode_read_object_resp(Type, Val)))
@@ -943,67 +943,67 @@ crdt_encode_decode_test() ->
   %% encoding the following operations and decoding them again, should give the same result
 
   % Counter
-  ?TestCrdtOperationCodec(antidote_crdt_counter_pn, increment, 1),
-  ?TestCrdtResponseCodec(antidote_crdt_counter_pn, counter, 42),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_counter_pn, increment, 1),
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_counter_pn, counter, 42),
 
   % lww-register
-  ?TestCrdtOperationCodec(antidote_crdt_register_lww, assign, <<"hello">>),
-  ?TestCrdtResponseCodec(antidote_crdt_register_lww, reg, <<"blub">>),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_register_lww, assign, <<"hello">>),
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_register_lww, reg, <<"blub">>),
 
 
   % mv-register
-  ?TestCrdtOperationCodec(antidote_crdt_register_mv, assign, <<"hello">>),
-  ?TestCrdtResponseCodec(antidote_crdt_register_mv, mvreg, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_register_mv, assign, <<"hello">>),
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_register_mv, mvreg, [<<"a">>, <<"b">>, <<"c">>]),
 
   % set
-  ?TestCrdtOperationCodec(antidote_crdt_set_aw, add, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_set_aw, add_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtOperationCodec(antidote_crdt_set_aw, remove, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_set_aw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtResponseCodec(antidote_crdt_set_aw, set, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_aw, add, <<"hello">>),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_aw, add_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_aw, remove, <<"hello">>),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_aw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_set_aw, set, [<<"a">>, <<"b">>, <<"c">>]),
 
   % same for remove wins set:
-  ?TestCrdtOperationCodec(antidote_crdt_set_rw, add, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_set_rw, add_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtOperationCodec(antidote_crdt_set_rw, remove, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_set_rw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtResponseCodec(antidote_crdt_set_rw, set, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_rw, add, <<"hello">>),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_rw, add_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_rw, remove, <<"hello">>),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_set_rw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_set_rw, set, [<<"a">>, <<"b">>, <<"c">>]),
 
   % map
-  ?TestCrdtOperationCodec(antidote_crdt_map_rr, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
-  ?TestCrdtOperationCodec(antidote_crdt_map_rr, update, [
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_rr, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_rr, update, [
     {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
     {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}]),
-  ?TestCrdtOperationCodec(antidote_crdt_map_rr, remove, {<<"key">>, antidote_crdt_register_mv}),
-  ?TestCrdtOperationCodec(antidote_crdt_map_rr, remove, [
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_rr, remove, {<<"key">>, antidote_crdt_register_mv}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_rr, remove, [
     {<<"a">>, antidote_crdt_register_mv},
     {<<"b">>, antidote_crdt_register_mv}]),
-  ?TestCrdtOperationCodec(antidote_crdt_map_rr, batch, {
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_rr, batch, {
     [{{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
       {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}],
     [{<<"a">>, antidote_crdt_register_mv},
       {<<"b">>, antidote_crdt_register_mv}]}),
 
-  ?TestCrdtResponseCodec(antidote_crdt_map_rr, map, [
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_map_rr, map, [
     {{<<"a">>, antidote_crdt_register_mv}, <<"42">>}
   ]),
 
   % gmap
-  ?TestCrdtOperationCodec(antidote_crdt_map_go, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
-  ?TestCrdtOperationCodec(antidote_crdt_map_go, update, [
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_go, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_map_go, update, [
     {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
     {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}]),
-  ?TestCrdtResponseCodec(antidote_crdt_map_go, map, [
+  ?TEST_CRDT_RESP_CODEC(antidote_crdt_map_go, map, [
     {{<<"a">>, antidote_crdt_register_mv}, <<"42">>}
   ]),
 
   % flag
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, enable, {}),
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, disable, {}),
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, reset, {}),
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, enable, {}),
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, disable, {}),
-  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, reset, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, enable, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, disable, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, reset, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, enable, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, disable, {}),
+  ?TEST_CRDT_OP_CODEC(antidote_crdt_flag_ew, reset, {}),
 
   ok.
 
@@ -1015,7 +1015,7 @@ dc_management_test() ->
     ?assertMatch(true, is_record(Msg, 'ApbCreateDC')),
     ?assertMatch(Nodes, Msg#'ApbCreateDC'.nodes),
 
-    EncRecordDesc = antidote_pb_codec:encode(get_connection_descriptor,{}),
+    EncRecordDesc = antidote_pb_codec:encode(get_connection_descriptor, {}),
     [MsgCodeDesc, MsgDataDesc] = encode_msg(EncRecordDesc),
     MsgDesc = decode_msg(MsgCodeDesc, list_to_binary(MsgDataDesc)),
     ?assertMatch(true, is_record(MsgDesc, 'ApbGetConnectionDescriptor')),
@@ -1032,7 +1032,7 @@ dc_management_test() ->
     [MsgCodeConnect, MsgDataConnect] = encode_msg(EncRecordConnect),
     MsgConnect = decode_msg(MsgCodeConnect, list_to_binary(MsgDataConnect)),
     ?assertMatch(true, is_record(MsgConnect, 'ApbConnectToDCs')),
-    ?assertMatch(Descriptors, antidote_pb_codec:decode_connect_to_DCs(MsgConnect)),
+    ?assertMatch(Descriptors, antidote_pb_codec:decode_connect_to_dcs(MsgConnect)),
 
     ok.
 
