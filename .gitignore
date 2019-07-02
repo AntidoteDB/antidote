@@ -1,4 +1,7 @@
-.local_dialyzer_plt
 deps/
 ebin/
 _build/
+logs/
+*.beam
+*.o
+erl_crash.dump

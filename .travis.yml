@@ -6,6 +6,9 @@ install:
 script:
   - make test
   - make dialyzer
+  - make lint
+  - rebar3 as test coveralls send
+sudo: required
+dist: trusty
 notifications:
   email: bieniusa@gmail.com
-dist: trusty
