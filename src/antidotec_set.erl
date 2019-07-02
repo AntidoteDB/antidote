@@ -67,7 +67,7 @@ new(Set) ->
 value(#antidote_set{set=Set}) -> sets:to_list(Set).
 
 -spec dirty_value(antidote_set()) -> [term()].
-dirty_value(#antidote_set{set=Set, adds = Adds, rems=Rems}) ->
+dirty_value(#antidote_set{set=Set, adds = Adds, rems = Rems}) ->
   sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
 
 %% @doc Adds an element to the local set container.
@@ -80,7 +80,7 @@ remove(Elem, #antidote_set{rems=Rems}=Fset) ->
     Fset#antidote_set{rems=sets:add_element(Elem, Rems)}.
 
 -spec contains(term(), antidote_set()) -> boolean().
-contains(Elem, #antidote_set{set=Set}) ->
+contains(Elem, #antidote_set{set = Set}) ->
     sets:is_element(Elem, Set).
 
 %% @doc Determines whether the passed term is a set container.
@@ -92,7 +92,7 @@ is_type(T) ->
 -spec type() -> set.
 type() -> set.
 
-to_ops(BoundObject, #antidote_set{adds=Adds, rems=Rems}) ->
+to_ops(BoundObject, #antidote_set{adds = Adds, rems = Rems}) ->
     R = case sets:size(Rems) > 0 of
             true -> [{BoundObject, remove_all, sets:to_list(Rems)}];
             false -> []
