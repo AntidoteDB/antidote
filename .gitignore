@@ -2,3 +2,4 @@
 deps/
 ebin/
 _build/
+*.xml
