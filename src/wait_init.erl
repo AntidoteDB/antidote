@@ -39,7 +39,7 @@
 %% and readitem gen_servers have been started.
 %% Returns true if all vnodes are initialized for all physical nodes,
 %% false otherwise
--spec check_ready_nodes([node()]) -> true.
+-spec check_ready_nodes([node()]) -> boolean().
 check_ready_nodes(Nodes) ->
     lists:all(fun check_ready/1, Nodes).
 

@@ -452,7 +452,7 @@ update_snapshot_from_cache(SnapshotResponse, Key, OpsCache) ->
 %%
 %%      Will also return how many operations were in the cache.
 %%
--spec fetch_updates_from_cache(cache_id(), key()) -> {[op_and_id()] | tuple(), integer()}.
+-spec fetch_updates_from_cache(cache_id(), key()) -> {[op_and_id()] | tuple(), non_neg_integer()}.
 fetch_updates_from_cache(OpsCache, Key) ->
     case ets:lookup(OpsCache, Key) of
         [] ->

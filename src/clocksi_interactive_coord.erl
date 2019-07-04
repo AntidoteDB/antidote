@@ -660,7 +660,7 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
 %% @doc TODO
 start_tx_internal(From, ClientClock, Properties, State = #state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
-    case IsStatic of
+    _ = case IsStatic of
         true -> ok;
         false -> From ! {ok, TransactionId}
     end,
@@ -818,7 +818,7 @@ reply_to_client(State = #state{
     transaction=Transaction,
     return_accumulator=ReturnAcc
 }) ->
-    case From of
+    _ = case From of
         undefined ->
             ok;
 

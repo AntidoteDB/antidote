@@ -79,12 +79,12 @@
 -define(PREFIX_POST, {commit_hooks, post}).
 
 -spec register_post_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, reason()}.
+      ok | {error, function_not_exported}.
 register_post_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_POST, Bucket, Module, Function).
 
 -spec register_pre_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, reason()}.
+      ok | {error, function_not_exported}.
 register_pre_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_PRE, Bucket, Module, Function).
 
