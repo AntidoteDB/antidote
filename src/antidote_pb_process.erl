@@ -37,24 +37,27 @@
 
 -export([process/1]).
 
--spec decode_clock(binary()) -> snapshot_time() | ignore.
+-spec decode_clock(binary()) -> snapshot_time() | ignore | txid().
 decode_clock(Clock) ->
     case Clock of
         undefined -> ignore;
         _ -> binary_to_term(Clock)
     end.
 
+-spec encode_clock(snapshot_time() | txid()) -> binary().
+encode_clock(TxId) ->
+    term_to_binary(TxId).
 
--spec process(antidote_pb_codec:request()) -> antidote_pb_codec:response().
-process({start_transaction, {Clock, Properties}}) ->
+-spec process(antidote_pb_codec:request()) -> antidote_pb_codec:response_in().
+process({start_transaction, Clock, Properties}) ->
     Response = antidote:start_transaction(decode_clock(Clock), Properties),
     case Response of
-        {ok, TxId} -> {start_transaction_response, {ok, TxId}};
+        {ok, TxId} -> {start_transaction_response, {ok, encode_clock(TxId)}};
         {error, Reason} -> {start_transaction_response, {error, Reason}}
     end;
 
 process({abort_transaction, TxId}) ->
-    Response = antidote:abort_transaction(TxId),
+    Response = antidote:abort_transaction(decode_clock(TxId)),
     case Response of
         ok -> {operation_response, ok};
         {error, Reason} -> {operation_response, {error, Reason}}
@@ -64,39 +67,39 @@ process({abort_transaction, TxId}) ->
     end;
 
 process({commit_transaction, TxId}) ->
-    Response = antidote:commit_transaction(TxId),
+    Response = antidote:commit_transaction(decode_clock(TxId)),
     case Response of
         {error, Reason} -> {commit_response, {error, Reason}};
-        {ok, CommitTime} -> {commit_response, {ok, CommitTime}}
+        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
     end;
 
-process({update_objects, {Updates, TxId}}) ->
-    Response = antidote:update_objects(Updates, TxId),
+process({update_objects, Updates, TxId}) ->
+    Response = antidote:update_objects(Updates, decode_clock(TxId)),
     case Response of
         {error, Reason} -> {operation_response, {error, Reason}};
         ok -> {operation_response, ok}
     end;
 
-process({static_update_objects, {Clock, Properties, Updates}}) ->
+process({static_update_objects, Clock, Properties, Updates}) ->
     Response = antidote:update_objects(decode_clock(Clock), Properties, Updates),
     case Response of
         {error, Reason} -> {commit_response, {error, Reason}};
-        {ok, CommitTime} -> {commit_response, {ok, CommitTime}}
+        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
     end;
 
-process({read_objects, {Objects, TxId}}) ->
-    Response = antidote:read_objects(Objects, TxId),
+process({read_objects, Objects, TxId}) ->
+    Response = antidote:read_objects(Objects, decode_clock(TxId)),
     case Response of
         {error, Reason} -> {read_objects_response, {error, Reason}};
         {ok, Results} -> {read_objects_response, {ok, lists:zip(Objects, Results)}}
     end;
 
 
-process({static_read_objects, {Clock, Properties, Objects}}) ->
+process({static_read_objects, Clock, Properties, Objects}) ->
     Response = antidote:read_objects(decode_clock(Clock), Properties, Objects),
     case Response of
-        {error, Reason} ->{commit_response, {error, Reason}};
-        {ok, Results, CommitTime} -> {static_read_objects_response, {ok, lists:zip(Objects, Results), CommitTime}}
+        {error, Reason} -> {error_response, {error, Reason}};
+        {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}}
     end;
 
 process({create_dc, NodeNames}) ->
@@ -109,7 +112,7 @@ process({create_dc, NodeNames}) ->
        {operation_response, {error, create_dc_failed}}
     end;
 
-process({get_connection_descriptor}) ->
+process(get_connection_descriptor) ->
     try
        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
        {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
@@ -127,9 +130,9 @@ process({connect_to_dcs, Descriptors}) ->
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
         logger:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
         {operation_response, {error, connect_to_dcs_failed}}
-    end;
+    end.
 
-process(Message) ->
-  logger:error("Received unhandled message ~p~n", [Message]),
-  MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
-  {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
+% process(Message) ->
+%   logger:error("Received unhandled message ~p~n", [Message]),
+%   MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
+%   {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.

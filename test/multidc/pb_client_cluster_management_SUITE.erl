@@ -70,12 +70,11 @@ all() -> [
     setup_cluster_test
 ].
 
--spec send_pb_message(pid(), antidote_pb_codec:request()) -> antidote_pb_codec:response().
+-spec send_pb_message(pid(), antidote_pb_codec:request()) -> antidote_pb_codec:response_in().
 send_pb_message(Pid, Message) ->
-    EncMsg = antidote_pb_codec:encode(Message),
+    EncMsg = antidote_pb_codec:encode_request(Message),
     ResponseRaw = antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, infinity}),
-    <<MsgCode:8, ProtoBufMsg/bits>> = ResponseRaw,
-    antidote_pb_codec:decode(MsgCode, ProtoBufMsg).
+    antidote_pb_codec:decode_response(ResponseRaw).
 
 
 %% Single object rea
