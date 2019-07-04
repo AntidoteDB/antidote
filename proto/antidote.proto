@@ -14,6 +14,7 @@ enum CRDT_type {
     FATCOUNTER = 12;
     FLAG_EW = 13;
     FLAG_DW = 14;
+    BCOUNTER = 15;
 }
 
 // Riak Error response
