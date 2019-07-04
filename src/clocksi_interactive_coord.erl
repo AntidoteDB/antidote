@@ -807,6 +807,7 @@ prepare_2pc(State = #state{
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
+
 reply_to_client(State = #state{
     from=From,
     state=TxState,
