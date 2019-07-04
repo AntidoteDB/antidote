@@ -40,15 +40,15 @@
 
 %% State
 -record(state, {
-  op_buffer :: dict:dict(txid(), [#log_record{}])
+  op_buffer :: dict:dict(txid(), [log_record()])
 }).
-
+-type state() :: #state{}.
 %%%% API --------------------------------------------------------------------+
 
--spec new_state() -> #state{}.
+-spec new_state() -> state().
 new_state() -> #state{op_buffer = dict:new()}.
 
--spec process(#log_record{}, #state{}) -> {{ok, [#log_record{}]} | none, #state{}}.
+-spec process(log_record(), state()) -> {{ok, [log_record()]} | none, state()}.
 process(LogRecord, State) ->
   Payload = LogRecord#log_record.log_operation,
   TxId = Payload#log_operation.tx_id,
@@ -59,10 +59,10 @@ process(LogRecord, State) ->
     _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
--spec process_all([#log_record{}], #state{}) -> {[[#log_record{}]], #state{}}.
+-spec process_all([log_record()], state()) -> {[[log_record()]], state()}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
--spec process_all([#log_record{}], [[#log_record{}]], #state{}) -> {[[#log_record{}]], #state{}}.
+-spec process_all([log_record()], [[log_record()]], state()) -> {[[log_record()]], state()}.
 process_all([], Acc, State) -> {Acc, State};
 process_all([H|T], Acc, State) ->
   {Result, NewState} = process(H, State),
@@ -74,7 +74,7 @@ process_all([H|T], Acc, State) ->
 
 %%%% Methods ----------------------------------------------------------------+
 
--spec find_or_default(#tx_id{}, any(), dict:dict()) -> any().
+-spec find_or_default(txid(), any(), dict:dict()) -> any().
 find_or_default(Key, Default, Dict) ->
   case dict:find(Key, Dict) of
     {ok, Val} -> Val;
