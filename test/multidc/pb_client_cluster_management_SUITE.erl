@@ -91,7 +91,7 @@ setup_cluster_test(Config) ->
         ct:pal("joining clusterdev1, clusterdev2"),
         Response = send_pb_message(Pb, {create_dc, [Node1, Node2]}),
         ct:pal("joined clusterdev1, clusterdev2: ~p", [Response]),
-        {opresponse,ok} = Response,
+        {operation_response,ok} = Response,
         _Disconnected = antidotec_pb_socket:stop(Pb)
     end),
 
@@ -101,7 +101,7 @@ setup_cluster_test(Config) ->
         ct:pal("joining clusterdev3, clusterdev4"),
         Response = send_pb_message(Pb, {create_dc, [Node3, Node4]}),
         ct:pal("joined clusterdev3, clusterdev4: ~p", [Response]),
-        {opresponse,ok} = Response,
+        {operation_response,ok} = Response,
         _Disconnected = antidotec_pb_socket:stop(Pb)
     end),
 
@@ -111,17 +111,17 @@ setup_cluster_test(Config) ->
     % get descriptor of cluster 2:
     {ok, Pb3} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev3) + 2),
     ct:pal("get_connection_descriptor clusterdev3"),
-    Response3 = send_pb_message(Pb3, {get_connection_descriptor}),
-    ct:pal("get_connection_descriptor clusterdev3: ~p", [Response3]),
-    {get_connection_descriptor_resp, {ok, Descriptor3}} = Response3,
+    {get_connection_descriptor_resp, {ok, DescriptorBin3}} = send_pb_message(Pb3, get_connection_descriptor),
+    Descriptor3 = binary_to_term(DescriptorBin3),
+    ct:pal("get_connection_descriptor clusterdev3: ~p", [Descriptor3]),
 
 
     % use descriptor to connect both dcs
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
     ct:pal("connecting clusters"),
-    Response1 = send_pb_message(Pb1, {connect_to_dcs, [Descriptor3]}),
+    Response1 = send_pb_message(Pb1, {connect_to_dcs, [DescriptorBin3]}),
     ct:pal("connected clusters: ~p", [Response1]),
-    ?assertEqual({opresponse,ok}, Response1),
+    ?assertEqual({operation_response, ok}, Response1),
 
 
 
