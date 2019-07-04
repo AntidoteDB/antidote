@@ -37,8 +37,8 @@
 
 -export([process/1]).
 
--spec decode_clock(binary()) -> snapshot_time() | ignore | txid().
-decode_clock(Clock) ->
+-spec from_bin(binary()) -> snapshot_time() | ignore | txid().
+from_bin(Clock) ->
     case Clock of
         undefined -> ignore;
         _ -> binary_to_term(Clock)
@@ -50,14 +50,14 @@ encode_clock(TxId) ->
 
 -spec process(antidote_pb_codec:request()) -> antidote_pb_codec:response_in().
 process({start_transaction, Clock, Properties}) ->
-    Response = antidote:start_transaction(decode_clock(Clock), Properties),
+    Response = antidote:start_transaction(from_bin(Clock), Properties),
     case Response of
         {ok, TxId} -> {start_transaction_response, {ok, encode_clock(TxId)}};
         {error, Reason} -> {start_transaction_response, {error, Reason}}
     end;
 
 process({abort_transaction, TxId}) ->
-    Response = antidote:abort_transaction(decode_clock(TxId)),
+    Response = antidote:abort_transaction(from_bin(TxId)),
     case Response of
         ok -> {operation_response, ok};
         {error, Reason} -> {operation_response, {error, Reason}}
@@ -67,28 +67,28 @@ process({abort_transaction, TxId}) ->
     end;
 
 process({commit_transaction, TxId}) ->
-    Response = antidote:commit_transaction(decode_clock(TxId)),
+    Response = antidote:commit_transaction(from_bin(TxId)),
     case Response of
         {error, Reason} -> {commit_response, {error, Reason}};
         {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
     end;
 
 process({update_objects, Updates, TxId}) ->
-    Response = antidote:update_objects(Updates, decode_clock(TxId)),
+    Response = antidote:update_objects(Updates, from_bin(TxId)),
     case Response of
         {error, Reason} -> {operation_response, {error, Reason}};
         ok -> {operation_response, ok}
     end;
 
 process({static_update_objects, Clock, Properties, Updates}) ->
-    Response = antidote:update_objects(decode_clock(Clock), Properties, Updates),
+    Response = antidote:update_objects(from_bin(Clock), Properties, Updates),
     case Response of
         {error, Reason} -> {commit_response, {error, Reason}};
         {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
     end;
 
 process({read_objects, Objects, TxId}) ->
-    Response = antidote:read_objects(Objects, decode_clock(TxId)),
+    Response = antidote:read_objects(Objects, from_bin(TxId)),
     case Response of
         {error, Reason} -> {read_objects_response, {error, Reason}};
         {ok, Results} -> {read_objects_response, {ok, lists:zip(Objects, Results)}}
@@ -96,7 +96,7 @@ process({read_objects, Objects, TxId}) ->
 
 
 process({static_read_objects, Clock, Properties, Objects}) ->
-    Response = antidote:read_objects(decode_clock(Clock), Properties, Objects),
+    Response = antidote:read_objects(from_bin(Clock), Properties, Objects),
     case Response of
         {error, Reason} -> {error_response, {error, Reason}};
         {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}}
