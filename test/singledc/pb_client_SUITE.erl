@@ -116,7 +116,7 @@ get_empty_crdt_test(_Config) ->
     Bound_object = {<<"key1">>, antidote_crdt_counter_pn, Bucket},
 
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, []),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
 
@@ -194,7 +194,7 @@ pb_test_set_read_write(_Config) ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
 
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, []),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
 
