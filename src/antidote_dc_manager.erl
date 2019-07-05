@@ -77,11 +77,11 @@ create_dc(Nodes) ->
     wait_until_ring_converged(Nodes),
     ok = wait_until(hd(Nodes), fun wait_init:check_ready/1),
     %% starts metadata services needed for intra-dc communication
-    ok = inter_dc_manager:start_bg_processes(stable),
+    ok = inter_dc_manager:start_bg_processes(stable_time_functions),
     ok.
 
 %% Start receiving updates from other DCs
--spec subscribe_updates_from([#descriptor{}]) -> ok.
+-spec subscribe_updates_from([descriptor()]) -> ok.
 subscribe_updates_from(DCDescriptors) ->
     _Connected = inter_dc_manager:observe_dcs_sync(DCDescriptors),
     %%TODO Check return for errors
@@ -89,7 +89,7 @@ subscribe_updates_from(DCDescriptors) ->
     ok.
 
 %% Get the DC connection descriptor to be given to other DCs
--spec get_connection_descriptor() -> {ok, #descriptor{}}.
+-spec get_connection_descriptor() -> {ok, descriptor()}.
 get_connection_descriptor() ->
     inter_dc_manager:get_descriptor().
 

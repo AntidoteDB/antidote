@@ -84,7 +84,7 @@ get_address_list() ->
     Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
 
--spec broadcast(#interdc_txn{}) -> ok.
+-spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
   case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
     {'EXIT', _Reason} -> logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.

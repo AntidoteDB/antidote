@@ -63,7 +63,7 @@
                 id :: non_neg_integer(),
                 prepared_cache ::  cache_id(),
                 self :: atom()}).
-
+-type state() :: #state{}.
 -type read_property_list() :: [].
 -export_type([read_property_list/0]).
 %%%===================================================================
@@ -212,7 +212,7 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyLis
     ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0}.
 
--spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
+-spec perform_read_internal(pid(), key(), type(), tx(), read_property_list(), state()) ->
                    ok.
 perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
               _SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
@@ -265,7 +265,7 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm, pid()} | {pid(), term()}, key(), type(), #transaction{}, read_property_list(), partition_id()) -> ok.
+-spec return({fsm, pid()} | {pid(), term()}, key(), type(), tx(), read_property_list(), partition_id()) -> ok.
 return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,

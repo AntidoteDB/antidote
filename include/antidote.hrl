@@ -100,6 +100,7 @@
     commit_time :: dc_and_commit_time(),
     snapshot_time :: snapshot_time()
 }).
+-type commit_log_payload() :: #commit_log_payload{}.
 
 -record(update_log_payload, {
     key :: key(),
@@ -107,6 +108,7 @@
     type :: type(),
     op :: op()
 }).
+-type update_log_payload() :: #update_log_payload{}.
 
 -record(abort_log_payload, {}).
 
@@ -126,6 +128,7 @@
              | noop,
     log_payload :: any_log_payload()
 }).
+-type log_operation() :: #log_operation{}.
 
 -record(op_number, {
     %% TODO 19 undefined is required here, because of the use in inter_dc_log_sender_vnode.
@@ -134,16 +137,17 @@
     global :: undefined | non_neg_integer(),
     local :: undefined | non_neg_integer()
 }).
+-type op_number() :: #op_number{}.
 
 %% The way records are stored in the log.
 -record(log_record, {
     %% The version of the log record, for backwards compatability
     version :: non_neg_integer(),
-    op_number :: #op_number{},
-    bucket_op_number :: #op_number{},
-    log_operation :: #log_operation{}
+    op_number :: op_number(),
+    bucket_op_number :: op_number(),
+    log_operation :: log_operation()
 }).
-
+-type log_record() :: #log_record{}.
 %% Clock SI
 
 %% MIN is Used for generating the timeStamp of a new snapshot
@@ -174,7 +178,7 @@
     last_op_id :: op_num(),
     value :: snapshot()
 }).
-
+-type materialized_snapshot() :: #materialized_snapshot{}.
 %%---------------------------------------------------------------------
 -type actor() :: term().
 -type key() :: term().
@@ -245,7 +249,10 @@
               bound_object/0,
               module_name/0,
               function_name/0,
-              clocksi_payload/0]).
+              clocksi_payload/0,
+              materialized_snapshot/0,
+              snapshot_get_response/0, log_operation/0, log_record/0, op_number/0,
+              update_log_payload/0, commit_log_payload/0]).
 
 
 %% The record is using during materialization to keep the
@@ -256,9 +263,10 @@
     %% size of ops_list
     number_of_ops :: non_neg_integer(),
     %% the previous snapshot to apply the ops to
-    materialized_snapshot :: #materialized_snapshot{},
+    materialized_snapshot :: materialized_snapshot(),
     %% The version vector time of the snapshot
     snapshot_time :: snapshot_time() | ignore,
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).
+-type snapshot_get_response() :: #snapshot_get_response{}.

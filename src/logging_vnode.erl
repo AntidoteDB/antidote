@@ -139,7 +139,7 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(index_node(), key(), #log_operation{}, sender()) -> ok.
+-spec asyn_append(index_node(), key(), log_operation(), sender()) -> ok.
 asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
     riak_core_vnode_master:command(IndexNode,
                                    {append, Log, LogOperation, ?SYNC_LOG},
@@ -147,7 +147,7 @@ asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
--spec append(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
+-spec append(index_node(), key(), log_operation()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, LogOperation, false},
@@ -156,7 +156,7 @@ append(IndexNode, LogId, LogOperation) ->
 
 %% @doc synchronous append operation payload
 %% If enabled in antidote.hrl will ensure item is written to disk
--spec append_commit(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
+-spec append_commit(index_node(), key(), log_operation()) -> {ok, op_id()} | {error, term()}.
 append_commit(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload, is_sync_log()},
@@ -165,7 +165,7 @@ append_commit(IndexNode, LogId, Payload) ->
 
 %% @doc synchronous append list of log records (note a log record is a payload (log_operation) with an operation number)
 %% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
--spec append_group(index_node(), key(), [#log_record{}], boolean()) -> {ok, op_id()} | {error, term()}.
+-spec append_group(index_node(), key(), [log_record()], boolean()) -> {ok, op_id()} | {error, term()}.
 append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
@@ -173,7 +173,7 @@ append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
                                         infinity).
 
 %% @doc asynchronous append list of operations
--spec asyn_append_group(index_node(), key(), [#log_record{}], boolean()) -> ok.
+-spec asyn_append_group(index_node(), key(), [log_record()], boolean()) -> ok.
 asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
                                    {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
@@ -183,7 +183,7 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 %% @doc given the MaxSnapshotTime and the type, this method fetches from the log the
 %% desired operations smaller than the time so a new snapshot can be created.
 -spec get_up_to_time(index_node(), key(), vectorclock(), type(), key()) ->
-         #snapshot_get_response{} | {error, reason()}.
+         snapshot_get_response() | {error, reason()}.
 get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
                     {get, LogId, undefined, MaxSnapshotTime, Type, Key},
@@ -192,9 +192,9 @@ get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
 
 %% @doc given the MinSnapshotTime and the type, this method fetchss from the log the
 %% desired operations so a new snapshot can be created.
-%% It returns a #snapshot_get_response{} record which is defined in antidote.hrl
+%% It returns a snapshot_get_response() record which is defined in antidote.hrl
 -spec get_from_time(index_node(), key(), vectorclock(), type(), key()) ->
-         #snapshot_get_response{} | {error, reason()}.
+         snapshot_get_response() | {error, reason()}.
 get_from_time(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
                     {get, LogId, MinSnapshotTime, undefined, Type, Key},
@@ -205,7 +205,7 @@ get_from_time(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
 %% desired operations so a new snapshot can be created.
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
 -spec get_range(index_node(), key(), vectorclock(), vectorclock(), type(), key()) ->
-         #snapshot_get_response{} | {error, reason()}.
+         snapshot_get_response() | {error, reason()}.
 get_range(IndexNode, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
                     {get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key},
@@ -221,9 +221,9 @@ get_range(IndexNode, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key) ->
 %% the third is the location of the next chunk
 %% Otherwise if the end of the file is reached it returns a tuple
 %% where the first elelment is 'eof' and the second is a dict of commited operations
--spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])) ->
-             {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}
-             | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}.
+-spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])) ->
+             {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])}
+             | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])}.
 get_all(IndexNode, LogId, Continuation, PrevOps) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_all, LogId, Continuation, PrevOps},
                                         ?LOGGING_MASTER,
@@ -385,8 +385,8 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-%% -spec handle_command({append, log_id(), #log_operation{}, boolean()}, pid(), #state{}) ->
-%%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
+%% -spec handle_command({append, log_id(), log_operation(), boolean()}, pid(), #state{}) ->
+%%                      {reply, {ok, op_number()} #state{}} | {reply, error(), #state{}}.
 handle_command({append, LogId, LogOperation, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
@@ -445,8 +445,8 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 %% That is why IsLocal is hard coded to false
 %% Might want to support appending groups of local operations in the future
 %% for efficiency
-%% -spec handle_command({append_group, log_id(), [#log_record{}], false, boolean()}, pid(), #state{}) ->
-%%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
+%% -spec handle_command({append_group, log_id(), [log_record()], false, boolean()}, pid(), #state{}) ->
+%%                      {reply, {ok, op_number()} #state{}} | {reply, error(), #state{}}.
 handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
@@ -617,7 +617,7 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
 %% This is called when the vnode starts and loads into the cache
 %% the id of the last operation appended to the log, so that new ops will
 %% be assigned correct ids (after crash and restart)
--spec get_max_op_numbers([{log_id(), #log_record{}}], cache_id(), vectorclock()) -> vectorclock().
+-spec get_max_op_numbers([{log_id(), log_record()}], cache_id(), vectorclock()) -> vectorclock().
 get_max_op_numbers([], _ClockTable, MaxVector) ->
     MaxVector;
 get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
@@ -645,7 +645,7 @@ get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
     get_max_op_numbers(Rest, ClockTable, NewMaxVector).
 
 %% After appeded an operation to the log, increment the op id
--spec update_ets_op_id({log_id(), dcid()} | {log_id(), bucket(), dcid()}, #op_number{}, cache_id()) -> true.
+-spec update_ets_op_id({log_id(), dcid()} | {log_id(), bucket(), dcid()}, op_number(), cache_id()) -> true.
 update_ets_op_id(Key, NewOp, ClockTable) ->
     #op_number{local = Num, global = GlobalNum} = NewOp,
     case ets:lookup(ClockTable, Key) of
@@ -668,13 +668,13 @@ update_ets_op_id(Key, NewOp, ClockTable) ->
                snapshot_time(),
                snapshot_time(),
                 Ops :: dict:dict(txid(), [any_log_payload()]),
-               CommittedOpsDict :: dict:dict(key(), [#clocksi_payload{}]),
+               CommittedOpsDict :: dict:dict(key(), [clocksi_payload()]),
                load_all | load_per_chunk) ->
                     {disk_log:continuation(),
                    dict:dict(txid(), [any_log_payload()]),
-                   dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])} |
+                   dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])} |
                   {error, reason()} |
-                  {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}.
+                  {eof, dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])}.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
@@ -713,9 +713,9 @@ finish_op_load(CommittedOpsDict) ->
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the committed operations for that key which have a smaller commit time than MinSnapshotTime.
--spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(), snapshot_time(),
-                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
-                   {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+-spec filter_terms_for_key([{non_neg_integer(), log_record()}], key(), snapshot_time(), snapshot_time(),
+                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
+                   {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, _MaxSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
 filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
@@ -730,9 +730,9 @@ filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, 
             filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined,
-             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
-                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+-spec handle_update(txid(), update_log_payload(), [{non_neg_integer(), log_record()}], key(), snapshot_time() | undefined,
+             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
+                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
@@ -743,9 +743,9 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, C
             filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined,
-             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
-                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+-spec handle_commit(txid(), commit_log_payload(), [{non_neg_integer(), log_record()}], key(), snapshot_time() | undefined,
+             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
+                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
@@ -969,7 +969,7 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_log_record(log(), log_id(), #log_record{}, boolean()) -> {ok, #op_number{}} | {error, reason()}.
+-spec insert_log_record(log(), log_id(), log_record(), boolean()) -> {ok, op_number()} | {error, reason()}.
 insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
     Result = case EnableLogging of
                  true ->
@@ -994,7 +994,7 @@ insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
 preflist_member(Partition, Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
 
--spec get_op_id(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}) -> #op_number{}.
+-spec get_op_id(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}) -> op_number().
 get_op_id(ClockTable, {LogId, DCID}) ->
     case ets:lookup(ClockTable, {LogId, DCID}) of
         [] ->

@@ -111,17 +111,22 @@ start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     ct:log("Starting node ~p", [Name]),
 
+    {ok, Cwd} = file:get_cwd(),
+    AntidoteFolder = filename:dirname(filename:dirname(Cwd)),
+    PrivDir = proplists:get_value(priv_dir, Config),
+    NodeDir = filename:join([PrivDir, Name]) ++ "/",
+    filelib:ensure_dir(NodeDir),
+
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
         {monitor_master, true},
         {erl_flags, "-smp"}, %% smp for the eleveldb god
+        {cd, NodeDir},
         {startup_functions, [
             {code, set_path, [CodePath]}
         ]}],
-    case ct_slave:start(Name, NodeConfig) of
+    case ct_slave_ext:start(Name, NodeConfig) of
         {ok, Node} ->
-            PrivDir = proplists:get_value(priv_dir, Config),
-            NodeDir = filename:join([PrivDir, Node]),
 
             ct:log("Starting riak_core"),
             ok = rpc:call(Node, application, load, [riak_core]),
@@ -140,7 +145,7 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
 
-            ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["../../_build/default/rel/antidote/lib/"]]),
+            ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, [AntidoteFolder ++ "/_build/default/rel/antidote/lib/"]]),
 
             ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
 
@@ -159,7 +164,7 @@ start_node(Name, Config) ->
             Node;
         {error, Reason, Node} ->
             ct:pal("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
-            ct_slave:stop(Name),
+            ct_slave_ext:stop(Name),
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
@@ -175,7 +180,7 @@ kill_and_restart_nodes(NodeList, Config) ->
 %% @doc Kills all given nodes, crashes if one node cannot be stopped
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
-    lists:map(fun(Node) -> {ok, Name} = ct_slave:stop(get_node_name(Node)), Name end, NodeList).
+    lists:map(fun(Node) -> {ok, Name} = ct_slave_ext:stop(get_node_name(Node)), Name end, NodeList).
 
 
 %% @doc Send force kill signals to all given nodes
@@ -188,7 +193,7 @@ brutal_kill_nodes(NodeList) ->
                   %% kill -9 after X seconds just in case
 %%                  rpc:cast(Node, timer, apply_after,
 %%                      [?FORCE_KILL_TIMER, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-                  ct_slave:stop(get_node_name(Node)),
+                  ct_slave_ext:stop(get_node_name(Node)),
                   rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
                   Node
               end, NodeList).
@@ -299,7 +304,11 @@ descriptors(Clusters) ->
 web_ports(dev1) -> 10015;
 web_ports(dev2) -> 10025;
 web_ports(dev3) -> 10035;
-web_ports(dev4) -> 10045.
+web_ports(dev4) -> 10045;
+web_ports(clusterdev1) -> 10115;
+web_ports(clusterdev2) -> 10125;
+web_ports(clusterdev3) -> 10135;
+web_ports(clusterdev4) -> 10145.
 
 %% Build clusters
 join_cluster(Nodes) ->
