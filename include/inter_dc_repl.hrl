@@ -45,7 +45,7 @@
 %% on the site that is performing the query
 -record(inter_dc_query_state, {
 	  request_type :: inter_dc_message_type(),
-	  request_ref :: binary(),
+	  request_ref :: reference(),
 	  request_id_num_binary :: binary(),
 	  local_pid :: pid()
 	 }).

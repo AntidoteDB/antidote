@@ -87,13 +87,13 @@ handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
     {reply, Resp, NewState}.
 
-handle_cast(#pub_sub_msg{payload = #interdc_txn{} = Msg}, State) ->
+handle_info(#pub_sub_msg{payload = #interdc_txn{} = Msg}, State) ->
     inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State};
 
-handle_cast(_Request, State) -> {noreply, State}.
+handle_info(_Request, State) -> {noreply, State}.
 
-handle_info(_Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

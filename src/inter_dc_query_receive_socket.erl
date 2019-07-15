@@ -107,7 +107,7 @@ init([]) ->
         load_balanced => true,
         handler => self(),
         network_params => #{
-            host => {0,0,0,0},
+            host => {0, 0, 0, 0},
             port => Port
         }
     },
@@ -117,11 +117,18 @@ init([]) ->
     {ok, #state{channel = Channel}}.
 
 
-handle_info(Info, State) ->
+handle_cast({send_response, BinaryResponse,
+    #inter_dc_query_state{request_type = ReqType, request_ref = RRef,
+        request_id_num_binary = ReqId}}, #state{channel = Channel} = State) ->
+
+    antidote_channel:reply(Channel, RRef, make_message(BinaryResponse, ReqId, ReqType)),
+    {noreply, State};
+
+handle_cast(Info, State) ->
     logger:info("got weird info ~p", [Info]),
     {noreply, State}.
 
-handle_cast(#rpc_msg{request_id = RRef, request_payload = Payload}, #state{channel = Channel} = State) ->
+handle_info(#rpc_msg{request_id = RRef, request_payload = Payload}, #state{channel = Channel} = State) when RRef =/= undefined->
     %% Decode the message
     {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(Payload),
     %% Create a response
@@ -147,14 +154,7 @@ handle_cast(#rpc_msg{request_id = RRef, request_payload = Payload}, #state{chann
     end,
     {noreply, State};
 
-handle_cast({send_response, BinaryResponse,
-         #inter_dc_query_state{request_type = ReqType, request_ref = RRef,
-                   request_id_num_binary = ReqId}}, #state{channel = Channel} = State) ->
-
-    antidote_channel:reply(Channel, RRef, make_message(BinaryResponse, ReqId, ReqType)),
-    {noreply, State};
-
-handle_cast(_Request, State) -> {noreply, State}.
+handle_info(_Request, State) -> {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.
 

@@ -178,7 +178,10 @@ handle_cast({chan_started, _}, State) ->
 handle_cast({chan_closed, _}, State) ->
     {noreply, State};
 
-handle_cast(#rpc_msg{reply_payload = BinaryMsg}, State=#state{unanswered_queries=Table}) ->
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+handle_info(#rpc_msg{reply_payload = BinaryMsg}, State=#state{unanswered_queries=Table}) ->
     <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>>
     = binary_utilities:check_message_version(BinaryMsg),
     %% Be sure this is a request from this socket
@@ -197,9 +200,8 @@ handle_cast(#rpc_msg{reply_payload = BinaryMsg}, State=#state{unanswered_queries
     end,
     {noreply, State};
 
-handle_cast(_Request, State) ->
-    {noreply, State}.
 handle_info(_Request, State) -> {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 terminate(_Reason, State) ->
