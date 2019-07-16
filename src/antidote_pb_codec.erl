@@ -32,7 +32,7 @@
 
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
 -type update() :: {Object :: bound_object(), Op :: atom(), Param :: any()}.
--type error_code() :: unknown |  timeout | {error_code, integer()}.
+-type error_code() :: unknown |  timeout | no_permissions | aborted | {error_code, integer()}.
 -type read_result() ::
   {counter, integer()}
 | {set, [binary()]}
@@ -324,11 +324,13 @@ decode_message(#'ApbOperationResp'{success = S, errorcode = E}) ->
 encode_error_code(unknown) -> 0;
 encode_error_code(timeout) -> 1;
 encode_error_code(no_permissions) -> 2;
+encode_error_code(aborted) -> 3;
 encode_error_code({error_code, X})  -> X.
 
 decode_error_code(0) -> unknown;
 decode_error_code(1) -> timeout;
 decode_error_code(2) -> no_permissions;
+decode_error_code(3) -> aborted;
 decode_error_code(X) -> {error_code, X}.
 
 
@@ -863,6 +865,8 @@ error_messages_test() ->
   check_response({get_connection_descriptor_resp, {error, unknown}}),
   check_response({error_response, {unknown, <<"Message">>}}),
   check_response({error_response, {timeout, <<"Message">>}}),
+  check_response({error_response, {no_permissions, <<"Message">>}}),
+  check_response({error_response, {aborted, <<"Message">>}}),
   check_response({error_response, {{error_code, 123}, <<"Message">>}}, {error_response, {{error_code, 123}, <<"Message">>}}).
 
 dc_management_test() ->
