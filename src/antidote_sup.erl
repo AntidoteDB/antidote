@@ -81,7 +81,7 @@ init(_Args) ->
 
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
 
-    ZMQContextManager = ?CHILD(zmq_context, worker, []),
+    %ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
     StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
@@ -141,7 +141,7 @@ init(_Args) ->
        ClockSIiTxCoordSup,
        ClockSIReadSup,
        MaterializerMaster,
-       ZMQContextManager,
+       %ZMQContextManager,
        InterDcPub,
        InterDcSub,
        InterDcSubVnode,

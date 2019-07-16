@@ -16,12 +16,13 @@
                   elli,
                   elli_prometheus,
                   prometheus_process_collector,
-                  antidote_channels
-                 ]},
+                  ranch
+      ]},
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
-        antidote_crdt
+        antidote_crdt,
+        antidote_channels
     ]},
 
   {mod, { antidote_app, []}},
