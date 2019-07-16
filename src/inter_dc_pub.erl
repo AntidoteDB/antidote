@@ -38,19 +38,19 @@
 
 %% API
 -export([
-  broadcast/1,
-  get_address/0,
-  get_address_list/0]).
+    broadcast/1,
+    get_address/0,
+    get_address_list/0]).
 
 %% Server methods
 -export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3]).
+    init/1,
+    start_link/0,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3]).
 
 %% State
 -record(state, {channel :: channel()}).
@@ -59,19 +59,19 @@
 
 -spec get_address() -> socket_address().
 get_address() ->
-  %% first try resolving our hostname according to the node name
-  [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-  Ip = case inet:getaddr(Hostname, inet) of
-    {ok, HostIp} -> HostIp;
-    {error, _} ->
-      %% cannot resolve hostname locally, fall back to interface ip
-      %% TODO check if we do not return a link-local address
-      {ok, List} = inet:getif(),
-      {IIp, _, _} = hd(List),
-      IIp
-  end,
-  Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-  {Ip, Port}.
+    %% first try resolving our hostname according to the node name
+    [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
+    Ip = case inet:getaddr(Hostname, inet) of
+             {ok, HostIp} -> HostIp;
+             {error, _} ->
+                 %% cannot resolve hostname locally, fall back to interface ip
+                 %% TODO check if we do not return a link-local address
+                 {ok, List} = inet:getif(),
+                 {IIp, _, _} = hd(List),
+                 IIp
+         end,
+    Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
+    {Ip, Port}.
 
 -spec get_address_list() -> [socket_address()].
 get_address_list() ->
@@ -80,18 +80,19 @@ get_address_list() ->
     %% get host name from node name
     [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
     IpList = case inet:getaddr(Hostname, inet) of
-      {ok, HostIp} -> [HostIp|List1];
-      {error, _} -> List1
-    end,
+                 {ok, HostIp} -> [HostIp | List1];
+                 {error, _} -> List1
+             end,
     Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
 
--spec broadcast(#interdc_txn{}) -> ok.
-broadcast(#interdc_txn{partition = P}=Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:partition_to_bin(P), Txn}) of
-    {'EXIT', _Reason} -> logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
-    Normal -> Normal
-  end.
+-spec broadcast(interdc_txn()) -> ok.
+broadcast(#interdc_txn{partition = P} = Txn) ->
+    case catch gen_server:call(?MODULE, {publish, inter_dc_txn:partition_to_bin(P), Txn}) of
+        {'EXIT', _Reason} ->
+            logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+        Normal -> Normal
+    end.
 
 %%%% Server methods ---------------------------------------------------------+
 

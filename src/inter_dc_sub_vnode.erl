@@ -61,17 +61,18 @@
 %% State
 -record(state, {
   partition :: non_neg_integer(),
-  buffer_fsms :: dict:dict(dcid(), #inter_dc_sub_buf{}) %% dcid -> buffer
+  buffer_fsms :: dict:dict(dcid(), inter_dc_sub_buf()) %% dcid -> buffer
 }).
+-type state() :: #state{}.
 
 %%%% API --------------------------------------------------------------------+
 
--spec deliver_txn(#interdc_txn{}) -> ok.
+-spec deliver_txn(interdc_txn()) -> ok.
 deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
 
 %% This function is called with the response from the log request operations request
 %% when some messages were lost
--spec deliver_log_reader_resp(binary(), #request_cache_entry{}) -> ok.
+-spec deliver_log_reader_resp(binary(), request_cache_entry()) -> ok.
 deliver_log_reader_resp(BinaryRep, _RequestCacheEntry) ->
     <<Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
     call(Partition, {log_reader_resp, RestBinary}).
@@ -87,7 +88,7 @@ handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
   {noreply, set_buf(DCID, Buf1, State)};
 
 handle_command({log_reader_resp, BinaryRep}, _Sender, State) ->
-  %% The binary reply is type {pdcid(), [#interdc_txn{}]}
+  %% The binary reply is type {pdcid(), [interdc_txn()]}
   {{DCID, _Partition}, Txns} = binary_to_term(BinaryRep),
   Buf0 = get_buf(DCID, State),
   Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
@@ -111,15 +112,15 @@ handle_overload_info(_, _) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
+-spec call(partition_id(), {txn, interdc_txn()} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
--spec get_buf(dcid(), #state{}) -> #inter_dc_sub_buf{}.
+-spec get_buf(dcid(), state()) -> inter_dc_sub_buf().
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
     error -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
   end.
 
--spec set_buf(dcid(), #inter_dc_sub_buf{}, #state{}) -> #state{}.
+-spec set_buf(dcid(), inter_dc_sub_buf(), state()) -> state().
 set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.

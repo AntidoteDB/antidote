@@ -62,8 +62,8 @@ handle_cast(_Req, State) ->
     {noreply, State}.
 
 handle_info(periodic_update, OldTimer) ->
-    erlang:cancel_timer(OldTimer),
-    update_staleness(),
+    _ = erlang:cancel_timer(OldTimer),
+    _ = update_staleness(),
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, Timer}.
 
@@ -87,7 +87,7 @@ init_metrics() ->
 calculate_staleness() ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
     CurrentClock = to_microsec(os:timestamp()),
-    Staleness = dict:fold(fun(_K, C, Max) ->
+    Staleness = vectorclock:fold(fun(_K, C, Max) ->
                                    max(CurrentClock - C, Max)
                            end, 0, SS),
     round(Staleness/(1000)). %% To millisecs

@@ -187,7 +187,7 @@ get_partition_at_index(Index) ->
     end.
 
 %% Store an external dc descriptor
--spec store_dc_descriptors([#descriptor{}]) -> ok.
+-spec store_dc_descriptors([descriptor()]) -> ok.
 store_dc_descriptors(Descriptors) ->
     MergeFunc = fun(DescList, PrevDict) ->
                         lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
@@ -197,7 +197,7 @@ store_dc_descriptors(Descriptors) ->
     stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, MergeFunc, fun dict:new/0).
 
 %% Gets the list of external dc descriptors
--spec get_dc_descriptors() -> [#descriptor{}].
+-spec get_dc_descriptors() -> [descriptor()].
 get_dc_descriptors() ->
     case stable_meta_data_server:read_meta_data(external_descriptors) of
         {ok, Dict} ->

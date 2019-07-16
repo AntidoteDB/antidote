@@ -91,7 +91,7 @@ get_address_list() ->
     AddressList = [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}],
     {PartitionList, AddressList}.
 
--spec send_response(binary(), #inter_dc_query_state{}) -> ok.
+-spec send_response(binary(), inter_dc_query_state()) -> ok.
 send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sender}) ->
     ok = gen_server:cast(Sender, {send_response, BinaryResponse, QueryState}).
 

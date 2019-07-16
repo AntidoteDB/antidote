@@ -46,7 +46,7 @@
   forget_dcs/1,
   drop_ping/1]).
 
--spec get_descriptor() -> {ok, #descriptor{}}.
+-spec get_descriptor() -> {ok, descriptor()}.
 get_descriptor() ->
   %% Wait until all needed vnodes are spawned, so that the heartbeats are already being sent
   ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
@@ -64,7 +64,7 @@ get_descriptor() ->
 %% When a connecting to a new DC, Nodes will be all the nodes in the local DC
 %% Otherwise this will be called with a single node that is reconnecting (for example after one of the nodes in the DC crashes and restarts)
 %% Note this is an internal function, to instruct the local DC to connect to a new DC the observe_dcs_sync(Descriptors) function should be used
--spec observe_dc(#descriptor{}, [node()]) -> ok | inter_dc_conn_err().
+-spec observe_dc(descriptor(), [node()]) -> ok | inter_dc_conn_err().
 observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}, Nodes) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
     case PartitionsNumRemote == PartitionsNumLocal of
@@ -84,7 +84,7 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
             end
     end.
 
--spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) ->
+-spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], descriptor(), non_neg_integer()) ->
                ok | {error, connection_error}.
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
@@ -200,18 +200,18 @@ check_node_restart() ->
             false
     end.
 
--spec reconnect_dcs_after_restart([#descriptor{}], node()) -> [ok | inter_dc_conn_err()].
+-spec reconnect_dcs_after_restart([descriptor()], node()) -> [ok | inter_dc_conn_err()].
 reconnect_dcs_after_restart(Descriptors, MyNode) ->
     ok = forget_dcs(Descriptors, [MyNode]),
     observe_dcs_sync(Descriptors, [MyNode]).
 
 %% This should be called when connecting the local DC to a new external DC
--spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
+-spec observe_dcs_sync([descriptor()]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
     observe_dcs_sync(Descriptors, Nodes).
 
--spec observe_dcs_sync([#descriptor{}], [node()]) -> [ok | inter_dc_conn_err()].
+-spec observe_dcs_sync([descriptor()], [node()]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors, Nodes) ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
@@ -220,7 +220,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
                       case Res of
                           ok ->
-                            Value = vectorclock:get_clock_of_dc(DCID, SS),
+                            Value = vectorclock:get(DCID, SS),
                             wait_for_stable_snapshot(DCID, Value),
                             ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
                           _ ->
@@ -229,7 +229,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
                   end, DCs),
     [Result1 || {Result1, _DC1} <- DCs].
 
--spec forget_dc(#descriptor{}, [node()]) -> ok.
+-spec forget_dc(descriptor(), [node()]) -> ok.
 forget_dc(#descriptor{dcid = DCID}, Nodes) ->
   case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
@@ -239,12 +239,12 @@ forget_dc(#descriptor{dcid = DCID}, Nodes) ->
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
 
--spec forget_dcs([#descriptor{}]) -> ok.
+-spec forget_dcs([descriptor()]) -> ok.
 forget_dcs(Descriptors) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
     forget_dcs(Descriptors, Nodes).
 
--spec forget_dcs([#descriptor{}], [node()]) -> ok.
+-spec forget_dcs([descriptor()], [node()]) -> ok.
 forget_dcs(Descriptors, Nodes) -> lists:foreach(fun(Descriptor) ->
                                                     forget_dc(Descriptor, Nodes)
                                                 end , Descriptors).
@@ -267,7 +267,7 @@ wait_for_stable_snapshot(DCID, MinValue) ->
     true -> ok;
     false ->
       {ok, SS} = dc_utilities:get_stable_snapshot(),
-      Value = vectorclock:get_clock_of_dc(DCID, SS),
+      Value = vectorclock:get(DCID, SS),
       case Value > MinValue of
         true ->
           logger:info("Connected to DC ~p", [DCID]),

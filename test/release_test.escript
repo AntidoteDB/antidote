@@ -5,7 +5,7 @@
 -define(PORT, 8087).
 
 load(Dep) ->
-    Path = filename:dirname(escript:script_name()) ++ "/../_build/test/lib/" ++ Dep ++ "/ebin",
+    Path = filename:dirname(escript:script_name()) ++ "/../_build/default/lib/" ++ Dep ++ "/ebin",
     case code:add_pathz(Path) of
         true ->
             true;
@@ -25,7 +25,7 @@ test_transaction(Tries) ->
     Key = <<"release_test_key">>,
     Bound_object = {Key, antidote_crdt_counter_pn, <<"release_test_key_bucket">>},
     io:format("Starting Test transaction~n"),
-    case antidotec_pb:start_transaction(Pid, ignore, []) of
+    case antidotec_pb:start_transaction(Pid, ignore) of
         {error, Reason} when Tries > 0 ->
             io:format("Could not start transaction: ~p~n", [Reason]),
             timer:sleep(1000),

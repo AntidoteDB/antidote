@@ -67,22 +67,19 @@ loop(Socket, Transport) ->
 % handles a single request
 -spec handle(_Socket, _Transport, binary()) -> ok.
 handle(Socket, Transport, Msg) ->
-  % A message consists of an 8 bit message code and the actual protocol buffer message:
-  <<MsgCode:8, ProtoBufMsg/bits>> = Msg,
-  DecodedMessage = antidote_pb_codec:decode_message(antidote_pb_codec:decode_msg(MsgCode, ProtoBufMsg)),
+  DecodedMessage = antidote_pb_codec:decode_request(Msg),
   try
     Response = antidote_pb_process:process(DecodedMessage),
-    PbResponse = antidote_pb_codec:encode_message(Response),
-    PbMessage = antidote_pb_codec:encode_msg(PbResponse),
+    PbMessage = antidote_pb_codec:encode_response(Response),
     ok = Transport:send(Socket, PbMessage)
   catch
-    ExceptionType:Error ->
+    ExceptionType:Error:StackTrace ->
       % log errors and reply with error message:
-      logger:error("Error ~p: ~p~nWhen handling request ~p~n", [ExceptionType, Error, DecodedMessage]),
+      logger:error("Error ~p: ~p~n~p~bWhen handling request ~p~n", [ExceptionType, Error, StackTrace, DecodedMessage]),
       % when formatting the error message, we use a maximum depth of 9001.
       % This should be big enough to include useful information, but avoids sending a lot of data
-      MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n", [ExceptionType, 9001, Error, 9001])),
-      Message = antidote_pb_codec:encode_msg(antidote_pb_codec:encode_message({error_response, {unknown, MessageStr}})),
+      MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n~P~n", [ExceptionType, 9001, Error, 9001, StackTrace, 9001])),
+      Message = antidote_pb_codec:encode_response({error_response, {unknown, MessageStr}}),
       ok = Transport:send(Socket, Message),
       ok
   end.

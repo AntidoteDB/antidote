@@ -102,7 +102,7 @@ check_operation(Op) ->
 belongs_to_snapshot_op(ignore, {_OpDc, _OpCommitTime}, _OpSs) ->
     true;
 belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
-    OpSs1 = dict:store(OpDc, OpCommitTime, OpSs),
+    OpSs1 = vectorclock:set(OpDc, OpCommitTime, OpSs),
     not vectorclock:le(OpSs1, SSTime).
 
 
