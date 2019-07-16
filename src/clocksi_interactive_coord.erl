@@ -213,7 +213,6 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                 abort ->
                                     % TODO increment aborted transaction metrics?
                                     {error, aborted};
-
                                 {error, Reason} ->
                                     {error, Reason}
                             end;
@@ -853,7 +852,7 @@ reply_to_client(State = #state{
                                 {error, Reason} ->
                                     {error, Reason};
                                 _ ->
-                                    {error, {aborted, TxId}}
+                                    {error, aborted}
                             end
 
                         %% can never match (dialyzer)
@@ -1191,13 +1190,13 @@ empty_prepare_test(Pid) ->
 timeout_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({error, {aborted , _}}, gen_statem:call(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_abort_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, {aborted , _}}, gen_statem:call(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_success_test(Pid) ->
@@ -1211,7 +1210,7 @@ update_multi_abort_test1(Pid) ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, {aborted , _}}, gen_statem:call(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_abort_test2(Pid) ->
@@ -1219,7 +1218,7 @@ update_multi_abort_test2(Pid) ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, {aborted , _}}, gen_statem:call(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_success_test(Pid) ->

@@ -111,7 +111,7 @@ clocksi_multiple_test_certification_check_run(Nodes) ->
 
     %% Try to commit the first tx.
     CommitResult = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
-    ?assertMatch({error, {aborted, _}}, CommitResult),
+    ?assertMatch({error, aborted}, CommitResult),
     pass.
 
 
@@ -251,15 +251,15 @@ clocksi_test_certification_check_run(Nodes, DisableCert, Bucket) ->
     {ok, _CT}= rpc:call(LastNode, cure, commit_transaction, [TxId1]),
 
     %% Commit the first tx.
-    CommitTime = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
+    Result = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
     case DisableCert of
         false ->
-            ?assertMatch({aborted, TxId}, CommitTime),
-            ct:log("Tx1 sent prepare, got message: ~p", [CommitTime]),
+            ?assertMatch({error, aborted}, Result),
+            ct:log("Tx1 sent prepare, got message: ~p", [Result]),
             ct:log("Tx1 aborted. Test passed!");
         true ->
-            ?assertMatch({ok, _}, CommitTime),
-            ct:log("Tx1 sent prepare, got message: ~p", [CommitTime]),
+            ?assertMatch({ok, _}, Result),
+            ct:log("Tx1 sent prepare, got message: ~p", [Result]),
             End2 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
             ?assertMatch({ok, _}, End2),
             ct:log("Tx1 committed. Test passed!")
