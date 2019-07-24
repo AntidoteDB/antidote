@@ -50,7 +50,7 @@ pb_listener() ->
   NumberOfAcceptors = application:get_env(ranch, pb_pool_size, 100),
   Port = application:get_env(ranch, pb_port, 8087),
   MaxConnections = application:get_env(ranch, pb_max_connections, 1024),
-  RanchOptions = [{port, Port}, {max_connections, MaxConnections}],
+  RanchOptions = #{port => Port, max_connections => MaxConnections},
   ranch:child_spec(antidote_pb_process, NumberOfAcceptors,
     ranch_tcp, RanchOptions,
     antidote_pb_protocol, []
