@@ -33,9 +33,12 @@
 %% As well as in the sender of the query at inter_dc_query
 
 -module(inter_dc_query_receive_socket).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -102,7 +105,7 @@ init([]) ->
     {_, Port} = get_address(),
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    logger:info("Log reader started on port ~p", [Port]),
+    ?LOG_INFO("Log reader started on port ~p", [Port]),
     {ok, #state{socket = Socket, next=getid}}.
 
 %% Handle the remote request
@@ -138,7 +141,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
     end,
     {noreply, State#state{next=getid}};
 handle_info(Info, State) ->
-    logger:info("got weird info ~p", [Info]),
+    ?LOG_INFO("got weird info ~p", [Info]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.

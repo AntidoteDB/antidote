@@ -27,7 +27,9 @@
 %% -------------------------------------------------------------------
 
 -module(dc_utilities).
+
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
   get_my_dc_id/0,
@@ -96,7 +98,7 @@ get_all_partitions() ->
         [I || {I, _} <- Nodes]
     catch
         _Ex:Res ->
-            logger:debug("Error loading partition names: ~p, will retry", [Res]),
+            ?LOG_DEBUG("Error loading partition names: ~p, will retry", [Res]),
             get_all_partitions()
     end.
 
@@ -110,7 +112,7 @@ get_all_partitions_nodes() ->
         chash:nodes(CHash)
     catch
         _Ex:Res ->
-            logger:debug("Error loading partition-node names ~p, will retry", [Res]),
+            ?LOG_DEBUG("Error loading partition-node names ~p, will retry", [Res]),
             get_all_partitions_nodes()
     end.
 
@@ -173,7 +175,7 @@ ensure_all_vnodes_running(VnodeType) ->
     case Partitions == Running of
         true -> ok;
         false ->
-            logger:debug("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            ?LOG_DEBUG("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
             %TODO: Extract into configuration constant
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
@@ -197,7 +199,7 @@ bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
           end,
     case Err of
         true ->
-            logger:debug("Vnode not up retrying, ~p, ~p", [VMaster, P]),
+            ?LOG_DEBUG("Vnode not up retrying, ~p, ~p", [VMaster, P]),
             %TODO: Extract into configuration constant
             timer:sleep(1000),
             bcast_vnode_check_up(VMaster, Request, [P|Rest]);
@@ -226,7 +228,7 @@ check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
     PrintFun = fun(DcId, Time) ->
-        logger:debug("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]) end,
+        ?LOG_DEBUG("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]) end,
     _ = vectorclock:map(PrintFun, SS),
     ok.
 
@@ -235,7 +237,7 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
         undefined ->
-            logger:debug("Wait for ~p to register", [Name]),
+            ?LOG_DEBUG("Wait for ~p to register", [Name]),
             timer:sleep(100),
             check_registered(Name);
         _ ->

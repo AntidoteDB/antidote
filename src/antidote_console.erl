@@ -30,6 +30,7 @@
 %%
 
 -module(antidote_console).
+-include_lib("kernel/include/logger.hrl").
 
 -export([staged_join/1,
          down/1,
@@ -79,7 +80,7 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
         end
     catch
         Exception:Reason ->
-            logger:error("Join failed ~p:~p", [Exception, Reason]),
+            ?LOG_ERROR("Join failed ~p:~p", [Exception, Reason]),
             io:format("Join failed, see log for details~n"),
             error
     end.
@@ -104,7 +105,7 @@ down([Node]) ->
         end
     catch
         Exception:Reason ->
-            logger:error("Down failed ~p:~p", [Exception, Reason]),
+            ?LOG_ERROR("Down failed ~p:~p", [Exception, Reason]),
             io:format("Down failed, see log for details~n"),
             error
     end.
@@ -127,7 +128,7 @@ ringready([]) ->
         end
     catch
         Exception:Reason ->
-            logger:error("Ringready failed ~p:~p",
+            ?LOG_ERROR("Ringready failed ~p:~p",
                         [Exception, Reason]),
             io:format("Ringready failed, see log for details~n"),
             error

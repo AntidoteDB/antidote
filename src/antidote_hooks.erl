@@ -58,8 +58,11 @@
 -module(antidote_hooks).
 
 -include("antidote.hrl").
-
+-include_lib("kernel/include/logger.hrl").
+-ifdef(TEST).
+-compile([export_all]).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([register_pre_hook/3,
          register_post_hook/3,
@@ -151,7 +154,7 @@ execute_post_commit_hook(Key, Type, Param) ->
 %% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
 
 test_commit_hook(Object) ->
-    logger:info("Executing test commit hook"),
+    ?LOG_INFO("Executing test commit hook"),
     {ok, Object}.
 
 test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) ->

@@ -32,6 +32,8 @@
 
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
@@ -122,7 +124,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
-                    logger:debug("Trying to recover the materializer from log ~p", [Partition]),
+                    ?LOG_DEBUG("Trying to recover the materializer from log ~p", [Partition]),
                     riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
                     false;
                 _ ->
@@ -193,17 +195,17 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
     IsReady = try
                 case load_from_log_to_tables(Partition, State) of
                     ok ->
-                        logger:debug("Finished loading from log to materializer on partition ~w", [Partition]),
+                        ?LOG_DEBUG("Finished loading from log to materializer on partition ~w", [Partition]),
                         true;
                     {error, not_ready} ->
                         false;
                     {error, Reason} ->
-                        logger:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+                        ?LOG_ERROR("Unable to load logs from disk: ~w, continuing", [Reason]),
                         true
                 end
             catch
                 _:Reason1 ->
-                    logger:debug("Error loading from log ~w, will retry", [Reason1]),
+                    ?LOG_DEBUG("Error loading from log ~w, will retry", [Reason1]),
                     false
             end,
     ok = case IsReady of
@@ -326,7 +328,7 @@ open_table(Partition, Name) ->
                 [set, protected, named_table, ?TABLE_CONCURRENCY]);
         _ ->
             %% Other vnode hasn't finished closing tables
-            logger:debug("Unable to open ets table in materializer vnode, retrying"),
+            ?LOG_DEBUG("Unable to open ets table in materializer vnode, retrying"),
             timer:sleep(100),
             try
                 ets:delete(get_cache_name(Partition, Name))

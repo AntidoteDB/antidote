@@ -52,6 +52,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -record(state, {req_queue :: orddict:orddict(),
                 last_transfers :: orddict:orddict(),
@@ -69,7 +70,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    logger:info("Started Bounded counter manager at node ~p", [node()]),
+    ?LOG_INFO("Started Bounded counter manager at node ~p", [node()]),
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 
