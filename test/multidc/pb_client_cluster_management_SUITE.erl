@@ -109,7 +109,6 @@ setup_cluster_test(Config) ->
     % get descriptor of cluster 2:
     {ok, Pb3} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev3) + 2),
     {get_connection_descriptor_resp, {ok, DescriptorBin3}} = send_pb_message(Pb3, get_connection_descriptor),
-    Descriptor3 = binary_to_term(DescriptorBin3),
 
     % use descriptor to connect both dcs
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
