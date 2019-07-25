@@ -228,7 +228,7 @@ check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
     PrintFun = fun(DcId, Time) ->
-        ?LOG_DEBUG("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]) end,
+        ?LOG_DEBUG("~w staleness: ~w ms", [DcId, (Now-Time)/1000]) end,
     _ = vectorclock:map(PrintFun, SS),
     ok.
 

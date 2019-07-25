@@ -53,7 +53,7 @@
 %% Build a ring of Nodes forming a data center
 -spec create_dc([node()]) -> ok.
 create_dc(Nodes) ->
-    ?LOG_INFO("Creating DC ring ~p", [Nodes]),
+    ?LOG_INFO("Creating DC ring with nodes ~p", [Nodes]),
     %% Ensure each node owns 100% of it's own ring
     _ = [[Node] = owners_according_to(Node) || Node <- Nodes],
     %% Join nodes
@@ -117,7 +117,7 @@ staged_join(Node, PNode) ->
     ok.
 
 plan_and_commit(Node) ->
-    ?LOG_INFO("planning and committing cluster join"),
+    ?LOG_INFO("Planning and committing cluster join"),
     case rpc:call(Node, riak_core_claimant, plan, []) of
         {error, ring_not_ready} ->
             ?LOG_INFO("plan: ring not ready"),
@@ -202,7 +202,7 @@ is_ready(Node) ->
     end.
 
 wait_until_nodes_agree_about_ownership(Nodes) ->
-    ?LOG_INFO("Wait until nodes agree about ownership ~p", [Nodes]),
+    ?LOG_INFO("Wait until nodes agree about ownership: ~p", [Nodes]),
     Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     lists:all(fun(X) -> ok =:= X end, Results).
 

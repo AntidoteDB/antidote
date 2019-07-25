@@ -58,10 +58,10 @@ loop(Socket, Transport) ->
     {error, closed} ->
       ok = Transport:close(Socket);
     {error, timeout} ->
-      ?LOG_INFO("Socket timed out~n"),
+      ?LOG_ERROR("Socket ~p timed out", [Socket]),
       ok = Transport:close(Socket);
     {error, Reason} ->
-      ?LOG_ERROR("Socket error: ~p~n", [Reason]),
+      ?LOG_ERROR("Socket error: ~p", [Reason]),
       ok = Transport:close(Socket)
   end.
 

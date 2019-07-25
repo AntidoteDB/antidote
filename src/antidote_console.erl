@@ -55,32 +55,32 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
                 ?LOG_INFO(SuccessFmt, SuccessArgs),
                 ok;
             {error, not_reachable} ->
-                ?LOG_ERROR("Node ~s is not reachable!~n", [NodeStr]),
+                ?LOG_ERROR("Node ~s is not reachable", [NodeStr]),
                 error;
             {error, different_ring_sizes} ->
-                ?LOG_ERROR("Failed: ~s has a different ring_creation_size~n",
+                ?LOG_ERROR("Failed: ~s has a different ring_creation_size",
                           [NodeStr]),
                 error;
             {error, unable_to_get_join_ring} ->
-                ?LOG_ERROR("Failed: Unable to get ring from ~s~n",
+                ?LOG_ERROR("Failed: Unable to get ring from ~s",
                           [NodeStr]),
                 error;
             {error, not_single_node} ->
                 ?LOG_ERROR("Failed: This node is already a member of a "
-                          "cluster~n"),
+                          "cluster"),
                 error;
             {error, self_join} ->
                 ?LOG_ERROR("Failed: This node cannot join itself in a "
-                          "cluster~n"),
+                          "cluster"),
                 error;
             {error, _} ->
-                ?LOG_ERROR("Join failed. Try again in a few moments.~n",
+                ?LOG_ERROR("Join failed. Try again in a few moments.",
                           []),
                 error
         end
     catch
         Exception:Reason ->
-            ?LOG_ERROR("Join failed ~p:~p", [Exception, Reason]),
+            ?LOG_ERROR("Join failed ~p: ~p", [Exception, Reason]),
             error
     end.
 
@@ -89,22 +89,22 @@ down([Node]) ->
     try
         case riak_core:down(list_to_atom(Node)) of
             ok ->
-                ?LOG_INFO("Success: ~p marked as down~n", [Node]),
+                ?LOG_INFO("Success: ~p marked as down", [Node]),
                 ok;
             {error, is_up} ->
-                ?LOG_ERROR("Failed: ~s is up~n", [Node]),
+                ?LOG_ERROR("Failed: ~s is up", [Node]),
                 error;
             {error, not_member} ->
-                ?LOG_ERROR("Failed: ~p is not a member of the cluster.~n",
+                ?LOG_ERROR("Failed: ~p is not a member of the cluster.",
                           [Node]),
                 error;
             {error, only_member} ->
-                ?LOG_ERROR("Failed: ~p is the only member.~n", [Node]),
+                ?LOG_ERROR("Failed: ~p is the only member.", [Node]),
                 error
         end
     catch
         Exception:Reason ->
-            ?LOG_ERROR("Down failed ~p:~p", [Exception, Reason]),
+            ?LOG_ERROR("Down failed ~p: ~p", [Exception, Reason]),
             error
     end.
 
@@ -113,20 +113,20 @@ ringready([]) ->
     try
         case riak_core_status:ringready() of
             {ok, Nodes} ->
-                ?LOG_INFO("TRUE All nodes agree on the ring ~p\n",
+                ?LOG_INFO("All nodes ~p agree on the ring",
                           [Nodes]);
             {error, {different_owners, N1, N2}} ->
-                ?LOG_ERROR("FALSE Node ~p and ~p list different partition owners\n",
+                ?LOG_ERROR("Node ~p and ~p list different partition owners",
                           [N1, N2]),
                 error;
             {error, {nodes_down, Down}} ->
-                ?LOG_ERROR("FALSE ~p down.  All nodes need to be up to check.\n",
+                ?LOG_ERROR("Node ~p is down",
                           [Down]),
                 error
         end
     catch
         Exception:Reason ->
-            ?LOG_ERROR("Ringready failed ~p:~p",
+            ?LOG_ERROR("Ring-ready failed with exception ~p: ~p",
                         [Exception, Reason]),
             error
     end.

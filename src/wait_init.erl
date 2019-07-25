@@ -70,21 +70,21 @@ check_ready(Node) ->
                 true ->
                     case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
                     true ->
-                        ?LOG_DEBUG("Node ~w is ready! ~n", [Node]),
+                        ?LOG_DEBUG("Node ~p is ready", [Node]),
                         true;
                     false ->
-                        ?LOG_DEBUG("Node ~w is not ready ~n", [Node]),
+                        ?LOG_DEBUG("Node ~p is not ready", [Node]),
                         false
                     end;
                 false ->
-                    ?LOG_DEBUG("Node ~w is not ready ~n", [Node]),
+                    ?LOG_DEBUG("Node ~p is not ready", [Node]),
                     false
                 end;
             false ->
-                ?LOG_DEBUG("Checking if node ~w is ready ~n", [Node]),
+                ?LOG_DEBUG("Checking if node ~p is ready", [Node]),
                 false
             end;
         false ->
-            ?LOG_DEBUG("Checking if node ~w is ready ~n", [Node]),
+            ?LOG_DEBUG("Checking if node ~p is ready", [Node]),
             false
     end.
