@@ -494,7 +494,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
-    ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+    ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p", [{Key, TxId, Time}]),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
