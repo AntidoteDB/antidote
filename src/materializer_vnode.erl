@@ -834,9 +834,7 @@ concurrent_write_test() ->
     %% Read different snapshots
     {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 1}, {DC2, 0}]), ignore, [], false, State),
     ?assertEqual(1, Type:value(ReadDC1)),
-    io:format("Result1 = ~p", [ReadDC1]),
     {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 0}, {DC2, 1}]), ignore, [], false, State),
-    io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
 
     %% Read snapshot including both increments

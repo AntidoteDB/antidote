@@ -50,7 +50,7 @@ start_link() ->
 init([]) ->
     init_metrics(),
     % set the error logger counting the number of errors during operation
-    ok = logger:add_handler(antidote_error_monitor,antidote_error_monitor, #{level => error}),
+%    ok = logger:add_handler(antidote_error_monitor,antidote_error_monitor, #{level => error}),
     % start the timer for updating the calculated metrics
     Timer = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
     {ok, Timer}.
