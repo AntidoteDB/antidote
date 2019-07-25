@@ -674,7 +674,7 @@ start_tx_internal(From, ClientClock, Properties, State = #state{stay_alive = Sta
 %%noinspection ErlangUnresolvedFunction
 create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
