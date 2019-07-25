@@ -83,8 +83,6 @@ setup_cluster_test(Config) ->
     Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
     [Node1, Node2, Node3, Node4] = Nodes,
 
-    ct:pal("Check1"),
-
     % join cluster 1:
     P1 = spawn_link(fun() ->
         {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
@@ -110,11 +108,8 @@ setup_cluster_test(Config) ->
 
     % get descriptor of cluster 2:
     {ok, Pb3} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev3) + 2),
-    ct:pal("get_connection_descriptor clusterdev3"),
     {get_connection_descriptor_resp, {ok, DescriptorBin3}} = send_pb_message(Pb3, get_connection_descriptor),
     Descriptor3 = binary_to_term(DescriptorBin3),
-    ct:pal("get_connection_descriptor clusterdev3: ~p", [Descriptor3]),
-
 
     % use descriptor to connect both dcs
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
@@ -122,8 +117,6 @@ setup_cluster_test(Config) ->
     Response1 = send_pb_message(Pb1, {connect_to_dcs, [DescriptorBin3]}),
     ct:pal("connected clusters: ~p", [Response1]),
     ?assertEqual({operation_response, ok}, Response1),
-
-
 
     Bucket = ?BUCKET_BIN,
     Bound_object = {<<"key1">>, antidote_crdt_counter_pn, Bucket},
