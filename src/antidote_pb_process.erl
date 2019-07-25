@@ -61,9 +61,9 @@ process({abort_transaction, TxId}) ->
     case Response of
         ok -> {operation_response, ok};
         {error, Reason} -> {operation_response, {error, Reason}}
-            %% TODO: client initiated abort is not implemented yet
-            %% Add the following only after it is implemented to avoid dialyzer errors
-            %% ok -> {operation_response, ok},
+        %% TODO: client initiated abort is not implemented yet
+        %% Add the following only after it is implemented to avoid dialyzer errors
+        %% ok -> {operation_response, ok},
     end;
 
 process({commit_transaction, TxId}) ->
@@ -99,40 +99,41 @@ process({static_read_objects, Clock, Properties, Objects}) ->
     Response = antidote:read_objects(from_bin(Clock), Properties, Objects),
     case Response of
         {error, Reason} -> {error_response, {error, Reason}};
-        {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}}
+        {ok, Results, CommitTime} ->
+            {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}}
     end;
 
 process({create_dc, NodeNames}) ->
     try
-      ok = antidote_dc_manager:create_dc(NodeNames),
-      {operation_response, ok}
+        ok = antidote_dc_manager:create_dc(NodeNames),
+        {operation_response, ok}
     catch
-     Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-       logger:info("Create DC Failed ~p : ~p", [Error, Reason]),
-       {operation_response, {error, unknown}}
+        Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
+            logger:info("Create DC Failed ~p : ~p", [Error, Reason]),
+            {operation_response, {error, unknown}}
     end;
 
 process(get_connection_descriptor) ->
     try
-       {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
-       logger:info("Conection Descriptor: ~p", [Descriptor]),
-       {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
+        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
+        logger:info("Conection Descriptor: ~p", [Descriptor]),
+        {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
     catch
-      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        logger:info("Failed Conection Descriptor ~p : ~p", [Error, Reason]),
-        {get_connection_descriptor_resp, {error, unknown}}
+        Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
+            logger:info("Failed Conection Descriptor ~p : ~p", [Error, Reason]),
+            {get_connection_descriptor_resp, {error, unknown}}
     end;
 
 process({connect_to_dcs, BinDescriptors}) ->
     try
-       Descriptors = [binary_to_term(D) || D <- BinDescriptors],
-       logger:info("Conection Descriptor: ~p", [Descriptors]),
-       ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
-       {operation_response, ok}
+        Descriptors = [binary_to_term(D) || D <- BinDescriptors],
+        logger:info("Conection Descriptor: ~p", [Descriptors]),
+        ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
+        {operation_response, ok}
     catch
-      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        logger:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
-        {operation_response, {error, unknown}}
+        Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
+            logger:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
+            {operation_response, {error, unknown}}
     end.
 
 % process(Message) ->
