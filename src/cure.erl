@@ -63,7 +63,7 @@ start_transaction(Clock, Properties) ->
 -spec abort_transaction(txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
     case gen_statem:call(TxId#tx_id.server_pid, {abort, []}) of
-        {error, {aborted, _TxId}} -> ok;
+        {error, aborted} -> ok;
         {error, Reason} -> {error, Reason}
     end.
 
@@ -104,7 +104,7 @@ update_objects(Updates, TxId) ->
         ok ->
             ok;
         {aborted, TxId} ->
-            {error, {aborted, TxId}};
+            {error, aborted};
         {error, Reason} ->
             {error, Reason}
     end.

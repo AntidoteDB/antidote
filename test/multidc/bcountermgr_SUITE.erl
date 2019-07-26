@@ -169,7 +169,7 @@ conditional_write_test_run(Config) ->
              [[{BObj, decrement, {3, r1}}], TxId1]),
     ?assertEqual(ok, Result0),
     CommitResult = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    ?assertMatch({error, {aborted, _}}, CommitResult),
+    ?assertMatch({error, aborted}, CommitResult),
     %% Test that the failed transaction didn't affect the `bcounter()'.
     check_read(Node1, Key, 7, AfterTxn2, Bucket).
 

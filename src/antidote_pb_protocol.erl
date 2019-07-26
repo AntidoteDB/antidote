@@ -75,7 +75,7 @@ handle(Socket, Transport, Msg) ->
   catch
     ExceptionType:Error:StackTrace ->
       % log errors and reply with error message:
-      logger:error("Error ~p: ~p~n~p~bWhen handling request ~p~n", [ExceptionType, Error, StackTrace, DecodedMessage]),
+      logger:error("Error ~p: ~p~n~p~nWhen handling request ~p~n", [ExceptionType, Error, StackTrace, DecodedMessage]),
       % when formatting the error message, we use a maximum depth of 9001.
       % This should be big enough to include useful information, but avoids sending a lot of data
       MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n~P~n", [ExceptionType, 9001, Error, 9001, StackTrace, 9001])),
