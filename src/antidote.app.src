@@ -10,7 +10,6 @@
                   riak_core,
                   cuttlefish,
                   erlzmq,
-                  rand_compat,
                   runtime_tools,
                   tools,
                   prometheus,
