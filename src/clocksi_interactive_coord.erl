@@ -37,7 +37,7 @@
 -behavior(gen_statem).
 
 -include("antidote.hrl").
-
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -194,7 +194,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     %% Execute post commit hook
                                     case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
                                         {error, Reason} ->
-                                            logger:info("Post commit hook failed. Reason ~p", [Reason]);
+                                            ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
                                         _ ->
                                             ok
                                     end,
@@ -674,7 +674,7 @@ start_tx_internal(From, ClientClock, Properties, State = #state{stay_alive = Sta
 %%noinspection ErlangUnresolvedFunction
 create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
@@ -979,7 +979,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Update) of
         {error, Reason} ->
-            logger:debug("Execute pre-commit hook failed ~p", [Reason]),
+            ?LOG_DEBUG("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};
 
         {Key, Type, PostHookUpdate} ->
@@ -1140,7 +1140,7 @@ execute_post_commit_hooks(Ops) ->
     lists:foreach(fun({Key, Type, Update}) ->
         case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
             {error, Reason} ->
-                logger:info("Post commit hook failed. Reason ~p", [Reason]);
+                ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
             _ -> ok
         end
                   end, lists:reverse(Ops)).

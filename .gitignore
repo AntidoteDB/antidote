@@ -12,6 +12,8 @@ dialyzer_warnings
 doc/
 .DS_Store
 logs/
+logger_logs/
+eunit_logs/
 tags
 rel/vars/*.config
 docs/_site/

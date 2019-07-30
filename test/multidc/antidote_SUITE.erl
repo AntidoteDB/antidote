@@ -109,7 +109,7 @@ random_test(Config) ->
 
     % Distribute the updates randomly over all DCs
     NumWrites = 100,
-    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid non-determinism in tests
+    ListIds = [rand:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid non-determinism in tests
 
     Obj = {log_test_key1, antidote_crdt_counter_pn, Bucket},
     F = fun(Elem) ->

@@ -30,9 +30,13 @@
 %% The messages are filter based on a binary prefix.
 
 -module(inter_dc_sub).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% API
 -export([
@@ -121,7 +125,7 @@ connect_to_nodes([Node|Rest], Acc) ->
     end.
 
 connect_to_node([]) ->
-    logger:error("Unable to subscribe to DC"),
+    ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([Address|Rest]) ->
     %% Test the connection
