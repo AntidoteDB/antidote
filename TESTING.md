@@ -10,8 +10,8 @@ Antidote Testing
 Unit Tests
 ----------
 
-EUnit is used for unit testing. 
-Unit tests reside in the module they are testing and test the module in isolation. 
+EUnit is used for unit testing.
+Unit tests reside in the module they are testing and test the module in isolation.
 The basic test skeleton should be encapsulated in a TEST block.
 
 
@@ -46,7 +46,7 @@ A suite should be name `..._SUITE.erl` by convention.
 
 To execute system tests, execute one of the following commands
 
-    make singledc 
+    make singledc
     make singledc SUITE=...
     make multidc
     make multidc SUITE=...
@@ -55,14 +55,14 @@ To execute system tests, execute one of the following commands
 
 #### Bucket Namespace
 
-Every system test should have its own bucket namespace defined at the top of the suite. 
-Unique bucket namespaces ensure that test suites do not interfere with each other. 
+Every system test should have its own bucket namespace defined at the top of the suite.
+Unique bucket namespaces ensure that test suites do not interfere with each other.
 The convention is filename with SUITE replaced by bucket.
 E.g., the bucket for `antidote_SUITE.erl` should be defined as
 
     -define(BUCKET, antidote_bucket).
 
-and the macro should be used *once* at the start of a test case, defining the bucket to be used for that test case. 
+and the macro should be used *once* at the start of a test case, defining the bucket to be used for that test case.
 If a unique bucket *per test case* is needed (e.g. for parallel tests), then
 
     -define(BUCKET, test_utils:bucket(antidote_bucket)).
@@ -89,7 +89,7 @@ Release Tests
 Test Logging
 -------------
 
-To log messages in a test suite, use the function `ct:log`. If a message should be visibile in the printed log (e.g. in travis), then `ct:pal` or `ct:print` can be used. `lager` should not be used for logging in system tests.
+To log messages in a test suite, use the function `ct:log`. If a message should be visibile in the printed log (e.g. in travis), then `ct:pal` or `ct:print` can be used.
 
 
 Utility Functions

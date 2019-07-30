@@ -28,8 +28,6 @@
 
 -module(clocksi_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([
     init_per_suite/1,
