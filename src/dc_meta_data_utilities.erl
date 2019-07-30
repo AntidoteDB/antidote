@@ -30,6 +30,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
          dc_start_success/0,
@@ -117,7 +118,7 @@ get_dc_partitions_detailed(DCID) ->
         {ok, Info} ->
             Info;
         error ->
-            logger:error("Error no partitions for dc ~w", [DCID]),
+            ?LOG_ERROR("Error no partitions for dc ~w", [DCID]),
             {dict:new(), {}, 0}
     end.
 
@@ -128,7 +129,7 @@ get_dc_partitions_dict(DCID) ->
         {ok, Dict} ->
             Dict;
         error ->
-            logger:error("Error no partitions for dc ~w", [DCID]),
+            ?LOG_ERROR("Error no partitions for dc ~w", [DCID]),
             dict:new()
     end.
 

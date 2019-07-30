@@ -35,6 +35,8 @@
 -module(stable_meta_data_server).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 -define(TABLE_NAME, a_stable_meta_data_table).
 
@@ -153,7 +155,7 @@ init([]) ->
     UpdatedTable = case LoadFromDisk of
         true ->
             TableFromDets = dets:to_ets(DetsTable, Table),
-            logger:info("Loaded meta data from disk"),
+            ?LOG_INFO("Loaded meta data from disk"),
             TableFromDets;
         false ->
             ok = dets:delete_all_objects(DetsTable),
