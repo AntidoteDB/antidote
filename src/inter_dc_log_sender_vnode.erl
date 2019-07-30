@@ -32,10 +32,11 @@
 
 -module(inter_dc_log_sender_vnode).
 -behaviour(riak_core_vnode).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
-
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -111,7 +112,7 @@ handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
 handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
-    logger:debug("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
+    ?LOG_DEBUG("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
     {reply, ok, State#state{last_log_id = OpId}};
 
 %% Handle the new operation

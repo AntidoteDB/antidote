@@ -34,6 +34,7 @@
 -endif.
 
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([process/1]).
 
@@ -108,34 +109,34 @@ process({create_dc, NodeNames}) ->
       {operation_response, ok}
     catch
      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-       logger:info("Create DC Failed ~p : ~p", [Error, Reason]),
-       {operation_response, {error, unknown}}
+       ?LOG_INFO("Create DC failed with error ~p : ~p", [Error, Reason]),
+       {operation_response, {error, Reason}}
     end;
 
 process(get_connection_descriptor) ->
     try
        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
-       logger:info("Conection Descriptor: ~p", [Descriptor]),
+       ?LOG_INFO("Conection Descriptor: ~p", [Descriptor]),
        {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        logger:info("Failed Conection Descriptor ~p : ~p", [Error, Reason]),
-        {get_connection_descriptor_resp, {error, unknown}}
+        ?LOG_ERROR("Failed Conection Descriptor with error ~p : ~p", [Error, Reason]),
+        {get_connection_descriptor_resp, {error, Reason}}
     end;
 
 process({connect_to_dcs, BinDescriptors}) ->
     try
        Descriptors = [binary_to_term(D) || D <- BinDescriptors],
-       logger:info("Conection Descriptor: ~p", [Descriptors]),
+       ?LOG_INFO("Connection to DCs: ~p", [Descriptors]),
        ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
        {operation_response, ok}
     catch
       Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        logger:info("Connect to DCs Failed ~p : ~p", [Error, Reason]),
-        {operation_response, {error, unknown}}
+        ?LOG_ERROR("Failed Connection to DCs  with error ~p : ~p", [Error, Reason]),
+        {operation_response, {error, Reason}}
     end.
 
 % process(Message) ->
-%   logger:error("Received unhandled message ~p~n", [Message]),
+%   ?LOG_ERROR("Received unhandled message ~p~n", [Message]),
 %   MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
 %   {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.

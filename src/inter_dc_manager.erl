@@ -37,6 +37,8 @@
 -define(DC_CONNECT_RETRIES, 5).
 -define(DC_CONNECT_RETY_SLEEP, 1000).
 
+-include_lib("kernel/include/logger.hrl").
+
 -export([
   get_descriptor/0,
   start_bg_processes/1,
@@ -69,13 +71,13 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
     case PartitionsNumRemote == PartitionsNumLocal of
         false ->
-            logger:error("Cannot observe remote DC: partition number mismatch"),
+            ?LOG_ERROR("Cannot observe remote DC: partition number mismatch"),
             {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
         true ->
             case DCID == dc_utilities:get_my_dc_id() of
                 true -> ok;
                 false ->
-                    logger:info("Observing DC ~p", [DCID]),
+                    ?LOG_INFO("Observing DC ~p", [DCID]),
                     dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
                     %% Announce the new publisher addresses to all subscribers in this DC.
                     %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
@@ -99,12 +101,12 @@ connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
                     connect_nodes(Rest, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
                 _ ->
                     timer:sleep(?DC_CONNECT_RETY_SLEEP),
-                    logger:error("Unable to connect to publisher ~p", [DCID]),
+                    ?LOG_ERROR("Unable to connect to publisher ~p", [DCID]),
                     connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
             end;
         _ ->
             timer:sleep(?DC_CONNECT_RETY_SLEEP),
-            logger:error("Unable to connect to log reader ~p", [DCID]),
+            ?LOG_ERROR("Unable to connect to log reader ~p", [DCID]),
             connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
@@ -130,13 +132,13 @@ start_bg_processes(MetaDataName) ->
     ok = dc_meta_data_utilities:load_partition_meta_data(),
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
-    logger:info("Starting heartbeat sender timers"),
+    ?LOG_INFO("Starting heartbeat sender timers"),
     Responses = dc_utilities:bcast_vnode_sync(logging_vnode_master, {start_timer, undefined}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
                            ok
                        end, Responses),
-    logger:info("Starting read servers"),
+    ?LOG_INFO("Starting read servers"),
     Responses2 = dc_utilities:bcast_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, true}) ->
@@ -157,7 +159,7 @@ dc_successfully_started() ->
 check_node_restart() ->
     case dc_meta_data_utilities:is_restart() of
         true ->
-            logger:info("This node was previously configured, will restart from previous config"),
+            ?LOG_INFO("This node was previously configured, will restart from previous config"),
             MyNode = node(),
             %% Load any env variables
             ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
@@ -178,13 +180,13 @@ check_node_restart() ->
             {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
             ok = meta_data_sender:start(MetaDataName),
             %% Start the timers sending the heartbeats
-            logger:info("Starting heartbeat sender timers"),
+            ?LOG_INFO("Starting heartbeat sender timers"),
             Responses = dc_utilities:bcast_my_vnode_sync(logging_vnode_master, {start_timer, undefined}),
             %% Be sure they all started ok, crash otherwise
             ok = lists:foreach(fun({_, ok}) ->
                                    ok
                                end, Responses),
-            logger:info("Starting read servers"),
+            ?LOG_INFO("Starting read servers"),
             Responses2 = dc_utilities:bcast_my_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
             %% Be sure they all started ok, crash otherwise
             ok = lists:foreach(fun({_, true}) ->
@@ -234,7 +236,7 @@ forget_dc(#descriptor{dcid = DCID}, Nodes) ->
   case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      logger:info("Forgetting DC ~p", [DCID]),
+      ?LOG_INFO("Forgetting DC ~p", [DCID]),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
@@ -270,10 +272,10 @@ wait_for_stable_snapshot(DCID, MinValue) ->
       Value = vectorclock:get(DCID, SS),
       case Value > MinValue of
         true ->
-          logger:info("Connected to DC ~p", [DCID]),
+          ?LOG_INFO("Connected to DC ~p", [DCID]),
           ok;
         false ->
-          logger:info("Waiting for DC ~p", [DCID]),
+          ?LOG_INFO("Waiting for DC ~p", [DCID]),
           timer:sleep(1000),
           wait_for_stable_snapshot(DCID, MinValue)
       end
