@@ -11,7 +11,5 @@ script:
   - rebar3 as test coveralls send
   - make dialyzer
   - make lint
-notifications:
-  email: bieniusa@cs.uni-kl.de
 sudo: required
 dist: trusty
