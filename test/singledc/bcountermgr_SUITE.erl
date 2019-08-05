@@ -88,6 +88,7 @@ new_bcounter_test(Config) ->
 
     % FIXME why is this not working?
     {Value, _}  = antidote_utils:read_b_counter(Node, Key, Bucket),
+	ct:print("Value is ~p~n", [Value]),
     ?assertEqual(0, Value).
     %check_read(Node, Key, 0, Bucket).
 
