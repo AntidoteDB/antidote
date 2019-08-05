@@ -79,10 +79,9 @@ read_b_counter_commit(Node, Key, Bucket, CommitTime) ->
     Obj = {Key, ?TYPE_B, Bucket},
 	 V = rpc:call(Node, antidote, read_objects, [CommitTime, [], [Obj]]),
 	 ct:print("The value V is ~p~n", [V]),
-     {ok, [Value], CommitTime} = V,
-
-	{?TYPE_B:value(Value), CommitTime}.
-    %{?TYPE_B:permissions(Value), CommitTime}.
+	 {ok, [Value], CommitTime} = V,
+	 {?type_b:value(Value), CommitTime}.
+    %{?type_b:permissions(value), committime}.
 
 
 
