@@ -87,9 +87,9 @@ new_bcounter_test(Config) ->
     Key = bcounter1_mgr,
 
     % FIXME why is this not working?
-    %{Value, _}  = antidote_utils:read_b_counter(Node, Key, Bucket),
-    %?assertEqual(0, Value).
-    check_read(Node, Key, 0, Bucket).
+    {Value, _}  = antidote_utils:read_b_counter(Node, Key, Bucket),
+    ?assertEqual(0, Value).
+    %check_read(Node, Key, 0, Bucket).
 
 read_si(Node, Key, CommitTime, Bucket) ->
     ct:log("Read si ~p", [Key]),
