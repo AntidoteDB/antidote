@@ -272,4 +272,4 @@
 -type snapshot_get_response() :: #snapshot_get_response{}.
 
 
--define(STATS(Type), gen_server:cast(antidote_stats, Type)).
+-define(STATS(Type), gen_server:cast(antidote_stats_collector, Type)).
