@@ -1,0 +1,9 @@
+language: erlang
+otp_release:
+  - 21.2
+install:
+  - ./rebar3 update
+script:
+  - ./rebar3 compile
+sudo: required
+dist: trusty
