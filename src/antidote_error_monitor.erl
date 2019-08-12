@@ -28,10 +28,11 @@
 
 -module(antidote_error_monitor).
 
-%% handler callbacks
-%-export([init/1, handle_event/2, handle_info/2, terminate/2]).
+-include("antidote.hrl").
 
 -export([log/2]).
 
 log(_Event, _Config) ->
-  prometheus_counter:inc(antidote_error_count).
+%%  prometheus_counter:inc(antidote_error_count).
+    %% STATS
+    ?STATS(log_error).

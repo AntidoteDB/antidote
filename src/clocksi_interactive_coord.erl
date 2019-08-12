@@ -48,8 +48,6 @@
 -define(CLOCKSI_VNODE, mock_partition).
 -define(CLOCKSI_DOWNSTREAM, mock_partition).
 -define(LOGGING_VNODE, mock_partition).
--define(PROMETHEUS_GAUGE, mock_partition).
--define(PROMETHEUS_COUNTER, mock_partition).
 
 -else.
 -define(DC_META_UTIL, dc_meta_data_utilities).
@@ -59,8 +57,6 @@
 -define(CLOCKSI_VNODE, clocksi_vnode).
 -define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
 -define(LOGGING_VNODE, logging_vnode).
--define(PROMETHEUS_GAUGE, prometheus_gauge).
--define(PROMETHEUS_COUNTER, prometheus_counter).
 -endif.
 
 
@@ -663,8 +659,10 @@ start_tx_internal(From, ClientClock, Properties, State = #state{stay_alive = Sta
         true -> ok;
         false -> From ! {ok, TransactionId}
     end,
+    %% STATS
+%%    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
     % a new transaction was started, increment metrics
-    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
+    ?STATS(open_transaction),
     State#state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
 
@@ -731,7 +729,9 @@ execute_command(read, {Key, Type}, Sender, State = #state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
-        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
+        %% STATS
+        ?STATS(operation_read_async),
+%%        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
@@ -847,7 +847,9 @@ reply_to_client(State = #state{
                             end;
 
                         aborted ->
-                            ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
+                            %% STATS
+                            ?STATS(transaction_aborted),
+%%                            ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
                             case ReturnAcc of
                                 {error, Reason} ->
                                     {error, Reason};
@@ -867,8 +869,11 @@ reply_to_client(State = #state{
             end
     end,
 
+    %% STATS
+%%    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
     % transaction is finished, decrement count
-    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
+    ?STATS(transaction_finished),
+
 
     case StayAlive of
         true ->
@@ -941,7 +946,9 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
 
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
-    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
+    %% STATS
+%%    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
+    ?STATS(operation_read),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -965,7 +972,9 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
-    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
+    %% STATS
+    ?STATS(operation_update),
+%%    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 

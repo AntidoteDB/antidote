@@ -115,27 +115,10 @@ init(_Args) ->
               modules => [antidote_pb_sup]},
 
 
-    Config = [{mods, [{elli_prometheus, []}
-                     ]}
-             ],
-    MetricsPort = application:get_env(antidote, metrics_port, 3001),
-    ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
-    Elli = {elli_server,
-            {elli, start_link, [ElliOpts]},
-            permanent,
-            5000,
-            worker,
-            [elli]},
-
-    StatsCollector = {
-                       antidote_stats_collector,
-                       {antidote_stats_collector, start_link, []},
-                       permanent, 5000, worker, [antidote_stats_collector]
-                     },
 
     {ok,
      {{one_for_one, 5, 10},
-      [StatsCollector,
+      [
        LoggingMaster,
        ClockSIMaster,
        ClockSIiTxCoordSup,
@@ -154,5 +137,5 @@ init(_Args) ->
        MetaDataSenderSup,
        BCounterManager,
        LogResponseReaderSup,
-       PbSup,
-       Elli]}}.
+       PbSup
+       ]}}.

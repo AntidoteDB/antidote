@@ -12,10 +12,7 @@
                   erlzmq,
                   runtime_tools,
                   tools,
-                  prometheus,
-                  elli,
-                  elli_prometheus,
-                  prometheus_process_collector
+                  antidote_stats
                  ]},
     {included_applications, [
         vectorclock,

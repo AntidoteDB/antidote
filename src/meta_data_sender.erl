@@ -142,6 +142,7 @@ get_merged_data(Name, Default) ->
 %% ===================================================================
 
 init([Name]) ->
+    maybe_init_stats(),
     _MetaTable = ets:new(get_table_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
     _StableTable = ets:new(get_table_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, Name:initial_merged()}),
@@ -186,6 +187,27 @@ callback_mode() -> state_functions.
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) -> ok.
+
+%% ===================================================================
+%% Stats
+%% ===================================================================
+
+maybe_init_stats() ->
+    logger:warning("Calculating staleness periodically disabled").
+
+
+%%-spec calculate_staleness() -> non_neg_integer().
+%%calculate_staleness() ->
+%%    {ok, SS} = dc_utilities:get_stable_snapshot(),
+%%    CurrentClock = to_microsec(os:timestamp()),
+%%    Staleness = vectorclock:fold(fun(_K, C, Max) ->
+%%        max(CurrentClock - C, Max)
+%%                                 end, 0, SS),
+%%    round(Staleness/(1000)). %% To millisecs
+%%
+%%-spec to_microsec(term()) -> non_neg_integer().
+%%to_microsec({MegaSecs, Secs, MicroSecs}) ->
+%%    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %% ===================================================================
 %% Private functions
