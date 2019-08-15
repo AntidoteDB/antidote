@@ -33,6 +33,4 @@
 -export([log/2]).
 
 log(_Event, _Config) ->
-%%  prometheus_counter:inc(antidote_error_count).
-    %% STATS
     ?STATS(log_error).

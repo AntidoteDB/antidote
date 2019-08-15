@@ -659,8 +659,6 @@ start_tx_internal(From, ClientClock, Properties, State = #state{stay_alive = Sta
         true -> ok;
         false -> From ! {ok, TransactionId}
     end,
-    %% STATS
-%%    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
     % a new transaction was started, increment metrics
     ?STATS(open_transaction),
     State#state{transaction = Transaction, num_to_read = 0, properties = Properties}.
@@ -729,9 +727,7 @@ execute_command(read, {Key, Type}, Sender, State = #state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
-        %% STATS
         ?STATS(operation_read_async),
-%%        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
@@ -847,9 +843,7 @@ reply_to_client(State = #state{
                             end;
 
                         aborted ->
-                            %% STATS
                             ?STATS(transaction_aborted),
-%%                            ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
                             case ReturnAcc of
                                 {error, Reason} ->
                                     {error, Reason};
@@ -869,8 +863,6 @@ reply_to_client(State = #state{
             end
     end,
 
-    %% STATS
-%%    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
     % transaction is finished, decrement count
     ?STATS(transaction_finished),
 
@@ -946,8 +938,6 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
 
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
-    %% STATS
-%%    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
     ?STATS(operation_read),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
@@ -972,9 +962,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
-    %% STATS
     ?STATS(operation_update),
-%%    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
