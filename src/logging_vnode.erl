@@ -144,7 +144,7 @@ read(Node, Log) ->
 -spec asyn_append(index_node(), key(), log_operation(), sender()) -> ok.
 asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
     riak_core_vnode_master:command(IndexNode,
-                                   {append, Log, LogOperation, ?SYNC_LOG},
+                                   {append, Log, LogOperation, is_sync_log()},
                                    ReplyTo,
                                    ?LOGGING_MASTER).
 
