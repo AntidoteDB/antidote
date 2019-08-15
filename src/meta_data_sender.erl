@@ -175,6 +175,8 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
     {HasChanged, NewResult} = update_stable(LastResult, MergedDict, Name),
     Store = case HasChanged of
                 true ->
+                    %% update changed counter for this metadata type
+                    ?STATS({metadata_updated, Name}),
                     true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
                     NewResult;
                 false ->
