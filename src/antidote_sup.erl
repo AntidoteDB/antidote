@@ -114,6 +114,11 @@ init(_Args) ->
               type => supervisor,
               modules => [antidote_pb_sup]},
 
+    StatsCollector = {
+        antidote_stats,
+        {antidote_stats, start_link, []},
+        permanent, 5000, worker, [antidote_stats]
+    },
 
 
     {ok,
@@ -137,5 +142,6 @@ init(_Args) ->
        MetaDataSenderSup,
        BCounterManager,
        LogResponseReaderSup,
-       PbSup
+       PbSup,
+       StatsCollector
        ]}}.

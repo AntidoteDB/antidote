@@ -37,9 +37,6 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    %% add simple error counter for logging
-    ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
-
     case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
