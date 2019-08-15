@@ -146,12 +146,8 @@ init([]) ->
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
 
-    LoadFromDisk = case application:get_env(antidote, recover_meta_data_on_start) of
-                       {ok, true} ->
-                          true;
-                       _ ->
-                          false
-                   end,
+    LoadFromDisk = application:get_env(antidote, recover_meta_data_on_start, false),
+
     UpdatedTable = case LoadFromDisk of
         true ->
             TableFromDets = dets:to_ets(DetsTable, Table),
@@ -178,6 +174,7 @@ handle_call({update_meta_data, KeyValueList, IsEnv}, _Sender, State = #state{tab
     true = ets:insert(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
     ok = dets:sync(DetsTable),
+    ?STATS(metadata_update_stable),
     {reply, ok, State};
 
 handle_call({merge_meta_data, Key, Value, MergeFunc, InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
