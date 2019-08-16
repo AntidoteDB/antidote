@@ -152,7 +152,7 @@ asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
 -spec append(index_node(), key(), log_operation()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, LogOperation, false},
+                                        {append, LogId, LogOperation, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
