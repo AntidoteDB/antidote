@@ -106,7 +106,7 @@ process({create_dc, NodeNames}) ->
       ok = antidote_dc_manager:create_dc(NodeNames),
       {create_dc_response, ok}
     catch
-     Error:Reason -> 
+     Error:Reason ->
        ?LOG_ERROR("Create DC failed ~p : ~p", [Error, Reason]),
        {create_dc_response, {error, aborted}}
     end;
@@ -116,7 +116,7 @@ process(get_connection_descriptor) ->
        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
        {get_connection_descriptor_response, {ok, term_to_binary(Descriptor)}}
     catch
-      Error:Reason -> 
+      Error:Reason ->
         ?LOG_ERROR("Get Conection Descriptor failed ~p : ~p", [Error, Reason]),
         {get_connection_descriptor_response, {error, aborted}}
     end;
@@ -128,12 +128,12 @@ process({connect_to_dcs, BinDescriptors}) ->
        ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
        {connect_to_dcs_response, ok}
     catch
-      Error:Reason -> 
+      Error:Reason ->
         ?LOG_ERROR("Connect to DCs failed ~p : ~p", [Error, Reason]),
         {connect_to_dcs_response, {error, aborted}}
     end;
 
 process(Message) ->
-  ?LOG_ERROR("Received unhandled message ~p~n", [Message]),
-  MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
-  {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
+    ?LOG_ERROR("Received unhandled message ~p~n", [Message]),
+    MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
+    {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
