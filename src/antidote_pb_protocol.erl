@@ -73,7 +73,7 @@ handle(Socket, Transport, Msg) ->
   try
     Response = antidote_pb_process:process(DecodedMessage),
     PbMessage = antidote_pb_codec:encode_response(Response),
-    ok = Transport:send(Socket, PbMessage)
+    Transport:send(Socket, PbMessage)
   catch
     ExceptionType:Error:StackTrace ->
       % log errors and reply with error message:
@@ -82,6 +82,5 @@ handle(Socket, Transport, Msg) ->
       % This should be big enough to include useful information, but avoids sending a lot of data
       MessageStr = erlang:iolist_to_binary(io_lib:format("~P: ~P~n~P~n", [ExceptionType, 9001, Error, 9001, StackTrace, 9001])),
       Message = antidote_pb_codec:encode_response({error_response, {unknown, MessageStr}}),
-      ok = Transport:send(Socket, Message),
-      ok
+      Transport:send(Socket, Message)
   end.
