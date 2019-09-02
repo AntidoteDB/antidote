@@ -55,6 +55,7 @@ process({start_transaction, Clock, Properties}) ->
     case Response of
         {ok, TxId} -> {start_transaction_response, {ok, encode_clock(TxId)}};
         {error, Reason} -> {start_transaction_response, {error, Reason}}
+            %% TODO: Check that the reason returned here is one of the error_codes
     end;
 
 process({abort_transaction, TxId}) ->
