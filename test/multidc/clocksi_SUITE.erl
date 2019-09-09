@@ -239,7 +239,7 @@ clocksi_test_certification_check_run(Nodes, DisableCert, Bucket) ->
                      false -> []
                  end,
 
-    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties, false]),
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties]),
     ct:log("Tx1 Started, id : ~p", [TxId]),
     antidote_utils:update_counters(FirstNode, [Key1], [1], ignore, TxId, Bucket),
 
