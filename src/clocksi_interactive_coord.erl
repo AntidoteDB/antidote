@@ -237,6 +237,8 @@ finish_op(From, Key, Result) ->
     properties :: txn_properties()
 }).
 
+-type state() :: #state{}.
+
 %%%===================================================================
 %%% States
 %%%===================================================================
@@ -261,8 +263,8 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% internal state timeout
--spec execute_op(state_timeout, timeout, #state{}) -> gen_statem:event_handler_result(#state{});
-    ({call, pid()}, undefined | list() | {update_objects, list()} | {update, list()}, #state{}) -> gen_statem:event_handler_result(#state{}).
+-spec execute_op(state_timeout, timeout, state()) -> gen_statem:event_handler_result(state());
+    ({call, pid()}, undefined | list() | {update_objects, list()} | {update, list()}, state()) -> gen_statem:event_handler_result(state()).
 execute_op(state_timeout, timeout, State = #state{operations = Operations, from = From}) ->
     execute_op({call, From}, Operations, State);
 
@@ -314,8 +316,8 @@ committing({call, Sender}, commit, State = #state{transaction = Transaction,
 %%%== single_committing
 
 %% @doc TODO
--spec single_committing(cast, {committed | clock_time()} | abort | timeout, #state{}) -> gen_statem:event_handler_result(#state{});
-    (info, {any(), any()}, #state{}) -> gen_statem:event_handler_result(#state{}).
+-spec single_committing(cast, {committed | clock_time()} | abort | timeout, state()) -> gen_statem:event_handler_result(state());
+    (info, {any(), any()}, state()) -> gen_statem:event_handler_result(state()).
 single_committing(cast, {committed, CommitTime}, State = #state{from = From, full_commit = FullCommit}) ->
     case FullCommit of
         false ->
@@ -495,7 +497,7 @@ callback_mode() -> state_functions.
 %%%===================================================================
 
 %% @doc TODO
--spec init_state(boolean(), boolean(), proplists:proplist()) -> #state{}.
+-spec init_state(boolean(), boolean(), proplists:proplist()) -> state().
 init_state(FullCommit, IsStatic, Properties) ->
     #state{
         from = undefined,
@@ -514,7 +516,7 @@ init_state(FullCommit, IsStatic, Properties) ->
 
 
 %% @doc TODO
--spec start_tx_internal(snapshot_time(), proplists:proplist(), #state{}) -> {ok, #state{}} | {error, any()}.
+-spec start_tx_internal(snapshot_time(), proplists:proplist(), state()) -> {ok, state()} | {error, any()}.
 start_tx_internal(ClientClock, Properties, State = #state{}) ->
     TransactionRecord = create_transaction_record(ClientClock, false, Properties),
     % a new transaction was started, increment metrics
@@ -549,7 +551,7 @@ create_transaction_record(ClientClock, _IsStatic, Properties) ->
 
 
 %% @doc Execute the commit protocol
--spec execute_command(atom(), term(), pid(), #state{}) -> gen_statem:event_handler_result(#state{}).
+-spec execute_command(atom(), term(), pid(), state()) -> gen_statem:event_handler_result(state()).
 execute_command(prepare, Protocol, Sender, State0) ->
     State = State0#state{from=Sender, commit_protocol=Protocol},
     prepare(State);
@@ -692,7 +694,7 @@ reply_to_client(State = #state{
 
 %% @doc The following function is used to apply the updates that were performed by the running
 %% transaction, to the result returned by a read.
--spec apply_tx_updates_to_snapshot(key(), #state{}, type(), snapshot()) -> snapshot().
+-spec apply_tx_updates_to_snapshot(key(), state(), type(), snapshot()) -> snapshot().
 apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
     Partition = ?LOG_UTIL:get_key_partition(Key),
     Found = lists:keyfind(Partition, 1, CoordState#state.updated_partitions),
@@ -854,7 +856,7 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
 
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
--spec prepare(#state{}) -> gen_statem:event_handler_result(#state{}).
+-spec prepare(state()) -> gen_statem:event_handler_result(state()).
 prepare(State = #state{
     num_to_read=NumToRead,
     full_commit=FullCommit,
@@ -893,7 +895,7 @@ prepare(State = #state{
 %% commit_read_only: special case for when we have not updated anything
 %% {reply_and_then_commit, clock_time()}: first reply that we have successfully committed and then try to commit TODO rly?
 %% {normal_commit, clock_time(): wait until all participants have acknowledged the commit and then reply to the client
--spec prepare_done(#state{}, Action) -> gen_statem:event_handler_result(#state{})
+-spec prepare_done(state(), Action) -> gen_statem:event_handler_result(state())
     when Action :: single_committing | commit_read_only | {reply_and_then_commit, clock_time()} | {normal_commit, clock_time()}.
 prepare_done(State, Action) ->
     case Action of
