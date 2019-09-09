@@ -140,6 +140,8 @@ message ApbOperationResp {
 message ApbTxnProperties {
     optional uint32 read_write = 1 ; //default = 0 = read_write, 1 = read_only, 2 = write_only
     optional uint32 red_blue = 2 ; // default = 0 = blue, 1 = red
+    repeated bytes shared_locks = 3;
+    repeated bytes exclusive_locks = 4;
 }
 
 // Object (Key) representation

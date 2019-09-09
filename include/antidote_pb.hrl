@@ -138,7 +138,9 @@
 -define('APBTXNPROPERTIES_PB_H', true).
 -record('ApbTxnProperties',
         {read_write             :: non_neg_integer() | undefined, % = 1, 32 bits
-         red_blue               :: non_neg_integer() | undefined % = 2, 32 bits
+         red_blue               :: non_neg_integer() | undefined, % = 2, 32 bits
+         shared_locks = []      :: [iodata()] | undefined, % = 3
+         exclusive_locks = []   :: [iodata()] | undefined % = 4
         }).
 -endif.
 

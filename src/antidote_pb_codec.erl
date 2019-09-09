@@ -351,13 +351,24 @@ encode_abort_transaction(TxId) ->
   #'ApbAbortTransaction'{transaction_descriptor = TxId}.
 
 
-encode_txn_properties(_Props) ->
-  %%TODO: Add more property parameters
-  #'ApbTxnProperties'{}.
+encode_txn_properties(Props) ->
+  #'ApbTxnProperties'{
+    shared_locks = proplists:get_value(shared_locks, Props, []),
+    exclusive_locks = proplists:get_value(exclusive_locks, Props, [])
+  }.
 
-decode_txn_properties(_Properties) ->
-  %%TODO: Add more property parameters
-  [].
+decode_txn_properties(#'ApbTxnProperties'{shared_locks = SharedLocks, exclusive_locks = ExclusiveLocks}) ->
+  [{shared_locks, all_to_binary(SharedLocks)} || SharedLocks /= []]
+  ++ [{exclusive_locks, all_to_binary(ExclusiveLocks)} || ExclusiveLocks /= []].
+
+
+-spec all_to_binary([iodata()]) -> [binary()].
+all_to_binary(L) ->
+  [iodata_to_binary(B) || B <- L].
+
+-spec iodata_to_binary(iodata()) -> binary().
+iodata_to_binary(B) when is_binary(B) -> B;
+iodata_to_binary(B) -> binary:list_to_bin(B).
 
 
 %%%%%%%%%%%%%%%%%%%%%
@@ -785,6 +796,9 @@ check_request(Input) ->
 start_test() ->
   check_request({start_transaction, <<"opaque_binary">>, []}),
   check_response({start_transaction_response, {ok, <<"opaque_binary">>}}).
+
+lock_test() ->
+  check_request({start_transaction, <<"opaque_binary">>, [{shared_locks,  [<<"a">>, <<"b">>]}, {exclusive_locks, [<<"x">>]}]}).
 
 commit_test() ->
   check_request({commit_transaction, <<"opaque_binary">>}),
