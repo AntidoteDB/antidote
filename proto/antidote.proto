@@ -248,6 +248,11 @@ message ApbCreateDC {
   repeated string nodes = 1;
 }
 
+message ApbCreateDCResp {
+  required bool success = 1;
+  optional uint32 errorcode = 2;
+}
+
 // Get a connection descriptor of the DC to be given to other DCs.
 message ApbGetConnectionDescriptor {
 }
@@ -264,4 +269,9 @@ message ApbGetConnectionDescriptorResp {
 message ApbConnectToDCs {
   // descriptors is a list of connection information of all DCs obtained from ApbGetConnectionDescriptorResp.descriptor
     repeated bytes descriptors = 1;
+}
+
+message ApbConnectToDCsResp {
+  required bool success = 1;
+  optional uint32 errorcode = 2;
 }

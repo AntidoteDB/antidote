@@ -123,26 +123,30 @@
 
 -type 'ApbCreateDC'() :: #'ApbCreateDC'{}.
 
+-type 'ApbCreateDCResp'() :: #'ApbCreateDCResp'{}.
+
 -type 'ApbGetConnectionDescriptor'() :: #'ApbGetConnectionDescriptor'{}.
 
 -type 'ApbGetConnectionDescriptorResp'() :: #'ApbGetConnectionDescriptorResp'{}.
 
 -type 'ApbConnectToDCs'() :: #'ApbConnectToDCs'{}.
 
--export_type(['ApbErrorResp'/0, 'ApbCounterUpdate'/0, 'ApbGetCounterResp'/0, 'ApbSetUpdate'/0, 'ApbGetSetResp'/0, 'ApbRegUpdate'/0, 'ApbGetRegResp'/0, 'ApbGetMVRegResp'/0, 'ApbMapKey'/0, 'ApbMapUpdate'/0, 'ApbMapNestedUpdate'/0, 'ApbGetMapResp'/0, 'ApbMapEntry'/0, 'ApbFlagUpdate'/0, 'ApbGetFlagResp'/0, 'ApbCrdtReset'/0, 'ApbOperationResp'/0, 'ApbTxnProperties'/0, 'ApbBoundObject'/0, 'ApbReadObjects'/0, 'ApbUpdateOp'/0, 'ApbUpdateOperation'/0, 'ApbUpdateObjects'/0, 'ApbStartTransaction'/0, 'ApbAbortTransaction'/0, 'ApbCommitTransaction'/0, 'ApbStaticUpdateObjects'/0, 'ApbStaticReadObjects'/0, 'ApbStartTransactionResp'/0, 'ApbReadObjectResp'/0, 'ApbReadObjectsResp'/0, 'ApbCommitResp'/0, 'ApbStaticReadObjectsResp'/0, 'ApbCreateDC'/0, 'ApbGetConnectionDescriptor'/0, 'ApbGetConnectionDescriptorResp'/0, 'ApbConnectToDCs'/0]).
+-type 'ApbConnectToDCsResp'() :: #'ApbConnectToDCsResp'{}.
 
--spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{}) -> binary().
+-export_type(['ApbErrorResp'/0, 'ApbCounterUpdate'/0, 'ApbGetCounterResp'/0, 'ApbSetUpdate'/0, 'ApbGetSetResp'/0, 'ApbRegUpdate'/0, 'ApbGetRegResp'/0, 'ApbGetMVRegResp'/0, 'ApbMapKey'/0, 'ApbMapUpdate'/0, 'ApbMapNestedUpdate'/0, 'ApbGetMapResp'/0, 'ApbMapEntry'/0, 'ApbFlagUpdate'/0, 'ApbGetFlagResp'/0, 'ApbCrdtReset'/0, 'ApbOperationResp'/0, 'ApbTxnProperties'/0, 'ApbBoundObject'/0, 'ApbReadObjects'/0, 'ApbUpdateOp'/0, 'ApbUpdateOperation'/0, 'ApbUpdateObjects'/0, 'ApbStartTransaction'/0, 'ApbAbortTransaction'/0, 'ApbCommitTransaction'/0, 'ApbStaticUpdateObjects'/0, 'ApbStaticReadObjects'/0, 'ApbStartTransactionResp'/0, 'ApbReadObjectResp'/0, 'ApbReadObjectsResp'/0, 'ApbCommitResp'/0, 'ApbStaticReadObjectsResp'/0, 'ApbCreateDC'/0, 'ApbCreateDCResp'/0, 'ApbGetConnectionDescriptor'/0, 'ApbGetConnectionDescriptorResp'/0, 'ApbConnectToDCs'/0, 'ApbConnectToDCsResp'/0]).
+
+-spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbCreateDCResp'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{} | #'ApbConnectToDCsResp'{}) -> binary().
 encode_msg(Msg) when tuple_size(Msg) >= 1 ->
     encode_msg(Msg, element(1, Msg), []).
 
--spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{}, atom() | list()) -> binary().
+-spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbCreateDCResp'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{} | #'ApbConnectToDCsResp'{}, atom() | list()) -> binary().
 encode_msg(Msg, MsgName) when is_atom(MsgName) ->
     encode_msg(Msg, MsgName, []);
 encode_msg(Msg, Opts)
     when tuple_size(Msg) >= 1, is_list(Opts) ->
     encode_msg(Msg, element(1, Msg), Opts).
 
--spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{}, atom(), list()) -> binary().
+-spec encode_msg(#'ApbErrorResp'{} | #'ApbCounterUpdate'{} | #'ApbGetCounterResp'{} | #'ApbSetUpdate'{} | #'ApbGetSetResp'{} | #'ApbRegUpdate'{} | #'ApbGetRegResp'{} | #'ApbGetMVRegResp'{} | #'ApbMapKey'{} | #'ApbMapUpdate'{} | #'ApbMapNestedUpdate'{} | #'ApbGetMapResp'{} | #'ApbMapEntry'{} | #'ApbFlagUpdate'{} | #'ApbGetFlagResp'{} | #'ApbCrdtReset'{} | #'ApbOperationResp'{} | #'ApbTxnProperties'{} | #'ApbBoundObject'{} | #'ApbReadObjects'{} | #'ApbUpdateOp'{} | #'ApbUpdateOperation'{} | #'ApbUpdateObjects'{} | #'ApbStartTransaction'{} | #'ApbAbortTransaction'{} | #'ApbCommitTransaction'{} | #'ApbStaticUpdateObjects'{} | #'ApbStaticReadObjects'{} | #'ApbStartTransactionResp'{} | #'ApbReadObjectResp'{} | #'ApbReadObjectsResp'{} | #'ApbCommitResp'{} | #'ApbStaticReadObjectsResp'{} | #'ApbCreateDC'{} | #'ApbCreateDCResp'{} | #'ApbGetConnectionDescriptor'{} | #'ApbGetConnectionDescriptorResp'{} | #'ApbConnectToDCs'{} | #'ApbConnectToDCsResp'{}, atom(), list()) -> binary().
 encode_msg(Msg, MsgName, Opts) ->
     case proplists:get_bool(verify, Opts) of
       true -> verify_msg(Msg, MsgName, Opts);
@@ -248,6 +252,9 @@ encode_msg(Msg, MsgName, Opts) ->
 					      TrUserData);
       'ApbCreateDC' ->
 	  encode_msg_ApbCreateDC(id(Msg, TrUserData), TrUserData);
+      'ApbCreateDCResp' ->
+	  encode_msg_ApbCreateDCResp(id(Msg, TrUserData),
+				     TrUserData);
       'ApbGetConnectionDescriptor' ->
 	  encode_msg_ApbGetConnectionDescriptor(id(Msg,
 						   TrUserData),
@@ -258,7 +265,10 @@ encode_msg(Msg, MsgName, Opts) ->
 						    TrUserData);
       'ApbConnectToDCs' ->
 	  encode_msg_ApbConnectToDCs(id(Msg, TrUserData),
-				     TrUserData)
+				     TrUserData);
+      'ApbConnectToDCsResp' ->
+	  encode_msg_ApbConnectToDCsResp(id(Msg, TrUserData),
+					 TrUserData)
     end.
 
 
@@ -974,6 +984,26 @@ encode_msg_ApbCreateDC(#'ApbCreateDC'{nodes = F1}, Bin,
       end
     end.
 
+encode_msg_ApbCreateDCResp(Msg, TrUserData) ->
+    encode_msg_ApbCreateDCResp(Msg, <<>>, TrUserData).
+
+
+encode_msg_ApbCreateDCResp(#'ApbCreateDCResp'{success =
+						  F1,
+					      errorcode = F2},
+			   Bin, TrUserData) ->
+    B1 = begin
+	   TrF1 = id(F1, TrUserData),
+	   e_type_bool(TrF1, <<Bin/binary, 8>>, TrUserData)
+	 end,
+    if F2 == undefined -> B1;
+       true ->
+	   begin
+	     TrF2 = id(F2, TrUserData),
+	     e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+	   end
+    end.
+
 encode_msg_ApbGetConnectionDescriptor(_Msg,
 				      _TrUserData) ->
     <<>>.
@@ -1027,6 +1057,26 @@ encode_msg_ApbConnectToDCs(#'ApbConnectToDCs'{descriptors
 	     e_field_ApbConnectToDCs_descriptors(TrF1, Bin,
 						 TrUserData)
       end
+    end.
+
+encode_msg_ApbConnectToDCsResp(Msg, TrUserData) ->
+    encode_msg_ApbConnectToDCsResp(Msg, <<>>, TrUserData).
+
+
+encode_msg_ApbConnectToDCsResp(#'ApbConnectToDCsResp'{success
+							  = F1,
+						      errorcode = F2},
+			       Bin, TrUserData) ->
+    B1 = begin
+	   TrF1 = id(F1, TrUserData),
+	   e_type_bool(TrF1, <<Bin/binary, 8>>, TrUserData)
+	 end,
+    if F2 == undefined -> B1;
+       true ->
+	   begin
+	     TrF2 = id(F2, TrUserData),
+	     e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+	   end
     end.
 
 e_field_ApbSetUpdate_adds([Elem | Rest], Bin,
@@ -1649,6 +1699,9 @@ decode_msg_2_doit('ApbStaticReadObjectsResp', Bin,
        TrUserData);
 decode_msg_2_doit('ApbCreateDC', Bin, TrUserData) ->
     id(decode_msg_ApbCreateDC(Bin, TrUserData), TrUserData);
+decode_msg_2_doit('ApbCreateDCResp', Bin, TrUserData) ->
+    id(decode_msg_ApbCreateDCResp(Bin, TrUserData),
+       TrUserData);
 decode_msg_2_doit('ApbGetConnectionDescriptor', Bin,
 		  TrUserData) ->
     id(decode_msg_ApbGetConnectionDescriptor(Bin,
@@ -1661,6 +1714,10 @@ decode_msg_2_doit('ApbGetConnectionDescriptorResp', Bin,
        TrUserData);
 decode_msg_2_doit('ApbConnectToDCs', Bin, TrUserData) ->
     id(decode_msg_ApbConnectToDCs(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit('ApbConnectToDCsResp', Bin,
+		  TrUserData) ->
+    id(decode_msg_ApbConnectToDCsResp(Bin, TrUserData),
        TrUserData).
 
 
@@ -6631,6 +6688,136 @@ skip_64_ApbCreateDC(<<_:64, Rest/binary>>, Z1, Z2, F@_1,
     dfp_read_field_def_ApbCreateDC(Rest, Z1, Z2, F@_1,
 				   TrUserData).
 
+decode_msg_ApbCreateDCResp(Bin, TrUserData) ->
+    dfp_read_field_def_ApbCreateDCResp(Bin, 0, 0,
+				       id(undefined, TrUserData),
+				       id(undefined, TrUserData), TrUserData).
+
+dfp_read_field_def_ApbCreateDCResp(<<8, Rest/binary>>,
+				   Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_ApbCreateDCResp_success(Rest, Z1, Z2, F@_1,
+				    F@_2, TrUserData);
+dfp_read_field_def_ApbCreateDCResp(<<16, Rest/binary>>,
+				   Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_ApbCreateDCResp_errorcode(Rest, Z1, Z2, F@_1,
+				      F@_2, TrUserData);
+dfp_read_field_def_ApbCreateDCResp(<<>>, 0, 0, F@_1,
+				   F@_2, _) ->
+    #'ApbCreateDCResp'{success = F@_1, errorcode = F@_2};
+dfp_read_field_def_ApbCreateDCResp(Other, Z1, Z2, F@_1,
+				   F@_2, TrUserData) ->
+    dg_read_field_def_ApbCreateDCResp(Other, Z1, Z2, F@_1,
+				      F@_2, TrUserData).
+
+dg_read_field_def_ApbCreateDCResp(<<1:1, X:7,
+				    Rest/binary>>,
+				  N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_ApbCreateDCResp(Rest, N + 7,
+				      X bsl N + Acc, F@_1, F@_2, TrUserData);
+dg_read_field_def_ApbCreateDCResp(<<0:1, X:7,
+				    Rest/binary>>,
+				  N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+      8 ->
+	  d_field_ApbCreateDCResp_success(Rest, 0, 0, F@_1, F@_2,
+					  TrUserData);
+      16 ->
+	  d_field_ApbCreateDCResp_errorcode(Rest, 0, 0, F@_1,
+					    F@_2, TrUserData);
+      _ ->
+	  case Key band 7 of
+	    0 ->
+		skip_varint_ApbCreateDCResp(Rest, 0, 0, F@_1, F@_2,
+					    TrUserData);
+	    1 ->
+		skip_64_ApbCreateDCResp(Rest, 0, 0, F@_1, F@_2,
+					TrUserData);
+	    2 ->
+		skip_length_delimited_ApbCreateDCResp(Rest, 0, 0, F@_1,
+						      F@_2, TrUserData);
+	    3 ->
+		skip_group_ApbCreateDCResp(Rest, Key bsr 3, 0, F@_1,
+					   F@_2, TrUserData);
+	    5 ->
+		skip_32_ApbCreateDCResp(Rest, 0, 0, F@_1, F@_2,
+					TrUserData)
+	  end
+    end;
+dg_read_field_def_ApbCreateDCResp(<<>>, 0, 0, F@_1,
+				  F@_2, _) ->
+    #'ApbCreateDCResp'{success = F@_1, errorcode = F@_2}.
+
+d_field_ApbCreateDCResp_success(<<1:1, X:7,
+				  Rest/binary>>,
+				N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_ApbCreateDCResp_success(Rest, N + 7,
+				    X bsl N + Acc, F@_1, F@_2, TrUserData);
+d_field_ApbCreateDCResp_success(<<0:1, X:7,
+				  Rest/binary>>,
+				N, Acc, _, F@_2, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc =/= 0,
+			     TrUserData),
+			  Rest},
+    dfp_read_field_def_ApbCreateDCResp(RestF, 0, 0,
+				       NewFValue, F@_2, TrUserData).
+
+d_field_ApbCreateDCResp_errorcode(<<1:1, X:7,
+				    Rest/binary>>,
+				  N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_ApbCreateDCResp_errorcode(Rest, N + 7,
+				      X bsl N + Acc, F@_1, F@_2, TrUserData);
+d_field_ApbCreateDCResp_errorcode(<<0:1, X:7,
+				    Rest/binary>>,
+				  N, Acc, F@_1, _, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+			  Rest},
+    dfp_read_field_def_ApbCreateDCResp(RestF, 0, 0, F@_1,
+				       NewFValue, TrUserData).
+
+skip_varint_ApbCreateDCResp(<<1:1, _:7, Rest/binary>>,
+			    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_ApbCreateDCResp(Rest, Z1, Z2, F@_1, F@_2,
+				TrUserData);
+skip_varint_ApbCreateDCResp(<<0:1, _:7, Rest/binary>>,
+			    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbCreateDCResp(Rest, Z1, Z2, F@_1,
+				       F@_2, TrUserData).
+
+skip_length_delimited_ApbCreateDCResp(<<1:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_ApbCreateDCResp(Rest, N + 7,
+					  X bsl N + Acc, F@_1, F@_2,
+					  TrUserData);
+skip_length_delimited_ApbCreateDCResp(<<0:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, F@_2, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_ApbCreateDCResp(Rest2, 0, 0, F@_1,
+				       F@_2, TrUserData).
+
+skip_group_ApbCreateDCResp(Bin, FNum, Z2, F@_1, F@_2,
+			   TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_ApbCreateDCResp(Rest, 0, Z2, F@_1,
+				       F@_2, TrUserData).
+
+skip_32_ApbCreateDCResp(<<_:32, Rest/binary>>, Z1, Z2,
+			F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbCreateDCResp(Rest, Z1, Z2, F@_1,
+				       F@_2, TrUserData).
+
+skip_64_ApbCreateDCResp(<<_:64, Rest/binary>>, Z1, Z2,
+			F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbCreateDCResp(Rest, Z1, Z2, F@_1,
+				       F@_2, TrUserData).
+
 decode_msg_ApbGetConnectionDescriptor(Bin,
 				      TrUserData) ->
     dfp_read_field_def_ApbGetConnectionDescriptor(Bin, 0, 0,
@@ -7039,6 +7226,146 @@ skip_64_ApbConnectToDCs(<<_:64, Rest/binary>>, Z1, Z2,
     dfp_read_field_def_ApbConnectToDCs(Rest, Z1, Z2, F@_1,
 				       TrUserData).
 
+decode_msg_ApbConnectToDCsResp(Bin, TrUserData) ->
+    dfp_read_field_def_ApbConnectToDCsResp(Bin, 0, 0,
+					   id(undefined, TrUserData),
+					   id(undefined, TrUserData),
+					   TrUserData).
+
+dfp_read_field_def_ApbConnectToDCsResp(<<8,
+					 Rest/binary>>,
+				       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_ApbConnectToDCsResp_success(Rest, Z1, Z2, F@_1,
+					F@_2, TrUserData);
+dfp_read_field_def_ApbConnectToDCsResp(<<16,
+					 Rest/binary>>,
+				       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_ApbConnectToDCsResp_errorcode(Rest, Z1, Z2,
+					  F@_1, F@_2, TrUserData);
+dfp_read_field_def_ApbConnectToDCsResp(<<>>, 0, 0, F@_1,
+				       F@_2, _) ->
+    #'ApbConnectToDCsResp'{success = F@_1,
+			   errorcode = F@_2};
+dfp_read_field_def_ApbConnectToDCsResp(Other, Z1, Z2,
+				       F@_1, F@_2, TrUserData) ->
+    dg_read_field_def_ApbConnectToDCsResp(Other, Z1, Z2,
+					  F@_1, F@_2, TrUserData).
+
+dg_read_field_def_ApbConnectToDCsResp(<<1:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_ApbConnectToDCsResp(Rest, N + 7,
+					  X bsl N + Acc, F@_1, F@_2,
+					  TrUserData);
+dg_read_field_def_ApbConnectToDCsResp(<<0:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+      8 ->
+	  d_field_ApbConnectToDCsResp_success(Rest, 0, 0, F@_1,
+					      F@_2, TrUserData);
+      16 ->
+	  d_field_ApbConnectToDCsResp_errorcode(Rest, 0, 0, F@_1,
+						F@_2, TrUserData);
+      _ ->
+	  case Key band 7 of
+	    0 ->
+		skip_varint_ApbConnectToDCsResp(Rest, 0, 0, F@_1, F@_2,
+						TrUserData);
+	    1 ->
+		skip_64_ApbConnectToDCsResp(Rest, 0, 0, F@_1, F@_2,
+					    TrUserData);
+	    2 ->
+		skip_length_delimited_ApbConnectToDCsResp(Rest, 0, 0,
+							  F@_1, F@_2,
+							  TrUserData);
+	    3 ->
+		skip_group_ApbConnectToDCsResp(Rest, Key bsr 3, 0, F@_1,
+					       F@_2, TrUserData);
+	    5 ->
+		skip_32_ApbConnectToDCsResp(Rest, 0, 0, F@_1, F@_2,
+					    TrUserData)
+	  end
+    end;
+dg_read_field_def_ApbConnectToDCsResp(<<>>, 0, 0, F@_1,
+				      F@_2, _) ->
+    #'ApbConnectToDCsResp'{success = F@_1,
+			   errorcode = F@_2}.
+
+d_field_ApbConnectToDCsResp_success(<<1:1, X:7,
+				      Rest/binary>>,
+				    N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_ApbConnectToDCsResp_success(Rest, N + 7,
+					X bsl N + Acc, F@_1, F@_2, TrUserData);
+d_field_ApbConnectToDCsResp_success(<<0:1, X:7,
+				      Rest/binary>>,
+				    N, Acc, _, F@_2, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc =/= 0,
+			     TrUserData),
+			  Rest},
+    dfp_read_field_def_ApbConnectToDCsResp(RestF, 0, 0,
+					   NewFValue, F@_2, TrUserData).
+
+d_field_ApbConnectToDCsResp_errorcode(<<1:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_ApbConnectToDCsResp_errorcode(Rest, N + 7,
+					  X bsl N + Acc, F@_1, F@_2,
+					  TrUserData);
+d_field_ApbConnectToDCsResp_errorcode(<<0:1, X:7,
+					Rest/binary>>,
+				      N, Acc, F@_1, _, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+			  Rest},
+    dfp_read_field_def_ApbConnectToDCsResp(RestF, 0, 0,
+					   F@_1, NewFValue, TrUserData).
+
+skip_varint_ApbConnectToDCsResp(<<1:1, _:7,
+				  Rest/binary>>,
+				Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_ApbConnectToDCsResp(Rest, Z1, Z2, F@_1,
+				    F@_2, TrUserData);
+skip_varint_ApbConnectToDCsResp(<<0:1, _:7,
+				  Rest/binary>>,
+				Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbConnectToDCsResp(Rest, Z1, Z2,
+					   F@_1, F@_2, TrUserData).
+
+skip_length_delimited_ApbConnectToDCsResp(<<1:1, X:7,
+					    Rest/binary>>,
+					  N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_ApbConnectToDCsResp(Rest, N + 7,
+					      X bsl N + Acc, F@_1, F@_2,
+					      TrUserData);
+skip_length_delimited_ApbConnectToDCsResp(<<0:1, X:7,
+					    Rest/binary>>,
+					  N, Acc, F@_1, F@_2, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_ApbConnectToDCsResp(Rest2, 0, 0,
+					   F@_1, F@_2, TrUserData).
+
+skip_group_ApbConnectToDCsResp(Bin, FNum, Z2, F@_1,
+			       F@_2, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_ApbConnectToDCsResp(Rest, 0, Z2,
+					   F@_1, F@_2, TrUserData).
+
+skip_32_ApbConnectToDCsResp(<<_:32, Rest/binary>>, Z1,
+			    Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbConnectToDCsResp(Rest, Z1, Z2,
+					   F@_1, F@_2, TrUserData).
+
+skip_64_ApbConnectToDCsResp(<<_:64, Rest/binary>>, Z1,
+			    Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_ApbConnectToDCsResp(Rest, Z1, Z2,
+					   F@_1, F@_2, TrUserData).
+
 d_enum_CRDT_type(3) -> 'COUNTER';
 d_enum_CRDT_type(4) -> 'ORSET';
 d_enum_CRDT_type(5) -> 'LWWREG';
@@ -7198,6 +7525,8 @@ merge_msgs(Prev, New, MsgName, Opts) ->
 					     TrUserData);
       'ApbCreateDC' ->
 	  merge_msg_ApbCreateDC(Prev, New, TrUserData);
+      'ApbCreateDCResp' ->
+	  merge_msg_ApbCreateDCResp(Prev, New, TrUserData);
       'ApbGetConnectionDescriptor' ->
 	  merge_msg_ApbGetConnectionDescriptor(Prev, New,
 					       TrUserData);
@@ -7205,7 +7534,9 @@ merge_msgs(Prev, New, MsgName, Opts) ->
 	  merge_msg_ApbGetConnectionDescriptorResp(Prev, New,
 						   TrUserData);
       'ApbConnectToDCs' ->
-	  merge_msg_ApbConnectToDCs(Prev, New, TrUserData)
+	  merge_msg_ApbConnectToDCs(Prev, New, TrUserData);
+      'ApbConnectToDCsResp' ->
+	  merge_msg_ApbConnectToDCsResp(Prev, New, TrUserData)
     end.
 
 -compile({nowarn_unused_function,merge_msg_ApbErrorResp/3}).
@@ -7753,6 +8084,18 @@ merge_msg_ApbCreateDC(#'ApbCreateDC'{nodes = PFnodes},
 			  NFnodes == undefined -> PFnodes
 		       end}.
 
+-compile({nowarn_unused_function,merge_msg_ApbCreateDCResp/3}).
+merge_msg_ApbCreateDCResp(#'ApbCreateDCResp'{errorcode =
+						 PFerrorcode},
+			  #'ApbCreateDCResp'{success = NFsuccess,
+					     errorcode = NFerrorcode},
+			  _) ->
+    #'ApbCreateDCResp'{success = NFsuccess,
+		       errorcode =
+			   if NFerrorcode =:= undefined -> PFerrorcode;
+			      true -> NFerrorcode
+			   end}.
+
 -compile({nowarn_unused_function,merge_msg_ApbGetConnectionDescriptor/3}).
 merge_msg_ApbGetConnectionDescriptor(_Prev, New,
 				     _TrUserData) ->
@@ -7800,6 +8143,18 @@ merge_msg_ApbConnectToDCs(#'ApbConnectToDCs'{descriptors
 			      PFdescriptors == undefined -> NFdescriptors;
 			      NFdescriptors == undefined -> PFdescriptors
 			   end}.
+
+-compile({nowarn_unused_function,merge_msg_ApbConnectToDCsResp/3}).
+merge_msg_ApbConnectToDCsResp(#'ApbConnectToDCsResp'{errorcode
+							 = PFerrorcode},
+			      #'ApbConnectToDCsResp'{success = NFsuccess,
+						     errorcode = NFerrorcode},
+			      _) ->
+    #'ApbConnectToDCsResp'{success = NFsuccess,
+			   errorcode =
+			       if NFerrorcode =:= undefined -> PFerrorcode;
+				  true -> NFerrorcode
+			       end}.
 
 
 verify_msg(Msg) when tuple_size(Msg) >= 1 ->
@@ -7888,6 +8243,8 @@ verify_msg(Msg, MsgName, Opts) ->
 					 TrUserData);
       'ApbCreateDC' ->
 	  v_msg_ApbCreateDC(Msg, [MsgName], TrUserData);
+      'ApbCreateDCResp' ->
+	  v_msg_ApbCreateDCResp(Msg, [MsgName], TrUserData);
       'ApbGetConnectionDescriptor' ->
 	  v_msg_ApbGetConnectionDescriptor(Msg, [MsgName],
 					   TrUserData);
@@ -7896,6 +8253,8 @@ verify_msg(Msg, MsgName, Opts) ->
 					       TrUserData);
       'ApbConnectToDCs' ->
 	  v_msg_ApbConnectToDCs(Msg, [MsgName], TrUserData);
+      'ApbConnectToDCsResp' ->
+	  v_msg_ApbConnectToDCsResp(Msg, [MsgName], TrUserData);
       _ -> mk_type_error(not_a_known_message, Msg, [])
     end.
 
@@ -8494,6 +8853,21 @@ v_msg_ApbCreateDC(#'ApbCreateDC'{nodes = F1}, Path,
 v_msg_ApbCreateDC(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, 'ApbCreateDC'}, X, Path).
 
+-compile({nowarn_unused_function,v_msg_ApbCreateDCResp/3}).
+-dialyzer({nowarn_function,v_msg_ApbCreateDCResp/3}).
+v_msg_ApbCreateDCResp(#'ApbCreateDCResp'{success = F1,
+					 errorcode = F2},
+		      Path, TrUserData) ->
+    v_type_bool(F1, [success | Path], TrUserData),
+    if F2 == undefined -> ok;
+       true ->
+	   v_type_uint32(F2, [errorcode | Path], TrUserData)
+    end,
+    ok;
+v_msg_ApbCreateDCResp(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, 'ApbCreateDCResp'}, X,
+		  Path).
+
 -compile({nowarn_unused_function,v_msg_ApbGetConnectionDescriptor/3}).
 -dialyzer({nowarn_function,v_msg_ApbGetConnectionDescriptor/3}).
 v_msg_ApbGetConnectionDescriptor(#'ApbGetConnectionDescriptor'{},
@@ -8548,6 +8922,22 @@ v_msg_ApbConnectToDCs(#'ApbConnectToDCs'{descriptors =
     ok;
 v_msg_ApbConnectToDCs(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, 'ApbConnectToDCs'}, X,
+		  Path).
+
+-compile({nowarn_unused_function,v_msg_ApbConnectToDCsResp/3}).
+-dialyzer({nowarn_function,v_msg_ApbConnectToDCsResp/3}).
+v_msg_ApbConnectToDCsResp(#'ApbConnectToDCsResp'{success
+						     = F1,
+						 errorcode = F2},
+			  Path, TrUserData) ->
+    v_type_bool(F1, [success | Path], TrUserData),
+    if F2 == undefined -> ok;
+       true ->
+	   v_type_uint32(F2, [errorcode | Path], TrUserData)
+    end,
+    ok;
+v_msg_ApbConnectToDCsResp(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, 'ApbConnectToDCsResp'}, X,
 		  Path).
 
 -compile({nowarn_unused_function,v_enum_CRDT_type/3}).
@@ -8919,6 +9309,11 @@ get_msg_defs() ->
      {{msg, 'ApbCreateDC'},
       [#field{name = nodes, fnum = 1, rnum = 2, type = string,
 	      occurrence = repeated, opts = []}]},
+     {{msg, 'ApbCreateDCResp'},
+      [#field{name = success, fnum = 1, rnum = 2, type = bool,
+	      occurrence = required, opts = []},
+       #field{name = errorcode, fnum = 2, rnum = 3,
+	      type = uint32, occurrence = optional, opts = []}]},
      {{msg, 'ApbGetConnectionDescriptor'}, []},
      {{msg, 'ApbGetConnectionDescriptorResp'},
       [#field{name = success, fnum = 1, rnum = 2, type = bool,
@@ -8929,7 +9324,12 @@ get_msg_defs() ->
 	      type = uint32, occurrence = optional, opts = []}]},
      {{msg, 'ApbConnectToDCs'},
       [#field{name = descriptors, fnum = 1, rnum = 2,
-	      type = bytes, occurrence = repeated, opts = []}]}].
+	      type = bytes, occurrence = repeated, opts = []}]},
+     {{msg, 'ApbConnectToDCsResp'},
+      [#field{name = success, fnum = 1, rnum = 2, type = bool,
+	      occurrence = required, opts = []},
+       #field{name = errorcode, fnum = 2, rnum = 3,
+	      type = uint32, occurrence = optional, opts = []}]}].
 
 
 get_msg_names() ->
@@ -8946,8 +9346,10 @@ get_msg_names() ->
      'ApbStaticReadObjects', 'ApbStartTransactionResp',
      'ApbReadObjectResp', 'ApbReadObjectsResp',
      'ApbCommitResp', 'ApbStaticReadObjectsResp',
-     'ApbCreateDC', 'ApbGetConnectionDescriptor',
-     'ApbGetConnectionDescriptorResp', 'ApbConnectToDCs'].
+     'ApbCreateDC', 'ApbCreateDCResp',
+     'ApbGetConnectionDescriptor',
+     'ApbGetConnectionDescriptorResp', 'ApbConnectToDCs',
+     'ApbConnectToDCsResp'].
 
 
 get_group_names() -> [].
@@ -8967,8 +9369,10 @@ get_msg_or_group_names() ->
      'ApbStaticReadObjects', 'ApbStartTransactionResp',
      'ApbReadObjectResp', 'ApbReadObjectsResp',
      'ApbCommitResp', 'ApbStaticReadObjectsResp',
-     'ApbCreateDC', 'ApbGetConnectionDescriptor',
-     'ApbGetConnectionDescriptorResp', 'ApbConnectToDCs'].
+     'ApbCreateDC', 'ApbCreateDCResp',
+     'ApbGetConnectionDescriptor',
+     'ApbGetConnectionDescriptorResp', 'ApbConnectToDCs',
+     'ApbConnectToDCsResp'].
 
 
 get_enum_names() ->
@@ -9200,6 +9604,11 @@ find_msg_def('ApbStaticReadObjectsResp') ->
 find_msg_def('ApbCreateDC') ->
     [#field{name = nodes, fnum = 1, rnum = 2, type = string,
 	    occurrence = repeated, opts = []}];
+find_msg_def('ApbCreateDCResp') ->
+    [#field{name = success, fnum = 1, rnum = 2, type = bool,
+	    occurrence = required, opts = []},
+     #field{name = errorcode, fnum = 2, rnum = 3,
+	    type = uint32, occurrence = optional, opts = []}];
 find_msg_def('ApbGetConnectionDescriptor') -> [];
 find_msg_def('ApbGetConnectionDescriptorResp') ->
     [#field{name = success, fnum = 1, rnum = 2, type = bool,
@@ -9211,6 +9620,11 @@ find_msg_def('ApbGetConnectionDescriptorResp') ->
 find_msg_def('ApbConnectToDCs') ->
     [#field{name = descriptors, fnum = 1, rnum = 2,
 	    type = bytes, occurrence = repeated, opts = []}];
+find_msg_def('ApbConnectToDCsResp') ->
+    [#field{name = success, fnum = 1, rnum = 2, type = bool,
+	    occurrence = required, opts = []},
+     #field{name = errorcode, fnum = 2, rnum = 3,
+	    type = uint32, occurrence = optional, opts = []}];
 find_msg_def(_) -> error.
 
 

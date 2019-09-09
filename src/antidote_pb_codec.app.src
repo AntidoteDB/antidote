@@ -1,7 +1,7 @@
 {application, antidote_pb_codec,
     [
         {description, "Protocol buffer codec for Antidote"},
-        {vsn, "0.1.1"},
+        {vsn, "0.1.2"},
         {registered, []},
         {applications, [
             kernel,

@@ -281,6 +281,14 @@
         }).
 -endif.
 
+-ifndef('APBCREATEDCRESP_PB_H').
+-define('APBCREATEDCRESP_PB_H', true).
+-record('ApbCreateDCResp',
+        {success                :: boolean() | 0 | 1, % = 1
+         errorcode              :: non_neg_integer() | undefined % = 2, 32 bits
+        }).
+-endif.
+
 -ifndef('APBGETCONNECTIONDESCRIPTOR_PB_H').
 -define('APBGETCONNECTIONDESCRIPTOR_PB_H', true).
 -record('ApbGetConnectionDescriptor',
@@ -301,6 +309,14 @@
 -define('APBCONNECTTODCS_PB_H', true).
 -record('ApbConnectToDCs',
         {descriptors = []       :: [iodata()] | undefined % = 1
+        }).
+-endif.
+
+-ifndef('APBCONNECTTODCSRESP_PB_H').
+-define('APBCONNECTTODCSRESP_PB_H', true).
+-record('ApbConnectToDCsResp',
+        {success                :: boolean() | 0 | 1, % = 1
+         errorcode              :: non_neg_integer() | undefined % = 2, 32 bits
         }).
 -endif.
 

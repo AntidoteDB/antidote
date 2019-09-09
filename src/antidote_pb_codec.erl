@@ -28,7 +28,7 @@
 -export([decode_request/1, decode_response/1, encode_request/1, encode_response/1]).
 
 % these are all top-level messages which can be sent on the wire
--export_type([request/0, response_in/0, response_out/0, update/0, read_result/0]).
+-export_type([request/0, response/0, update/0, read_result/0]).
 
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
 -type update() :: {Object :: bound_object(), Op :: atom(), Param :: any()}.
@@ -54,7 +54,6 @@
 | {antidote_crdt_flag_ew, boolean()}
 .
 
-
 -type request() ::
   {start_transaction, Clock :: binary(), Properties :: list()}
 | {abort_transaction, TxId :: binary()}
@@ -67,24 +66,16 @@
 | get_connection_descriptor
 | {connect_to_dcs, Descriptors :: [binary()]}.
 
--type response_out() ::
+-type response() ::
   {error_response, {ErrorCode :: error_code(), Message :: binary()}}
 | {start_transaction_response, {ok, TxId :: binary()} | {error, Reason :: error_code()}}
-| {commit_response, {ok, CommitTime :: binary()} | {error, Reason :: error_code()}}
-| {static_read_objects_response, {Results :: [read_result()], CommitTime :: binary()}}
+| {commit_transaction_response, {ok, CommitTime :: binary()} | {error, Reason :: error_code()}}
+| {static_read_objects_response, {ok, Results :: [read_result()], CommitTime :: binary()}}
 | {read_objects_response, {ok, Resp :: [read_result()]} | {error, Reason :: error_code()}}
 | {operation_response, ok | {error, Reason :: error_code()}}
-| {get_connection_descriptor_resp, {ok, Descriptor :: binary()} | {error, Reason :: error_code()}}.
-
--type response_in() ::
-  {error_response, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_response, {ok, TxId :: binary()}}
-| {commit_response, {ok, CommitTime :: binary()}| {error, Reason :: error_code()}}
-| {static_read_objects_response, {Results :: [read_result_in()], CommitTime :: binary()}}
-| {read_objects_response, {ok, Resp :: [read_result_in()]} | {error, Reason :: error_code()}}
-| {operation_response, ok | {error, Reason :: error_code()}}
-| {get_connection_descriptor_resp, {ok, Descriptor :: binary()} | {error, Reason :: error_code()}}.
-
+| {create_dc_response, ok | {error, Reason :: error_code()}}
+| {get_connection_descriptor_response, {ok, Descriptor :: binary()} | {error, Reason :: error_code()}}
+| {connect_to_dcs_response, ok | {error, Reason :: error_code()}}.
 
 -type sendable() ::
   #'ApbErrorResp'{}
@@ -101,9 +92,11 @@
 | #'ApbReadObjectsResp'{}
 | #'ApbOperationResp'{}
 | #'ApbCreateDC'{}
+| #'ApbCreateDCResp'{}
 | #'ApbGetConnectionDescriptor'{}
 | #'ApbGetConnectionDescriptorResp'{}
 | #'ApbConnectToDCs'{}
+| #'ApbConnectToDCsResp'{}
 .
 
 -define(ASSERT_BINARY(X), case is_binary(X) of true -> ok; false -> throw({not_binary, X}) end).
@@ -114,7 +107,7 @@ decode_request(Data) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     decode(MsgCode, MsgData).
 
--spec decode_response(binary()) -> response_out().
+-spec decode_response(binary()) -> response().
 decode_response(Data) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     decode(MsgCode, MsgData).
@@ -123,7 +116,7 @@ decode_response(Data) ->
 encode_request(Data) ->
     encode(Data).
 
--spec encode_response(response_in()) -> iolist().
+-spec encode_response(response()) -> iolist().
 encode_response(Data) ->
     TransformReadResponse = case Data of
         {static_read_objects_response, {Results, CommitTime}} ->
@@ -137,7 +130,6 @@ encode_response(Data) ->
     encode(TransformReadResponse).
 
 -type message() :: term().
-
 
 message_type_to_code('ApbErrorResp')             -> 0;
 message_type_to_code('ApbRegUpdate')             -> 107;
@@ -163,9 +155,11 @@ message_type_to_code('ApbReadObjectsResp')       -> 126;
 message_type_to_code('ApbCommitResp')            -> 127;
 message_type_to_code('ApbStaticReadObjectsResp') -> 128;
 message_type_to_code('ApbCreateDC')                    -> 129;
-message_type_to_code('ApbConnectToDCs')                -> 130;
-message_type_to_code('ApbGetConnectionDescriptor')     -> 131;
-message_type_to_code('ApbGetConnectionDescriptorResp') -> 132.
+message_type_to_code('ApbCreateDCResp')                -> 130;
+message_type_to_code('ApbConnectToDCs')                -> 131;
+message_type_to_code('ApbConnectToDCsResp')            -> 132;
+message_type_to_code('ApbGetConnectionDescriptor')     -> 133;
+message_type_to_code('ApbGetConnectionDescriptorResp') -> 134.
 
 message_code_to_type(0)   -> 'ApbErrorResp';
 message_code_to_type(107) -> 'ApbRegUpdate';
@@ -191,16 +185,15 @@ message_code_to_type(126) -> 'ApbReadObjectsResp';
 message_code_to_type(127) -> 'ApbCommitResp';
 message_code_to_type(128) -> 'ApbStaticReadObjectsResp';
 message_code_to_type(129) -> 'ApbCreateDC';
-message_code_to_type(130) -> 'ApbConnectToDCs';
-message_code_to_type(131) -> 'ApbGetConnectionDescriptor';
-message_code_to_type(132) -> 'ApbGetConnectionDescriptorResp'.
+message_code_to_type(130) -> 'ApbCreateDCResp';
+message_code_to_type(131) -> 'ApbConnectToDCs';
+message_code_to_type(132) -> 'ApbConnectToDCsResp';
+message_code_to_type(133) -> 'ApbGetConnectionDescriptor';
+message_code_to_type(134) -> 'ApbGetConnectionDescriptorResp'.
 
 -spec encode(message()) -> iolist().
 encode(Msg) ->
-    X = encode_message(Msg),
-    encode_msg(X).
-
-
+    encode_msg(encode_message(Msg)).
 
 -spec decode(integer(), binary()) -> any().
 decode(Code, Msg) ->
@@ -231,11 +224,12 @@ encode_message({static_read_objects, Clock, Properties, Objects}) ->
   encode_static_read_objects(Clock, Properties, Objects);
 encode_message({read_objects, Objects, TxId}) ->
   encode_read_objects(Objects, TxId);
+
 encode_message({error_response, {ErrorCode, Message}}) ->
   encode_error_resp(ErrorCode, Message);
 encode_message({start_transaction_response, Resp}) ->
   encode_start_transaction_response(Resp);
-encode_message({commit_response, Resp}) ->
+encode_message({commit_transaction_response, Resp}) ->
   encode_commit_response(Resp);
 encode_message({static_read_objects_response, Resp}) ->
   encode_static_read_objects_response(Resp);
@@ -243,14 +237,19 @@ encode_message({read_objects_response, Resp}) ->
   encode_read_objects_response(Resp);
 encode_message({operation_response, Resp}) ->
   encode_operation_response(Resp);
+
 encode_message(get_connection_descriptor) ->
   encode_get_connection_descriptor();
-encode_message({get_connection_descriptor_resp, Resp}) ->
-  encode_get_connection_descriptor_resp(Resp);
+encode_message({get_connection_descriptor_response, Resp}) ->
+  encode_get_connection_descriptor_response(Resp);
 encode_message({create_dc, Nodes}) ->
   encode_create_dc(Nodes);
+encode_message({create_dc_response, Resp}) ->
+  encode_create_dc_response(Resp);
 encode_message({connect_to_dcs, Descriptors}) ->
-  encode_connect_to_dcs(Descriptors).
+  encode_connect_to_dcs(Descriptors);
+encode_message({connect_to_dcs_response, Descriptors}) ->
+  encode_connect_to_dcs_response(Descriptors).
 
 -spec decode_message(sendable()) -> message().
 decode_message(#'ApbStartTransaction'{properties = Properties, timestamp = Clock}) ->
@@ -274,14 +273,22 @@ decode_message(#'ApbReadObjects'{boundobjects = Objects, transaction_descriptor 
 
 decode_message(#'ApbCreateDC'{nodes = Nodes}) ->
   {create_dc, [binary_to_atom(N, utf8) || N <- Nodes]};
+decode_message(#'ApbCreateDCResp'{success = false, errorcode = E}) ->
+  {create_dc_response, {error, decode_error_code(E)}};
+decode_message(#'ApbCreateDCResp'{success = true, errorcode = _E}) ->
+  {create_dc_response, ok};
 decode_message(#'ApbGetConnectionDescriptor'{}) ->
   get_connection_descriptor;
 decode_message(#'ApbGetConnectionDescriptorResp'{success = false, descriptor = _D, errorcode = E}) ->
-  {get_connection_descriptor_resp, {error, decode_error_code(E)}};
+  {get_connection_descriptor_response, {error, decode_error_code(E)}};
 decode_message(#'ApbGetConnectionDescriptorResp'{success = true, descriptor = Descriptor, errorcode = _E}) ->
-  {get_connection_descriptor_resp, {ok, Descriptor}};
+  {get_connection_descriptor_response, {ok, Descriptor}};
 decode_message(#'ApbConnectToDCs'{descriptors = Descriptors}) ->
   {connect_to_dcs, Descriptors};
+decode_message(#'ApbConnectToDCsResp'{success = false, errorcode = E}) ->
+  {connect_to_dcs_response, {error, decode_error_code(E)}};
+decode_message(#'ApbConnectToDCsResp'{success = true, errorcode = _E}) ->
+  {connect_to_dcs_response, ok};
 
 decode_message(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
   {error_response, {decode_error_code(ErrorCode), Message}};
@@ -296,7 +303,7 @@ decode_message(#'ApbCommitResp'{success = Success, errorcode = ErrorCode, commit
     true -> {ok, Time};
     false -> {error, decode_error_code(ErrorCode)}
   end,
-  {commit_response, Resp};
+  {commit_transaction_response, Resp};
 decode_message(#'ApbStaticReadObjectsResp'{
     objects = #'ApbReadObjectsResp'{objects = Objects},
     committime = #'ApbCommitResp'{commit_time = Time}}) ->
@@ -747,23 +754,36 @@ decode_map_entry(#'ApbMapEntry'{key = KeyEnc, value = ValueEnc}) ->
 
 %% Cluster Management
 
+encode_node(N) ->
+  if
+    is_atom(N) -> atom_to_binary(N, utf8);
+    is_list(N) -> list_to_binary(N);
+    is_binary(N) -> N;
+    true -> throw({invalid_node_value, N})
+  end.
+
 encode_create_dc(Nodes) ->
-    #'ApbCreateDC'{nodes = [if
-      is_atom(N) -> atom_to_binary(N, utf8);
-      is_list(N) -> list_to_binary(N);
-      is_binary(N) -> N;
-      true -> throw({invalid_node_value, N})
-    end || N <- Nodes]}.
+    #'ApbCreateDC'{nodes = [ encode_node(N) || N <- Nodes]}.
+
+encode_create_dc_response({error, Reason}) ->
+    #'ApbCreateDCResp'{
+        success = false,
+        errorcode = encode_error_code(Reason)
+    };
+encode_create_dc_response(ok) ->
+    #'ApbCreateDCResp'{
+        success = true
+    }.
 
 encode_get_connection_descriptor() ->
     #'ApbGetConnectionDescriptor'{}.
 
-encode_get_connection_descriptor_resp({error, Reason}) ->
+encode_get_connection_descriptor_response({error, Reason}) ->
     #'ApbGetConnectionDescriptorResp'{
         success = false,
         errorcode = encode_error_code(Reason)
     };
-encode_get_connection_descriptor_resp({ok, Descriptor}) ->
+encode_get_connection_descriptor_response({ok, Descriptor}) ->
     #'ApbGetConnectionDescriptorResp'{
         success = true,
         descriptor = Descriptor
@@ -771,6 +791,16 @@ encode_get_connection_descriptor_resp({ok, Descriptor}) ->
 
 encode_connect_to_dcs(Descriptors) ->
     #'ApbConnectToDCs'{descriptors = Descriptors}.
+
+encode_connect_to_dcs_response({error, Reason}) ->
+    #'ApbConnectToDCsResp'{
+        success = false,
+        errorcode = encode_error_code(Reason)
+    };
+encode_connect_to_dcs_response(ok) ->
+    #'ApbConnectToDCsResp'{
+        success = true
+    }.
 
 -ifdef(TEST).
 
@@ -790,8 +820,6 @@ check_request(Input, Output) ->
 check_request(Input) ->
   check_request(Input, Input).
 
-
-
 %% Tests encode and decode
 start_test() ->
   check_request({start_transaction, <<"opaque_binary">>, []}),
@@ -802,7 +830,7 @@ lock_test() ->
 
 commit_test() ->
   check_request({commit_transaction, <<"opaque_binary">>}),
-  check_response({commit_response, {ok, <<"opaque_binary">>}}).
+  check_response({commit_transaction_response, {ok, <<"opaque_binary">>}}).
 
 abort_test() ->
   check_request({abort_transaction, <<"opaque_binary">>}).
@@ -868,15 +896,16 @@ update_test() ->
      {{<<"M">>, antidote_crdt_map_rr, <<"B">>}, remove, [{<<"A">>, antidote_crdt_counter_pn}, {<<"B">>, antidote_crdt_set_aw}]}
   ],
   check_request({update_objects, MapUpdates, <<"opaque_binary">>}),
-
   check_response({operation_response, ok}).
 
 error_messages_test() ->
   check_response({start_transaction_response, {error, unknown}}),
-  check_response({commit_response, {error, unknown}}),
+  check_response({commit_transaction_response, {error, unknown}}),
   check_response({operation_response, {error, unknown}}),
   check_response({read_objects_response, {error, unknown}}),
-  check_response({get_connection_descriptor_resp, {error, unknown}}),
+  check_response({get_connection_descriptor_response, {error, unknown}}),
+  check_response({create_dc_response, {error, unknown}}),
+  check_response({connect_to_dcs_response, {error, unknown}}),
   check_response({error_response, {unknown, <<"Message">>}}),
   check_response({error_response, {timeout, <<"Message">>}}),
   check_response({error_response, {no_permissions, <<"Message">>}}),
@@ -884,15 +913,17 @@ error_messages_test() ->
   check_response({error_response, {{error_code, 123}, <<"Message">>}}, {error_response, {{error_code, 123}, <<"Message">>}}).
 
 dc_management_test() ->
-    Nodes = [antidote@host1, antidote@host2],
-    check_request({create_dc, Nodes}),
-    check_request(get_connection_descriptor),
+  Nodes = [antidote@host1, antidote@host2],
+  check_request({create_dc, Nodes}),
+  check_response({create_dc_response, ok}),
 
-    Descriptor = <<"some_opaque_binary_descriptor">>,
-    check_response({get_connection_descriptor_resp, {ok, Descriptor}}),
+  check_request(get_connection_descriptor),
+  Descriptor = <<"some_opaque_binary_descriptor">>,
+  check_response({get_connection_descriptor_response, {ok, Descriptor}}),
 
-    Descriptors = [<<"opaque_binary_descriptor1">>, <<"opaque_binary_descriptor2">>, <<"opaque_binary_descriptor3">>],
-    check_request({connect_to_dcs, Descriptors}),
-    ok.
+  Descriptors = [<<"opaque_binary_descriptor1">>, <<"opaque_binary_descriptor2">>, <<"opaque_binary_descriptor3">>],
+  check_request({connect_to_dcs, Descriptors}),
+  check_response({connect_to_dcs_response, ok}),
+  ok.
 
 -endif.
