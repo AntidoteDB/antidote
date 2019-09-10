@@ -69,8 +69,8 @@ process({abort_transaction, TxId}) ->
 process({commit_transaction, TxId}) ->
     Response = antidote:commit_transaction(from_bin(TxId)),
     case Response of
-        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}};
-        {error, Reason} -> {commit_response, {error, Reason}}
+        {ok, CommitTime} -> {commit_transaction_response, {ok, encode_clock(CommitTime)}};
+        {error, Reason} -> {commit_transaction_response, {error, Reason}}
     end;
 
 process({update_objects, Updates, TxId}) ->
@@ -83,8 +83,8 @@ process({update_objects, Updates, TxId}) ->
 process({static_update_objects, Clock, Properties, Updates}) ->
     Response = antidote:update_objects(from_bin(Clock), Properties, Updates),
     case Response of
-        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}};
-        {error, Reason} -> {commit_response, {error, Reason}}
+        {ok, CommitTime} -> {commit_transaction_response, {ok, encode_clock(CommitTime)}};
+        {error, Reason} -> {commit_transaction_response, {error, Reason}}
     end;
 
 process({read_objects, Objects, TxId}) ->
@@ -98,7 +98,7 @@ process({read_objects, Objects, TxId}) ->
 process({static_read_objects, Clock, Properties, Objects}) ->
     Response = antidote:read_objects(from_bin(Clock), Properties, Objects),
     case Response of
-        {ok, Results, CommitTime} -> {static_read_objects_response, {ok, lists:zip(Objects, Results), encode_clock(CommitTime)}};
+        {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}};
         {error, Reason} -> {static_read_objects_response, {error, Reason}}
     end;
 
