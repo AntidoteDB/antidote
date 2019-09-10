@@ -1,6 +1,6 @@
 {"1.1.0",
-[{<<"antidote_pb_codec">>,{pkg,<<"antidote_pb_codec">>,<<"0.1.1">>},0}]}.
+[{<<"antidote_pb_codec">>,{pkg,<<"antidote_pb_codec">>,<<"0.1.2">>},0}]}.
 [
 {pkg_hash,[
- {<<"antidote_pb_codec">>, <<"29891F77FB5DC8240495C425160EA152E9CA5753B7137E1866D9BA279F0F997B">>}]}
+ {<<"antidote_pb_codec">>, <<"ECF51F08EE1FEE0D6E82D1B4AE68811A89660A3D65DB90694A84275683AEF106">>}]}
 ].

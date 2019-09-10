@@ -19,6 +19,11 @@
 %% -------------------------------------------------------------------
 -module(antidotec_set).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+
 -include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 -behaviour(antidotec_datatype).
@@ -45,10 +50,6 @@
 
 -export_type([antidote_set/0]).
 -opaque antidote_set() :: #antidote_set{}.
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 
 -spec new() -> antidote_set().

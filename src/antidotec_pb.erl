@@ -91,8 +91,8 @@ commit_transaction(Pid, {interactive, TxId}) ->
         {error, timeout} -> {error, timeout};
         _ ->
             case antidote_pb_codec:decode_response(Result) of
-                {commit_response, {ok, CommitTimeStamp}} -> {ok, CommitTimeStamp};
-                {commit_response, {error, Reason}} -> {error, Reason};
+                {commit_transaction_response, {ok, CommitTimeStamp}} -> {ok, CommitTimeStamp};
+                {commit_transaction_response, {error, Reason}} -> {error, Reason};
                 {error_response, Reason} -> {error, Reason};
                 Other -> {error, Other}
             end
@@ -126,10 +126,10 @@ update_objects(Pid, Updates, {static, TxId}) ->
         {error, timeout} -> {error, timeout};
         _ ->
             case antidote_pb_codec:decode_response(Result) of
-                {commit_response, {ok, CommitTimeStamp}} ->
+                {commit_transaction_response, {ok, CommitTimeStamp}} ->
                     antidotec_pb_socket:store_commit_time(Pid, CommitTimeStamp),
                     ok;
-                {commit_response, {error, Reason}} ->
+                {commit_transaction_response, {error, Reason}} ->
                     {error, Reason};
                 {error_response, Reason} -> {error, Reason};
                 Other -> {error, Other}
