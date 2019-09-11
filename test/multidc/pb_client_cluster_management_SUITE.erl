@@ -71,7 +71,6 @@ all() -> [
 ].
 
 
-%% Single object rea
 setup_cluster_test(Config) ->
     NodeNames = [clusterdev1, clusterdev2, clusterdev3, clusterdev4],
     Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
@@ -81,9 +80,10 @@ setup_cluster_test(Config) ->
     P1 = spawn_link(fun() ->
         {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
         ct:pal("joining clusterdev1, clusterdev2"),
-        Response = antidotec_pb:create_dc(Pb, [Node1, Node2]),
+ 
+        Response = antidotec_pb_management:create_dc(Pb, [Node1, Node2]),
         ct:pal("joined clusterdev1, clusterdev2: ~p", [Response]),
-        {create_dc_response, ok} = Response,
+        ?assertEqual(ok, Response),
         _Disconnected = antidotec_pb_socket:stop(Pb)
     end),
 
@@ -91,9 +91,9 @@ setup_cluster_test(Config) ->
     P2 = spawn_link(fun() ->
         {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev3) + 2),
         ct:pal("joining clusterdev3, clusterdev4"),
-        Response = antidotec_pb:create_dc(Pb, [Node3, Node4]),
+        Response = antidotec_pb_management:create_dc(Pb, [Node3, Node4]),
         ct:pal("joined clusterdev3, clusterdev4: ~p", [Response]),
-        {create_dc_response, ok} = Response,
+        ?assertEqual(ok, Response),
         _Disconnected = antidotec_pb_socket:stop(Pb)
     end),
 
@@ -102,14 +102,14 @@ setup_cluster_test(Config) ->
 
     % get descriptor of cluster 2:
     {ok, Pb3} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev3) + 2),
-    {get_connection_descriptor_response, {ok, DescriptorBin3}} = antidotec_pb:get_connection_descriptor(Pb3),
+    {ok, DescriptorBin3} = antidotec_pb_management:get_connection_descriptor(Pb3),
 
     % use descriptor to connect both dcs
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
     ct:pal("connecting clusters"),
-    Response1 = antidotec_pb:connect_to_dcs(Pb1, [DescriptorBin3]),
+    Response1 = antidotec_pb_management:connect_to_dcs(Pb1, [DescriptorBin3]),
     ct:pal("connected clusters: ~p", [Response1]),
-    ?assertEqual({connect_to_dcs_response, ok}, Response1),
+    ?assertEqual(ok, Response1),
 
     Bucket = ?BUCKET_BIN,
     Bound_object = {<<"key1">>, antidote_crdt_counter_pn, Bucket},

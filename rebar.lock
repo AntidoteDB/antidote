@@ -4,7 +4,7 @@
  {<<"antidote_pb_codec">>,{pkg,<<"antidote_pb_codec">>,<<"0.1.2">>},0},
  {<<"antidotec_pb">>,
   {git,"https://github.com/AntidoteDB/antidote-erlang-client",
-       {ref,"1f84de1cbd6582cebe83f2d749e1de4ca8e24ef9"}},
+       {ref,"d04db8be5d19a5505789ec56fa0a5ee29e36bc2d"}},
   0},
  {<<"basho_stats">>,{pkg,<<"basho_stats">>,<<"1.0.3">>},1},
  {<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},2},
