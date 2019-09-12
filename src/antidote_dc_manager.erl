@@ -57,7 +57,7 @@ create_dc(Nodes) ->
     %% Ensure each node owns 100% of it's own ring
     _ = [[Node] = owners_according_to(Node) || Node <- Nodes],
     %% Join nodes
-    [Node1|OtherNodes] = Nodes,
+    [Node1 | OtherNodes] = Nodes,
     case OtherNodes of
         [] ->
             %% no other nodes, nothing to join/plan/commit
