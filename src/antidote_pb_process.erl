@@ -132,9 +132,4 @@ process({connect_to_dcs, BinDescriptors}) ->
       Error:Reason ->
         ?LOG_ERROR("Connect to DCs failed ~p : ~p", [Error, Reason]),
         {connect_to_dcs_response, {error, aborted}}
-    end;
-
-process(Message) ->
-    ?LOG_ERROR("Received unhandled message ~p~n", [Message]),
-    MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
-    {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
+    end.
