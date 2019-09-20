@@ -8,6 +8,7 @@ script:
   - make test
   - make reltest
   - make systests
+  - make propertytests
   - rebar3 as test coveralls send
   - make dialyzer
   - make lint

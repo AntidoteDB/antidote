@@ -77,9 +77,18 @@ multidc: compile-utils rel
 	rm -f test/multidc/*.beam
 	mkdir -p logs
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
 else
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec -erl_args -hidden
+endif
+
+propertytests: compile-utils rel
+	rm -f test/propertytests/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/propertytests/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/propertytests -cover test/antidote.coverspec -erl_args -hidden
 endif
 
 systests: singledc multidc

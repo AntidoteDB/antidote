@@ -213,6 +213,7 @@ restart_nodes(NodeList, Config) ->
 
         ct:log("Waiting until ready @ ~p", [Node]),
         time_utils:wait_until(Node, fun wait_init:check_ready/1),
+        ct:log("Node ready: @ ~p", [Node]),
         Node
          end, NodeList).
 
@@ -228,17 +229,7 @@ get_node_name(NodeAtom) ->
 %% @doc TODO
 -spec pmap(fun(), list()) -> list().
 pmap(F, L) ->
-    Parent = self(),
-    lists:foldl(
-        fun(X, N) ->
-            spawn_link(fun() ->
-                           Parent ! {pmap, N, F(X)}
-                       end),
-            N+1
-        end, 0, L),
-    L2 = [receive {pmap, N, R} -> {N, R} end || _ <- L],
-    {_, L3} = lists:unzip(lists:keysort(1, L2)),
-    L3.
+    antidote_list_utils:pmap(F, L).
 
 
 partition_cluster(ANodes, BNodes) ->

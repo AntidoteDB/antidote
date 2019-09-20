@@ -32,3 +32,4 @@ test/.rebar3/erlcinfo
 .idea/
 antidote.iml
 edoc/
+_checkouts/

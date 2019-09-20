@@ -52,7 +52,8 @@
          get_dc_descriptors/0,
          load_partition_meta_data/0,
          get_num_partitions/0,
-         get_partition_at_index/1]).
+         get_partition_at_index/1,
+         get_dcs/0]).
 
 
 %% Should be called once a DC has successfully started
@@ -208,6 +209,11 @@ get_dc_descriptors() ->
         error ->
             []
     end.
+
+%% Gets the list of external datacenters
+-spec get_dcs() -> [dcid()].
+get_dcs() ->
+    [DcId || #descriptor{dcid = DcId} <- get_dc_descriptors()].
 
 %% Add information about a DC to the meta_data
 -spec set_dc_partitions([partition_id()], dcid()) -> ok.

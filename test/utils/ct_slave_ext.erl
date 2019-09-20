@@ -274,7 +274,12 @@ spawn_local_node(Node, Options) ->
 log_output(Node, Port, File) ->
     receive
         {Port, {data, Data}} ->
-            ct:log("Node ~p output:~n~s", [Node, Data]),
+            case whereis(ct_logs) of
+                undefined ->
+                    io:format(user, "Node ~p output:~n~s", [Node, Data]);
+                _ ->
+                    ct:log("Node ~p output:~n~s", [Node, Data])
+            end,
             {ok, F} = file:open(File, [append]),
             file:write(F, Data),
             file:close(F),

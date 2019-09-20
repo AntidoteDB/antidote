@@ -667,8 +667,8 @@ update_ets_op_id(Key, NewOp, ClockTable) ->
 -spec get_ops_from_log(log_id(),
                key(),
                disk_log:continuation() | start,
-               snapshot_time(),
-               snapshot_time(),
+               snapshot_time() | undefined,
+               snapshot_time() | undefined,
                 Ops :: dict:dict(txid(), [any_log_payload()]),
                CommittedOpsDict :: dict:dict(key(), [clocksi_payload()]),
                load_all | load_per_chunk) ->
