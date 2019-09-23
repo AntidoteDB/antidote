@@ -235,7 +235,7 @@ finish_op(From, Key, Result) ->
     is_static :: boolean(),
     full_commit :: boolean(),
     properties :: txn_properties(),
-    locks :: undefined | antidote_locks:lock_spec()
+    locks :: antidote_locks:lock_spec()
 }).
 
 -type state() :: #state{}.
@@ -517,7 +517,8 @@ init_state(FullCommit, IsStatic, Properties) ->
         return_accumulator = [],
         is_static = IsStatic,
         full_commit = FullCommit,
-        properties = Properties
+        properties = Properties,
+        locks = []
     }.
 
 

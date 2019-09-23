@@ -962,14 +962,6 @@ update_last_used(CurrentTime, PidState, LastUsed) ->
         maps:put(L, CurrentTime, Acc)
     end, LastUsed, PidState#pid_state.locks).
 
-%%-spec remove_lock_acquired_time(orddict:orddict(antidote_locks:lock(), lock_state_with_kind()), state()) -> state().
-%%remove_lock_acquired_time(PidStatePidStateLocks, State) ->
-%%    EL = orddict:fold(
-%%        fun(Key, _, M) ->
-%%            maps:remove(Key, M)
-%%        end, State#state.exclusive_locks, PidStatePidStateLocks),
-%%    State#state{exclusive_locks = EL}.
-
 -spec get_remote_waiting_locks(state()) -> ordsets:ordset(antidote_locks:lock()).
 get_remote_waiting_locks(State) ->
     PidStates = maps:values(State#state.by_pid),
@@ -1010,58 +1002,6 @@ change_waiting_locks_to_remote(Locks, State) ->
         || Dc <- other_dcs(State), {Pid, T, LockChanges} <- Changes
     ],
     {Actions, NewState}.
-
-
-%%% computes lock request actions for the locally waiting locks
-%%% assuming we send the given locks to other data centers
-%%-spec get_local_waiting_requests(lock_request_actions(), state()) -> lock_request_actions().
-%%get_local_waiting_requests(LocksToTransferL, State) ->
-%%    lists:flatmap(fun({_Dc, {_Pid, _T, {Lock, LockKind}}}) ->
-%%        lists:filter(fun(PS) ->
-%%            case orddict:find(Lock, PS#pid_state.locks) of
-%%                {ok, {_S, K}} when not (LockKind == shared andalso K == shared) ->
-%%                    true;
-%%                _ ->
-%%                    false
-%%            end
-%%        end, maps:values(State#state.by_pid))
-%%    end, LocksToTransferL).
-
-
-%
-%%-spec filter_waited_for_locks([antidote_locks:lock()], state()) -> lock_request_actions_for_dc().
-%%filter_waited_for_locks(Locks, State) ->
-%%    [{L, {Kind, MinTime}} ||
-%%        L <- Locks,
-%%        (Kind = max_lock_waiting_kind(L, State)) /= none,
-%%        (MinTime = min_lock_request_time(L, State)) < infty].
-
-%%% returns the minimum time of a local request waiting for this lock
-%%-spec min_lock_request_time(antidote_locks:lock(), state()) -> integer() | infty.
-%%min_lock_request_time(Lock, State) ->
-%%    lists:min([infty] ++ [PidState#pid_state.request_time ||
-%%        PidState <- maps:values(State#state.by_pid),
-%%        {L, {waiting, _}} <- PidState#pid_state.locks,
-%%        L == Lock]).
-
-
-%%% goes through all the processes waiting for the given lock and returns the maximum required lock level
-%%-spec max_lock_waiting_kind(antidote_locks:lock(), state()) -> shared | exclusive | none.
-%%max_lock_waiting_kind(Lock, State) ->
-%%    max_lock_waiting_kind_iter(Lock, maps:iterator(State#state.by_pid), none).
-
-%%max_lock_waiting_kind_iter(Lock, Iter, Res) ->
-%%    case maps:next(Iter) of
-%%        none -> Res;
-%%        {_Pid, PidState, NextIterator} ->
-%%            case orddict:find(Lock, PidState#pid_state.locks) of
-%%                {ok, {waiting, LockKind}} ->
-%%                    % we can return the first entry we find, since the two kinds exclude each other
-%%                    max_lock_waiting_kind_iter(Lock, NextIterator, max_lock_kind(LockKind, Res));
-%%                _ ->
-%%                    max_lock_waiting_kind_iter(Lock, NextIterator, Res)
-%%            end
-%%    end.
 
 
 max_lock_kind(Ls) ->
@@ -1237,12 +1177,10 @@ exclusive_lock_missing_local_test() ->
         #send_inter_dc_message{receiver = dc2, message = Msg},
         #send_inter_dc_message{receiver = dc3, message = Msg}
     ], Actions1),
-%%    ?assertEqual(#actions{lock_request = #{dc2 => #{{dc1, lock1} => {exclusive, 11}}, dc3 => #{{dc1, lock1} => {exclusive, 11}}}}, Actions1),
 
     % later we receive the lock from dc2, which is not enough to acquire the lock
     {Actions2, S2} = on_remote_locks_received(99, p1, dc2, #{}, [{{lock1, shared}, #{dc1 => dc3, dc2 => dc1, dc3 => dc1}}], S1),
     ?assertEqual([], Actions2),
-%%    ?assertEqual(#actions{}, Actions2),
 
     % when we have all the locks, we can acquire the lock
     {Actions3, _S3} = on_remote_locks_received(99, p1, dc3, #{}, [{{lock1, shared}, #{dc1 => dc1, dc2 => dc1, dc3 => dc1}}], S2),
@@ -1251,7 +1189,6 @@ exclusive_lock_missing_local_test() ->
         #send_inter_dc_message{receiver = dc2, message = #ack_locks{locks = [{lock1, exclusive}]}},
         #send_inter_dc_message{receiver = dc3, message = #ack_locks{locks = [{lock1, exclusive}]}}
     ], lists:sort(Actions3)),
-%%    ?assertEqual(#actions{replies = [R1], ack_locks = [{lock1, exclusive}]}, Actions3),
     ok.
 
 
