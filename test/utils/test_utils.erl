@@ -127,34 +127,36 @@ start_node(Name, Config) ->
         ]}],
     case ct_slave_ext:start(Name, NodeConfig) of
         {ok, Node} ->
-
-            ct:log("Starting riak_core"),
+            % load application to allow for configuring the environment before starting
             ok = rpc:call(Node, application, load, [riak_core]),
+            ok = rpc:call(Node, application, load, [antidote_stats]),
+            ok = rpc:call(Node, application, load, [ranch]),
+            ok = rpc:call(Node, application, load, [antidote]),
 
 
+            ct:log("Setting environment for riak"),
             PlatformDir = NodeDir ++ "/data/",
             RingDir = PlatformDir ++ "/ring/",
             NumberOfVNodes = 4,
             filelib:ensure_dir(PlatformDir),
             filelib:ensure_dir(RingDir),
-
-            ct:log("Setting environment for riak"),
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
-
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
-
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, [AntidoteFolder ++ "/_build/default/rel/antidote/lib/"]]),
 
+            ct:log("Setting environment for ranch"),
             ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
 
-            ct:log("Starting antidote"),
-            ok = rpc:call(Node, application, load, [antidote]),
+            ct:log("Setting environment for antidote_stats"),
+            ok = rpc:call(Node, application, set_env, [antidote_stats, metrics_port, web_ports(Name) + 4]),
+
+            ct:log("Setting environment for antidote"),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-            ok = rpc:call(Node, application, set_env, [antidote, metrics_port, web_ports(Name) + 4]),
 
+            ct:log("Start antidote"),
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             ct:pal("Node ~p started with ports ~p-~p", [Node, web_ports(Name), web_ports(Name)+4]),
 
