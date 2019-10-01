@@ -73,7 +73,8 @@ handle(Socket, Transport, Msg) ->
   try
     Response = antidote_pb_process:process(DecodedMessage),
     PbMessage = antidote_pb_codec:encode_response(Response),
-    ok = Transport:send(Socket, PbMessage)
+    ok = Transport:send(Socket, PbMessage),
+    ok
   catch
     ExceptionType:Error:StackTrace ->
       % log errors and reply with error message:

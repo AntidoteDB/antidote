@@ -63,15 +63,13 @@ process({abort_transaction, TxId}) ->
         ok -> {operation_response, ok};
         {error, Reason} -> {operation_response, {error, Reason}}
             %% TODO: client initiated abort is not implemented yet
-            %% Add the following only after it is implemented to avoid dialyzer errors
-            %% ok -> {operation_response, ok},
-    end;
+     end;
 
 process({commit_transaction, TxId}) ->
     Response = antidote:commit_transaction(from_bin(TxId)),
     case Response of
-        {error, Reason} -> {commit_response, {error, Reason}};
-        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
+        {ok, CommitTime} -> {commit_transaction_response, {ok, encode_clock(CommitTime)}};
+        {error, Reason} -> {commit_transaction_response, {error, Reason}}
     end;
 
 process({update_objects, Updates, TxId}) ->
@@ -84,44 +82,43 @@ process({update_objects, Updates, TxId}) ->
 process({static_update_objects, Clock, Properties, Updates}) ->
     Response = antidote:update_objects(from_bin(Clock), Properties, Updates),
     case Response of
-        {error, Reason} -> {commit_response, {error, Reason}};
-        {ok, CommitTime} -> {commit_response, {ok, encode_clock(CommitTime)}}
+        {ok, CommitTime} -> {commit_transaction_response, {ok, encode_clock(CommitTime)}};
+        {error, Reason} -> {commit_transaction_response, {error, Reason}}
     end;
 
 process({read_objects, Objects, TxId}) ->
     Response = antidote:read_objects(Objects, from_bin(TxId)),
     case Response of
-        {error, Reason} -> {read_objects_response, {error, Reason}};
-        {ok, Results} -> {read_objects_response, {ok, lists:zip(Objects, Results)}}
+        {ok, Results} -> {read_objects_response, {ok, lists:zip(Objects, Results)}};
+        {error, Reason} -> {read_objects_response, {error, Reason}}
     end;
 
 
 process({static_read_objects, Clock, Properties, Objects}) ->
     Response = antidote:read_objects(from_bin(Clock), Properties, Objects),
     case Response of
-        {error, Reason} -> {error_response, {error, Reason}};
-        {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}}
+        {ok, Results, CommitTime} -> {static_read_objects_response, {lists:zip(Objects, Results), encode_clock(CommitTime)}};
+        {error, Reason} -> {static_read_objects_response, {error, Reason}}
     end;
 
 process({create_dc, NodeNames}) ->
     try
       ok = antidote_dc_manager:create_dc(NodeNames),
-      {operation_response, ok}
+      {create_dc_response, ok}
     catch
-     Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-       ?LOG_INFO("Create DC failed with error ~p : ~p", [Error, Reason]),
-       {operation_response, {error, Reason}}
+     Error:Reason ->
+       ?LOG_ERROR("Create DC failed ~p : ~p", [Error, Reason]),
+       {create_dc_response, {error, aborted}}
     end;
 
 process(get_connection_descriptor) ->
     try
        {ok, Descriptor} = antidote_dc_manager:get_connection_descriptor(),
-       ?LOG_INFO("Conection Descriptor: ~p", [Descriptor]),
-       {get_connection_descriptor_resp, {ok, term_to_binary(Descriptor)}}
+       {get_connection_descriptor_response, {ok, term_to_binary(Descriptor)}}
     catch
-      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        ?LOG_ERROR("Failed Conection Descriptor with error ~p : ~p", [Error, Reason]),
-        {get_connection_descriptor_resp, {error, Reason}}
+      Error:Reason ->
+        ?LOG_ERROR("Get Conection Descriptor failed ~p : ~p", [Error, Reason]),
+        {get_connection_descriptor_response, {error, aborted}}
     end;
 
 process({connect_to_dcs, BinDescriptors}) ->
@@ -129,14 +126,9 @@ process({connect_to_dcs, BinDescriptors}) ->
        Descriptors = [binary_to_term(D) || D <- BinDescriptors],
        ?LOG_INFO("Connection to DCs: ~p", [Descriptors]),
        ok = antidote_dc_manager:subscribe_updates_from(Descriptors),
-       {operation_response, ok}
+       {connect_to_dcs_response, ok}
     catch
-      Error:Reason -> %% Some error, return unsuccess. TODO: correct error response
-        ?LOG_ERROR("Failed Connection to DCs  with error ~p : ~p", [Error, Reason]),
-        {operation_response, {error, Reason}}
+      Error:Reason ->
+        ?LOG_ERROR("Connect to DCs failed ~p : ~p", [Error, Reason]),
+        {connect_to_dcs_response, {error, aborted}}
     end.
-
-% process(Message) ->
-%   ?LOG_ERROR("Received unhandled message ~p~n", [Message]),
-%   MessageStr = erlang:iolist_to_binary(io_lib:format("~p", [Message])),
-%   {error_response, {unknown, <<"Unhandled message ", MessageStr/binary>>}}.
