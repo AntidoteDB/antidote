@@ -92,3 +92,9 @@ xref: compile
 
 dialyzer:
 	${REBAR} dialyzer
+
+docker-build:
+	docker build -f Dockerfile -t antidotedb:local-build .
+
+docker-run: docker-build
+	docker run -d --name antidote -p "8087:8087" antidotedb:local-build
