@@ -32,6 +32,8 @@
 
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% Expected time to wait until the inter_dc_log_sender_vnode is started
 -define(LOG_SENDER_STARTUP_WAIT, 1000).
@@ -138,11 +140,11 @@ read(Node, Log) ->
                                         {read, Log},
                                         ?LOGGING_MASTER).
 
-%% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
+%% @doc Sends an `append' asynchronous command to the Logs in `Preflist'
 -spec asyn_append(index_node(), key(), log_operation(), sender()) -> ok.
 asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
     riak_core_vnode_master:command(IndexNode,
-                                   {append, Log, LogOperation, ?SYNC_LOG},
+                                   {append, Log, LogOperation, is_sync_log()},
                                    ReplyTo,
                                    ?LOGGING_MASTER).
 
@@ -150,7 +152,7 @@ asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
 -spec append(index_node(), key(), log_operation()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, LogOperation, false},
+                                        {append, LogId, LogOperation, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -190,7 +192,7 @@ get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
                     ?LOGGING_MASTER,
                     infinity).
 
-%% @doc given the MinSnapshotTime and the type, this method fetchss from the log the
+%% @doc given the MinSnapshotTime and the type, this method fetches from the log the
 %% desired operations so a new snapshot can be created.
 %% It returns a snapshot_get_response() record which is defined in antidote.hrl
 -spec get_from_time(index_node(), key(), vectorclock(), type(), key()) ->
@@ -214,13 +216,13 @@ get_range(IndexNode, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key) ->
 
 
 %% @doc Given the logid and position in the log (given by continuation) and a dict
-%% of non_commited operations up to this position returns
+%% of non_committed operations up to this position returns
 %% a tuple with three elements
 %% the first is a dict with all operations that had been committed until the next chunk in the log
 %% the second contains those without commit operations
 %% the third is the location of the next chunk
 %% Otherwise if the end of the file is reached it returns a tuple
-%% where the first elelment is 'eof' and the second is a dict of commited operations
+%% where the first element is 'eof' and the second is a dict of committed operations
 -spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])) ->
              {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])}
              | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), clocksi_payload()}])}.
@@ -243,7 +245,7 @@ request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
                                         ?LOGGING_MASTER,
                                         infinity).
 
-%% @doc Returns true if syncrounous logging is enabled
+%% @doc Returns true if synchronous logging is enabled
 %%      False otherwise.
 %%      Uses environment variable "sync_log" set in antidote.app.src
 -spec is_sync_log() -> boolean().
@@ -268,10 +270,10 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     OpIdTable = ets:new(op_id_table, [set]),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
-    logger:debug("Opening logs for partition ~w", [Partition]),
+    ?LOG_DEBUG("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, vectorclock:new()) of
         {error, Reason} ->
-            logger:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
+            ?LOG_ERROR("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map, MaxVector} ->
             {ok, EnableLoggingToDisk} = application:get_env(antidote, enable_logging),
@@ -312,7 +314,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
                   true
               catch
                   _:Reason ->
-                      logger:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+                      ?LOG_DEBUG("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
                       false
               end,
     case IsReady of
@@ -548,7 +550,7 @@ handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key}, _Sende
 
 %% This will reply with all downstream operations that have
 %% been stored in the log given by LogId
-%% The resut is a dict, with a list of ops per key
+%% The result is a dict, with a list of ops per key
 %% The following spec is only for reference
 %% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict:dict()}, term(), #state{}) ->
 %%                {reply, {error, reason()} | dict:dict(), #state{}}.
@@ -908,12 +910,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            logger:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
+            ?LOG_DEBUG("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            logger:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
+            ?LOG_DEBUG("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->

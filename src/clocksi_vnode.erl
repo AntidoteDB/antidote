@@ -31,6 +31,7 @@
 
 -include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([start_vnode/1,
     read_data_item/5,
@@ -257,7 +258,7 @@ open_table(Partition) ->
             [set, protected, named_table, ?TABLE_CONCURRENCY]);
     _ ->
         %% Other vnode hasn't finished closing tables
-        logger:debug("Unable to open ets table in clocksi vnode, retrying"),
+        ?LOG_DEBUG("Unable to open ets table in clocksi vnode, retrying"),
         timer:sleep(100),
         try
         ets:delete(get_cache_name(Partition, prepared))
@@ -433,7 +434,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
         ets:delete(get_cache_name(Partition, prepared))
     catch
         _:Reason ->
-            logger:error("Error closing table ~p", [Reason])
+            ?LOG_ERROR("Error closing table ~p", [Reason])
     end,
     clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
@@ -493,7 +494,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
-    logger:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+    ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p", [{Key, TxId, Time}]),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->

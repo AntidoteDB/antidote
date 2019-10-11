@@ -31,6 +31,7 @@
 -module(stable_time_functions).
 -include_lib("eunit/include/eunit.hrl").
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([update/2,
          merge/1,
@@ -78,7 +79,7 @@ merge(VcMap) ->
     case all_defined(VcMap) of
         true -> vectorclock:min(maps:values(VcMap));
         false ->
-            logger:debug("missing entries: ~p", [VcMap]),
+            ?LOG_DEBUG("missing entries: ~p", [VcMap]),
             vectorclock:new()
     end.
 

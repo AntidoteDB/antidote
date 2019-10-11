@@ -43,6 +43,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([create_dc/1,
          get_connection_descriptor/0,
@@ -52,11 +53,11 @@
 %% Build a ring of Nodes forming a data center
 -spec create_dc([node()]) -> ok.
 create_dc(Nodes) ->
-    logger:info("Creating DC ring ~p", [Nodes]),
+    ?LOG_INFO("Creating DC ring with nodes ~p", [Nodes]),
     %% Ensure each node owns 100% of it's own ring
     _ = [[Node] = owners_according_to(Node) || Node <- Nodes],
     %% Join nodes
-    [Node1|OtherNodes] = Nodes,
+    [Node1 | OtherNodes] = Nodes,
     case OtherNodes of
         [] ->
             %% no other nodes, nothing to join/plan/commit
@@ -100,40 +101,40 @@ get_connection_descriptor() ->
 owners_according_to(Node) ->
     case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
         {ok, Ring} ->
-            logger:info("Ring ~p", [Ring]),
+            ?LOG_INFO("Ring ~p", [Ring]),
             Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
-            logger:info("Owners ~p", [lists:usort(Owners)]),
+            ?LOG_INFO("Owners ~p", [lists:usort(Owners)]),
             lists:usort(Owners);
         {badrpc, Reason} ->
-            logger:info("Could not connect to Node ~p", [Node]),
+            ?LOG_INFO("Could not connect to Node ~p", [Node]),
             {badrpc, Reason}
     end.
 
 %% @doc Have `Node' send a join request to `PNode'
 staged_join(Node, PNode) ->
-    logger:info("[join] ~p to (~p)", [Node, PNode]),
+    ?LOG_INFO("[join] ~p to (~p)", [Node, PNode]),
     ok = rpc:call(Node, riak_core, staged_join, [PNode]),
     ok.
 
 plan_and_commit(Node) ->
-    logger:info("planning and committing cluster join"),
+    ?LOG_INFO("Planning and committing cluster join"),
     case rpc:call(Node, riak_core_claimant, plan, []) of
         {error, ring_not_ready} ->
-            logger:info("plan: ring not ready"),
+            ?LOG_INFO("plan: ring not ready"),
             maybe_wait_for_changes(Node),
             plan_and_commit(Node);
         {ok, _, _} ->
             do_commit(Node)
     end.
 do_commit(Node) ->
-    logger:info("Committing"),
+    ?LOG_INFO("Committing"),
     case rpc:call(Node, riak_core_claimant, commit, []) of
         {error, plan_changed} ->
-            logger:info("commit: plan changed"),
+            ?LOG_INFO("commit: plan changed"),
             maybe_wait_for_changes(Node),
             plan_and_commit(Node);
         {error, ring_not_ready} ->
-            logger:info("commit: ring not ready"),
+            ?LOG_INFO("commit: ring not ready"),
             maybe_wait_for_changes(Node),
             do_commit(Node);
         {error, nothing_planned} ->
@@ -144,7 +145,7 @@ do_commit(Node) ->
     end.
 
 try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
-      logger:info("Nodes not ready after initial plan/commit, retrying"),
+      ?LOG_INFO("Nodes not ready after initial plan/commit, retrying"),
       plan_and_commit(Node1);
   try_nodes_ready(Nodes, N, SleepMs) ->
       ReadyNodes = [Node || Node <- Nodes, is_ready(Node) =:= true],
@@ -163,7 +164,7 @@ maybe_wait_for_changes(Node) ->
 %% on-going or pending ownership transfers.
 -spec wait_until_no_pending_changes([node()]) -> ok.
 wait_until_no_pending_changes(Nodes) ->
-    logger:info("Wait until no pending changes on ~p", [Nodes]),
+    ?LOG_INFO("Wait until no pending changes on ~p", [Nodes]),
     F = fun() ->
                 _ = rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
                 {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
@@ -184,7 +185,7 @@ wait_until(Fun) when is_function(Fun) ->
 %% @doc Given a list of nodes, wait until all nodes are considered ready.
 %%      See {@link wait_until_ready/1} for definition of ready.
 wait_until_nodes_ready(Nodes) ->
-    logger:info("Wait until nodes are ready : ~p", [Nodes]),
+    ?LOG_INFO("Wait until nodes are ready : ~p", [Nodes]),
     [ok = wait_until(Node, fun is_ready/1) || Node <- Nodes],
     ok.
 
@@ -201,7 +202,7 @@ is_ready(Node) ->
     end.
 
 wait_until_nodes_agree_about_ownership(Nodes) ->
-    logger:info("Wait until nodes agree about ownership ~p", [Nodes]),
+    ?LOG_INFO("Wait until nodes agree about ownership: ~p", [Nodes]),
     Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     lists:all(fun(X) -> ok =:= X end, Results).
 
@@ -245,6 +246,6 @@ is_ring_ready(Node) ->
 %% @doc Given a list of nodes, wait until all nodes believe the ring has
 %%      converged (ie. `riak_core_ring:is_ready' returns `true').
 wait_until_ring_converged(Nodes) ->
-    logger:info("Wait until ring converged on ~p", [Nodes]),
+    ?LOG_INFO("Wait until ring converged on ~p", [Nodes]),
     [ok = wait_until(Node, fun is_ring_ready/1)|| Node <- Nodes],
     ok.

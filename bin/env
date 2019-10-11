@@ -10,7 +10,7 @@ if [ -z "$PB_PORT" ]; then
   export PB_PORT=8087
 fi
 
-# Protocol buffer port.
+# Protocol buffer ip.
 if [ -z "$PB_IP" ]; then
   export PB_IP="127.0.0.1"
 fi

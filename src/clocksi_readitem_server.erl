@@ -32,6 +32,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -99,7 +100,7 @@ read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
             {perform_read, Key, Type, Transaction, PropertyList}, infinity)
     catch
     _:Reason ->
-        logger:debug("Exception caught: ~p, starting read server to fix", [Reason]),
+        ?LOG_DEBUG("Exception caught: ~p, starting read server to fix", [Reason]),
         check_server_ready([{Partition, Node}]),
         read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList)
     end.
@@ -164,7 +165,7 @@ start_read_servers_internal(Node, Partition, Num) ->
         {error, {already_started, _}} ->
             start_read_servers_internal(Node, Partition, Num-1);
         Err ->
-            logger:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
+            ?LOG_DEBUG("Unable to start clocksi read server for ~p, will retry", [Err]),
             try
                 gen_server:call({global, generate_server_name(Node, Partition, Num)}, {go_down})
             catch
@@ -192,7 +193,7 @@ generate_server_name(Node, Partition, Id) ->
 
 -spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
-    generate_server_name(Node, Partition, rand_compat:uniform(?READ_CONCURRENCY)).
+    generate_server_name(Node, Partition, rand:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
     Addr = node(),

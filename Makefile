@@ -58,7 +58,7 @@ compile-utils: compile
 	done
 
 test:
-	mkdir -p logs
+	mkdir -p eunit_logs
 	${REBAR} eunit skip_deps=true
 
 coverage:
@@ -92,10 +92,3 @@ xref: compile
 
 dialyzer:
 	${REBAR} dialyzer
-
-docker-build:
-	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles
-
-docker-local:
-	docker run --rm -v $(shell pwd):/code -w /code erlang:21 make rel
-	docker build -f Dockerfiles/Dockerfile-local -t antidotedb/antidote:local .
