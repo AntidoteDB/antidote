@@ -7,7 +7,7 @@ Welcome to the Antidote repository, the reference platform of the [SyncFree Euro
 
 You will find all information in the documentation at [http://antidotedb.eu](http://antidotedb.eu).
 
-For benchmarking Antidote deployments, we currently use [basho bench](https://github.com/SyncFree/basho_bench/tree/antidote_pb-rebar3-erlang19).
+For benchmarking Antidote deployments, checkout the [Antidote Benchmarks](https://github.com/AntidoteDB/Benchmarks) repository.
 
 
 
