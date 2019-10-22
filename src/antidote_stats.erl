@@ -27,9 +27,10 @@
 %% -------------------------------------------------------------------
 
 %%@doc: This module periodically collects different metrics (currently only staleness)
-%%  and updates exometer metrics. Monitoring tools can then read it from exometer.
 
--module(antidote_stats_collector).
+-module(antidote_stats).
+
+-include("antidote.hrl").
 
 -behaviour(gen_server).
 %% Interval to collect metrics
@@ -48,9 +49,9 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    init_metrics(),
     % set the error logger counting the number of errors during operation
     ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
+
     % start the timer for updating the calculated metrics
     Timer = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
     {ok, Timer}.
@@ -62,8 +63,13 @@ handle_cast(_Req, State) ->
     {noreply, State}.
 
 handle_info(periodic_update, OldTimer) ->
+    %% ?
     _ = erlang:cancel_timer(OldTimer),
+
+    %% update all known stats
     _ = update_staleness(),
+
+    %% schedule tick
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, Timer}.
 
@@ -73,16 +79,15 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+%% ==
+%% Internal functions
+%% ==
+
 update_staleness() ->
     Val = calculate_staleness(),
-    prometheus_histogram:observe(antidote_staleness, Val).
+    ?STATS({update_staleness, Val}).
 
-init_metrics() ->
-    prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
-    prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
-    prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
-    prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
-    prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]).
 
 calculate_staleness() ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
