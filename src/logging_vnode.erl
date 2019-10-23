@@ -905,8 +905,15 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
     LogId = LogFile ++ "--" ++ PreflistString,
+<<<<<<< HEAD
     {ok, DataDir} = application:get_env(antidote, data_dir),
     LogPath = filename:join(DataDir, LogId),
+=======
+    LogPath = filename:join(
+                application:get_env(riak_core, platform_data_dir, undefined), LogId),
+    ?STATS({log_append, LogPath, filelib:file_size(LogPath++".LOG")}),
+
+>>>>>>> Added log size metric on startup and append
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
@@ -975,7 +982,10 @@ fold_log(Log, Continuation, F, Acc) ->
 insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
     Result = case EnableLogging of
                  true ->
-                     disk_log:log(Log, {LogId, LogRecord});
+                     BinaryRecord = term_to_binary({LogId, LogRecord}),
+                     ?STATS({log_append, Log, erlang:byte_size(BinaryRecord)}),
+                     logger:debug("Appending ~p bytes", [erlang:byte_size(BinaryRecord)]),
+                     disk_log:blog(Log, term_to_binary({LogId, LogRecord}));
                  false ->
                      ok
              end,
