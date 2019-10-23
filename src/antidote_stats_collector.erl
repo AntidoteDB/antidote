@@ -67,7 +67,7 @@ handle_cast(transaction_finished, State) ->
     prometheus_gauge:dec(antidote_open_transactions),
     {noreply, State};
 
-handle_cast(operation_read_sync, State) ->
+handle_cast(operation_read_async, State) ->
     prometheus_counter:inc(antidote_operations_total, [read_async]),
     {noreply, State};
 
