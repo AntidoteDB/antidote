@@ -83,6 +83,11 @@ handle_cast({update_staleness, Val}, State) ->
     prometheus_histogram:observe(antidote_staleness, Val),
     {noreply, State};
 
+handle_cast({log_append, LogId, Size}, State) ->
+    %% log id is very long, use hashing to shorten it (actual path is not that important)
+    prometheus_counter:inc(antidote_log_size, [erlang:phash2(LogId)], Size),
+    {noreply, State};
+
 handle_cast(StatRequest, State) ->
     logger:warning("Unknown stat update requested: ~p",[StatRequest]),
     {noreply, State}.
@@ -97,6 +102,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 init_metrics() ->
+    prometheus_counter:new([{name, antidote_log_size}, {help, "The size of a single log file in bytes"}, {labels, [log]}]),
     prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
     prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
