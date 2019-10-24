@@ -94,7 +94,18 @@ dialyzer:
 	${REBAR} dialyzer
 
 docker-build:
-	docker build -f Dockerfile -t antidotedb:local-build .
+	DOCKERTMPDIR="$(shell mktemp -d ./docker-tmpdir.XXXXXXXX)" ; \
+	wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/Dockerfile" -O "$$DOCKERTMPDIR/Dockerfile" ; \
+    wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/entrypoint.sh" -O "$$DOCKERTMPDIR/entrypoint.sh" ; \
+    wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/start_and_attach.sh" -O "$$DOCKERTMPDIR/start_and_attach.sh" ; \
+    docker build -f $$DOCKERTMPDIR/Dockerfile --build-arg DOCKERFILES=$$DOCKERTMPDIR -t antidotedb:local-build . ; \
+    [ ! -d $$DOCKERTMPDIR ] || rm -r $$DOCKERTMPDIR
 
 docker-run: docker-build
 	docker run -d --name antidote -p "8087:8087" antidotedb:local-build
+
+docker-clean:
+ifneq ($(docker images -q antidotedb:local-build 2> /dev/null), "")
+	docker image rm -f antidotedb:local-build
+endif
+	[ ! -d docker-tmpdir* ] || rm -r docker-tmpdir*
