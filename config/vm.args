@@ -15,9 +15,6 @@
 ## Tweak GC to run more often
 -env ERL_FULLSWEEP_AFTER 10
 
-## Increase max ETS tables.
--env ERL_MAX_ETS_TABLES 50000
-
 ## Increase distribution port buffer size.
 +zdbbl 32768
 
