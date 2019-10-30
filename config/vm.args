@@ -20,17 +20,3 @@
 
 ## Enable time warp once Issue #226 is fixed
 ##+C multi_time_warp
-
-## The following section is required beacuse variable replacement can
-## only occur with string, not integers.
-
-## Antidote configuration values coming from the command line.
--antidote pubsub_port ${PUBSUB_PORT}
--antidote logreader_port ${LOGREADER_PORT}
--antidote metrics_port ${METRICS_PORT}
-
-## Ranch configuration values coming from the command line.
--ranch pb_port ${PB_PORT}
-
-## Riak Core configuration values coming from the command line.
--riak_core handoff_port ${HANDOFF_PORT}
