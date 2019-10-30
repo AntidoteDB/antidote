@@ -36,8 +36,7 @@
 -export([start_link/0]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2, code_change/3]).
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -90,10 +89,6 @@ handle_cast({log_append, LogId, Size}, State) ->
 
 handle_cast(StatRequest, State) ->
     logger:notice("Unknown stat update requested: ~p",[StatRequest]),
-    {noreply, State}.
-
-handle_info(Message, State) ->
-    logger:warning("Got unexpected info message: ~p", [Message]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
