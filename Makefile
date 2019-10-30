@@ -19,14 +19,14 @@ cleantests:
 	rm -rf logs/
 
 shell:
-	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys.config
 
 # same as shell, but automatically reloads code when changed
 # to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
 # the tool requires inotifywait (sudo apt install inotify-tools)
 # see https://github.com/vans163/rebar3_auto or http://blog.erlware.org/rebar3-auto-comile-and-load-plugin/
 auto:
-	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys.config
 
 rel:
 	$(REBAR) release
