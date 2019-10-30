@@ -89,10 +89,11 @@ handle_cast({log_append, LogId, Size}, State) ->
     {noreply, State};
 
 handle_cast(StatRequest, State) ->
-    logger:warning("Unknown stat update requested: ~p",[StatRequest]),
+    logger:notice("Unknown stat update requested: ~p",[StatRequest]),
     {noreply, State}.
 
-handle_info(ok, State) ->
+handle_info(Message, State) ->
+    logger:warning("Got unexpected info message: ~p", [Message]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
