@@ -905,8 +905,8 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
     LogId = LogFile ++ "--" ++ PreflistString,
-    LogPath = filename:join(
-                application:get_env(riak_core, platform_data_dir, undefined), LogId),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    LogPath = filename:join(DataDir, LogId),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),

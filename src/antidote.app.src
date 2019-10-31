@@ -1,19 +1,17 @@
 %% -*- erlang -*-
-{application, antidote,
- [
-  {description, "A transactional CRDT database"},
-  {vsn, "0.2.1"},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  riak_core,
-                  cuttlefish,
-                  erlzmq,
-                  runtime_tools,
-                  tools,
-                  antidote_stats
-                 ]},
+{application, antidote, [
+    {description, "A transactional CRDT database"},
+    {vsn, "0.4.0"},
+    {applications, [
+        kernel,
+        stdlib,
+        riak_core,
+        cuttlefish,
+        erlzmq,
+        runtime_tools,
+        tools,
+        antidote_stats
+    ]},
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
@@ -21,39 +19,13 @@
         ranch
     ]},
 
-  {mod, { antidote_app, []}},
-  %% Options for environmental variables
-  %% txn_cert:
-  %%        true -> write operations are certified during commit, aborting the transaction if a write conflict is detected (i.e. snapshot isolation
-  %%                is ensured for the updates within a single DC, updates across DCs are not checked)
-  %%        false -> transactions perform no certification and always commit (outside of crashes/errors)
-  %% txn_prot:
-  %%        clocksi -> uses "Cure" protocol to define snapshots and causal dependencies (https://pages.lip6.fr/Marc.Shapiro/papers/Cure-final-ICDCS16.pdf)
-  %%        gr -> uses "Gentle-rain like" protocol to define snapshots and causal dependencies (https://infoscience.epfl.ch/record/202079)
-  %% recover_from_log:
-  %%        true -> on node start will load any operations stored on the disk log to the in memory cache of the key-value store
-  %%        false -> on node start the state of the key-value store will be empty
-  %% recover_meta_data_on_start:
-  %%        true -> meta-data state will be loaded from disk on restart including connection state between other DCs and node names and configurations,
-  %%                nodes will automatically reconnect to other dcs on restart
-  %%        false -> meta-data concerning node names and connections to other dcs will not be loaded on restart
-  %% sync_log:
-  %%        true -> local transactions will be stored on log synchronously, i.e. when the reply is sent the updates are guaranteed to be
-  %%                stored to disk (this is very slow in the current logging setup)
-  %%        false -> all updates are sent to the operating system to be stored to disk (eventually), but are not guaranteed to be stored durably on disk
-  %%                 when the reply is sent
-  %% %% auto_start_read_servers:
-  %%        true -> read servers will start automatically. It should be set to true when Antidote will be run in a single node/machine.
-  %%        false -> read servers will not start automatically. It should be set to false when many Antidote instances will be run in a cluster.
-  %%                 In this case, a inter_dc_manager:start_bg_processes(stable) needs to be issued per antidote instance after joining the cluster.
-  %% %% enable_logging:
-  %%        true -> writes to disk done by the logging_vnode are enabled
-  %%        false -> writes to disk are disabled, this improves performance when benchmarking.
-  %%        WARNING: disabling logging makes updates non-recoverable after shutting down antidote or under failures.
+    {mod, {antidote_app, []}},
 
-  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
-         {recover_meta_data_on_start, true}, {sync_log, false},
-         {enable_logging, true},
-         {auto_start_read_servers, true}
-        ]}
- ]}.
+    % Default values for sys.config options used for system tests which do not load config files
+    {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
+        {recover_meta_data_on_start, true}, {sync_log, false},
+        {enable_logging, true},
+        {auto_start_read_servers, true},
+        {data_dir, "data_antidote"}
+    ]}
+]}.

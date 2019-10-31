@@ -37,6 +37,8 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    ok = validate_data_dir(),
+
     case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
@@ -73,6 +75,15 @@ start(_StartType, _StartArgs) ->
             {ok, Pid};
         {error, Reason} ->
             {error, Reason}
+    end.
+
+validate_data_dir() ->
+    {ok, DataDir} = application:get_env(data_dir),
+    case filelib:ensure_dir(filename:join(DataDir, "dummy")) of
+        ok -> ok;
+        {error, Reason} ->
+            logger:critical("Data directory ~p does not exist, and could not be created: ~p", [DataDir, Reason]),
+            throw({error, invalid_data_dir})
     end.
 
 stop(_State) ->
