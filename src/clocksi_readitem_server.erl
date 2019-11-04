@@ -286,6 +286,8 @@ return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
                     _Ignore=gen_server:reply(Coordinator, {error, Reason})
             end
     end,
+    % Manually trigger garbage collection until https://github.com/AntidoteDB/antidote/issues/390 is fixed
+    erlang:garbage_collect(),
     ok.
 
 handle_info({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
