@@ -1,4 +1,5 @@
 REBAR = $(shell pwd)/rebar3
+COVERPATH = $(shell pwd)/_build/test/cover
 .PHONY: rel test relgentlerain
 
 all: compile
@@ -57,6 +58,8 @@ test:
 	${REBAR} eunit skip_deps=true
 
 coverage:
+	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
+	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
 	${REBAR} cover --verbose
 
 singledc: compile-utils rel
