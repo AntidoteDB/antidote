@@ -54,7 +54,6 @@ compile-utils: compile
 	done
 
 test:
-	mkdir -p eunit_logs
 	${REBAR} eunit skip_deps=true
 
 coverage:

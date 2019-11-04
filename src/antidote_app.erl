@@ -99,8 +99,11 @@ stop(_State) ->
 
 %% Throw error if data dir is a file
 data_dir_is_a_file_test() ->
+    {ok, Level} = maps:find(level, logger:get_primary_config()),
+    logger:set_primary_config(level, emergency),
     application:set_env(antidote, data_dir, "tmpfile"),
     ok = file:write_file("tmpfile", <<"hello">>),
     {error, invalid_data_dir} = (catch validate_data_dir()),
+    logger:set_primary_config(level, Level),
     ok = file:delete("tmpfile").
 -endif.
