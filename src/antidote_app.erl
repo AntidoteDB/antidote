@@ -78,7 +78,7 @@ start(_StartType, _StartArgs) ->
     end.
 
 validate_data_dir() ->
-    {ok, DataDir} = application:get_env(data_dir),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
     case filelib:ensure_dir(filename:join(DataDir, "dummy")) of
         ok -> ok;
         {error, Reason} ->
@@ -88,3 +88,19 @@ validate_data_dir() ->
 
 stop(_State) ->
     ok.
+
+
+%% ===================================================================
+%% Unit Tests
+%% ===================================================================
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Throw error if data dir is a file
+data_dir_is_a_file_test() ->
+    application:set_env(antidote, data_dir, "tmpfile"),
+    ok = file:write_file("tmpfile", <<"hello">>),
+    {error, invalid_data_dir} = (catch validate_data_dir()),
+    ok = file:delete("tmpfile").
+-endif.
