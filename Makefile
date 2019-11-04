@@ -58,6 +58,8 @@ test:
 	${REBAR} eunit skip_deps=true
 
 coverage:
+	# copy the coverdata files with a wildcard filter
+	# won't work if there are multiple folders (multiple systests)
 	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
 	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
 	${REBAR} cover --verbose
