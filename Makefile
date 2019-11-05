@@ -23,7 +23,7 @@ shell: rel
 	export NODE_NAME=antidote@127.0.0.1 ; \
 	export COOKIE=antidote ; \
 	export ROOT_DIR_PREFIX=$$NODE_NAME/ ; \
-	_build/default/rel/antidote/bin/antidote console
+	_build/default/rel/antidote/bin/antidote console ${ARGS}
 
 rel:
 	$(REBAR) release
