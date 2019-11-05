@@ -1,10 +1,8 @@
 version: '2'
+
 services:
   antidote:
-    image: antidotedb/antidote:latest
-    environment:
-      NODE_NAME: "antidote@antidote"
-      SHORT_NAME: "true"
+    image: antidotedb:local-build
     ports:
       - "8087:8087"
   prometheus:
