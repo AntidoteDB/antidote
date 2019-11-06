@@ -2,10 +2,12 @@ version: '2'
 
 services:
   antidote:
+    container_name: antidote
     image: antidotedb:local-build
     ports:
       - "8087:8087"
   prometheus:
+    container_name: prometheus
     image: prom/prometheus
     ports:
       - "9090:9090"
@@ -15,6 +17,7 @@ services:
     depends_on:
       - antidote
   grafana:
+    container_name: grafana
     image: grafana/grafana
     ports:
       - "3000:3000"
