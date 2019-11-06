@@ -907,7 +907,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     LogId = LogFile ++ "--" ++ PreflistString,
     {ok, DataDir} = application:get_env(antidote, data_dir),
     LogPath = filename:join(DataDir, LogId),
-    ?STATS({log_append, LogPath, filelib:file_size(LogPath++".LOG")}),
+    ?STATS({log_append, LogPath, filelib:file_size(LogPath ++ ".LOG")}),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
