@@ -86,6 +86,12 @@ Example:
 ```
 
 
+Antidote Monitoring & Statistics
+-----------
+
+Antidote provides metrics based on Prometheus and Grafana. 
+Information on how to setup those, visit the [Antidote Stats repository](https://github.com/AntidoteDB/antidote_stats).
+
 Code style
 -----------
 
