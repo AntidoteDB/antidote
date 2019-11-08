@@ -16,5 +16,7 @@ scrape_configs:
   # Job for scraping Antidote
   - job_name: 'antidote'
 
+    # locally reachable address if prometheus is in host network
+    # docker container names if prometheus is in the same docker network as the targets
     static_configs:
       - targets: ['localhost:3001']
