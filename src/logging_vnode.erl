@@ -360,6 +360,7 @@ handle_command({read, LogId}, _Sender,
 %%
 handle_command({read_from, LogId, _From}, _Sender,
                #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
+    % STATS log_read (read_from) + 1
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
@@ -579,6 +580,7 @@ read_internal(_Log, error, Ops) ->
 read_internal(_Log, eof, Ops) ->
     {eof, Ops};
 read_internal(Log, Continuation, Ops) ->
+    % STATS log_read (read) + 1
     {NewContinuation, NewOps} =
         case disk_log:chunk(Log, Continuation) of
             {C, O} -> {C, O};

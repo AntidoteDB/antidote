@@ -149,6 +149,8 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
+      %% STATS remote_updates_received length of ops
+
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
@@ -157,6 +159,7 @@ handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
 
 handle_command({txn, Txn}, _Sender, State) ->
+
     NewState = process_all_queues(push_txn(State, Txn)),
     {reply, ok, NewState};
 
