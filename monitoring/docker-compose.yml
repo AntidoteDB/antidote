@@ -1,25 +1,23 @@
 version: '2'
 
 services:
-  antidote:
-    container_name: antidote
-    image: antidotedb:local-build
-    ports:
-      - "8087:8087"
   prometheus:
+    network_mode: host
     container_name: prometheus
     image: prom/prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ".:/data"
+      - "./prometheus-config:/data"
     command: "--config.file=/data/prometheus.yml"
-    depends_on:
-      - antidote
   grafana:
+    network_mode: host
     container_name: grafana
     image: grafana/grafana
     ports:
       - "3000:3000"
+    volumes:
+      - "./grafana-config/provisioning:/etc/grafana/provisioning"
+      - "./grafana-config/dashboards:/var/lib/grafana/dashboards/provisioning"
     depends_on:
       - prometheus
