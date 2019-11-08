@@ -9,6 +9,8 @@ You will find all information in the documentation at [http://antidotedb.eu](htt
 
 For benchmarking Antidote deployments, checkout the [Antidote Benchmarks](https://github.com/AntidoteDB/Benchmarks) repository.
 
+For monitoring Antidote deployments, checkout the [Antidote Stats repository](https://github.com/AntidoteDB/antidote_stats) repository.
+
 
 
 Development
@@ -84,13 +86,6 @@ Example:
 -antidote_stats metrics_port $P5 \
 -antidote txn_check false
 ```
-
-
-Antidote Monitoring & Statistics
------------
-
-Antidote provides metrics based on Prometheus and Grafana. 
-Information on how to setup those, visit the [Antidote Stats repository](https://github.com/AntidoteDB/antidote_stats).
 
 Code style
 -----------
