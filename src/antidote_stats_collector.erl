@@ -87,6 +87,56 @@ handle_cast({log_append, LogId, Size}, State) ->
     prometheus_counter:inc(antidote_log_size, [erlang:phash2(LogId)], Size),
     {noreply, State};
 
+%% =================
+%% RIAK_CORE METRICS
+%% =================
+
+%% riak core ring status ready/not ready
+handle_cast({ring_ready, true}, State) ->
+    prometheus_gauge:set(antidote_cluster_ring_state, 1),
+    {noreply, State};
+handle_cast({ring_ready, false}, State) ->
+    prometheus_gauge:set(antidote_cluster_ring_state, 0),
+    {noreply, State};
+
+%% riak core node state
+%% see type member_status in riak_core
+%% -type member_status() :: valid | joining | invalid | leaving | exiting | down.
+handle_cast({node_state, valid}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 0),
+    {noreply, State};
+handle_cast({node_state, joining}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 1),
+    {noreply, State};
+handle_cast({node_state, invalid}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 2),
+    {noreply, State};
+handle_cast({node_state, leaving}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 3),
+    {noreply, State};
+handle_cast({node_state, exiting}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 4),
+    {noreply, State};
+handle_cast({node_state, down}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, 5),
+    {noreply, State};
+
+%% riak core ring claimed
+handle_cast({ring_claimed, Percent}, State) ->
+    prometheus_gauge:set(antidote_ring_claimed, Percent),
+    {noreply, State};
+
+%% riak core ring pending
+handle_cast({ring_pending, Percent}, State) ->
+    prometheus_gauge:set(antidote_ring_pending, Percent),
+    {noreply, State};
+
+%% riak core ring member availability (-2,-1,1,2)
+handle_cast({ring_member_availability, Node, Value}, State) ->
+    prometheus_gauge:set(antidote_ring_member_availability, [Node], Value),
+    {noreply, State};
+
+
 handle_cast(StatRequest, State) ->
     logger:notice("Unknown stat update requested: ~p",[StatRequest]),
     {noreply, State}.
@@ -98,10 +148,18 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 init_metrics() ->
+    %% riak_core metrics
+    prometheus_gauge:new([{name, antidote_cluster_ring_state}, {help, "If this node agrees on the cluster ring state of the cluster"}]),
+    prometheus_gauge:new([{name, antidote_ring_node_state}, {help, "State of this node in the riak_core cluster"}]),
+    prometheus_gauge:new([{name, antidote_ring_claimed}, {help, "How much of the ring this node has claimed"}]),
+    prometheus_gauge:new([{name, antidote_ring_pending}, {help, "How much of the ring this node will claim after resize"}]),
+    prometheus_gauge:new([{name, antidote_ring_member_availability}, {help, "Current availability of every member of the ring"}, {labels, [node]}]),
+
     prometheus_counter:new([{name, antidote_log_size}, {help, "The size of a single log file in bytes"}, {labels, [log]}]),
     prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
     prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
     prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
     prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]).
+
 

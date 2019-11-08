@@ -11,8 +11,15 @@ Current statistics are provided:
 * `operation_update`
 * `log_error`
 * `{update_staleness, VAL}`
+* various `riak_core` ring metrics
 
 
 
 They can be used with `gen_server:cast(antidote_stats_collector, STAT)`, 
 replacing `STAT` with one of the supported stat types.
+
+
+Prometheus and Grafana Deployment
+=====
+
+TODO
