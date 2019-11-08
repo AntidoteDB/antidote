@@ -70,8 +70,16 @@ handle_cast(operation_read_async, State) ->
     prometheus_counter:inc(antidote_operations_total, [read_async]),
     {noreply, State};
 
+handle_cast(operation_read_async_internal, State) ->
+    prometheus_counter:inc(antidote_operations_internal_total, [read_async]),
+    {noreply, State};
+
 handle_cast(operation_read, State) ->
     prometheus_counter:inc(antidote_operations_total, [read]),
+    {noreply, State};
+
+handle_cast(operation_read_internal, State) ->
+    prometheus_counter:inc(antidote_operations_internal_total, [read]),
     {noreply, State};
 
 handle_cast(operation_update, State) ->
@@ -160,6 +168,7 @@ init_metrics() ->
     prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
     prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
-    prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]).
+    prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]),
+    prometheus_counter:new([{name, antidote_operations_internal_total}, {help, "Number of operations executed internally"}, {labels, [type]}]).
 
 
