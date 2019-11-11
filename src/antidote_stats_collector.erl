@@ -56,13 +56,15 @@ handle_cast(log_error, State) ->
 
 handle_cast(open_transaction, State) ->
     prometheus_gauge:inc(antidote_open_transactions),
+    prometheus_counter:inc(antidote_transaction, [open]),
     {noreply, State};
 
 handle_cast(transaction_aborted, State) ->
-    prometheus_counter:inc(antidote_aborted_transactions_total),
+    prometheus_counter:inc(antidote_transaction, [aborted]),
     {noreply, State};
 
 handle_cast(transaction_finished, State) ->
+    prometheus_counter:inc(antidote_transaction, [finished]),
     prometheus_gauge:dec(antidote_open_transactions),
     {noreply, State};
 
@@ -183,7 +185,7 @@ init_metrics() ->
     prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
     prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
-    prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
+    prometheus_counter:new([{name, antidote_transaction}, {help, "Number of transactions by type"}, {labels, [type]}]),
     prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]),
     prometheus_counter:new([{name, antidote_operations_internal_total}, {help, "Number of operations executed internally"}, {labels, [type]}]),
     prometheus_counter:new([{name, antidote_dc_ops_received}, {help, "Number of operations received from other antidote datacenters"}]),
