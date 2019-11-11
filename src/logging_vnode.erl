@@ -981,7 +981,7 @@ insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
                  true ->
                      BinaryRecord = term_to_binary({LogId, LogRecord}),
                      ?STATS({log_append, Log, erlang:byte_size(BinaryRecord)}),
-                     logger:debug("Appending ~p bytes", [erlang:byte_size(BinaryRecord)]),
+                     ?LOG_DEBUG("Appending ~p bytes", [erlang:byte_size(BinaryRecord)]),
                      disk_log:blog(Log, term_to_binary({LogId, LogRecord}));
                  false ->
                      ok

@@ -27,6 +27,8 @@
 %% -------------------------------------------------------------------
 -module(antidote_app).
 
+-include_lib("kernel/include/logger.hrl").
+
 -behaviour(application).
 
 %% Application callbacks
@@ -82,7 +84,7 @@ validate_data_dir() ->
     case filelib:ensure_dir(filename:join(DataDir, "dummy")) of
         ok -> ok;
         {error, Reason} ->
-            logger:critical("Data directory ~p does not exist, and could not be created: ~p", [DataDir, Reason]),
+            ?LOG_CRITICAL("Data directory ~p does not exist, and could not be created: ~p", [DataDir, Reason]),
             throw({error, invalid_data_dir})
     end.
 
