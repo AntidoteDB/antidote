@@ -69,6 +69,8 @@ handle_info(periodic_update, OldTimer) ->
     %% update all known stats
     _ = update_staleness(),
 
+    update_dc_count(),
+
     %% schedule tick
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, Timer}.
@@ -99,3 +101,8 @@ calculate_staleness() ->
 
 to_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
+
+update_dc_count() ->
+    DCs = dc_meta_data_utilities:get_dc_ids(true),
+    ?STATS({dc_count, length(DCs)}).

@@ -30,6 +30,7 @@
 -behaviour(gen_event).
 
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% gen_event callbacks
 -export([init/1, handle_event/2, handle_call/2,
@@ -41,7 +42,7 @@ init([]) ->
     {ok, #state{}}.
 
 handle_event({ring_update, _Ring}, State) ->
-    logger:warning("Ring update~n~p", [riak_core_cluster_cli:status(ok, [], [])]),
+    ?LOG_INFO("Ring update~n~p", [riak_core_cluster_cli:status(ok, [], [])]),
     update_status(),
     {ok, State}.
 
@@ -56,7 +57,6 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
 
 
 update_status() ->

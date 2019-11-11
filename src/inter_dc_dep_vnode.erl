@@ -146,11 +146,12 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       {ok, _} = logging_vnode:append_group({Partition, node()},
                                            [Partition], Ops, false),
 
-      %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
-      %% STATS remote_updates_received length of ops
+      ?STATS({dc_ops_received, length(ClockSiOps)}),
+      ?STATS({dc_ops_received_size, byte_size(term_to_binary(ClockSiOps))}),
 
+      %% Update the materializer (send only the update operations)
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.

@@ -360,7 +360,7 @@ handle_command({read, LogId}, _Sender,
 %%
 handle_command({read_from, LogId, _From}, _Sender,
                #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
-    % STATS log_read (read_from) + 1
+    ?STATS(log_read_from),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
@@ -395,6 +395,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
                       op_id_table=OpIdTable,
                       partition=Partition,
               enable_log_to_disk=EnableLog}=State) ->
+    ?STATS(operation_update_internal),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             MyDCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -580,7 +581,7 @@ read_internal(_Log, error, Ops) ->
 read_internal(_Log, eof, Ops) ->
     {eof, Ops};
 read_internal(Log, Continuation, Ops) ->
-    % STATS log_read (read) + 1
+    ?STATS(log_read_read),
     {NewContinuation, NewOps} =
         case disk_log:chunk(Log, Continuation) of
             {C, O} -> {C, O};
