@@ -45,6 +45,8 @@
 -export([
          dummy_test/1,
          random_test/1,
+         shard_count/1,
+         dc_count/1,
          meta_data_env_test/1
 ]).
 
@@ -68,15 +70,43 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
+     shard_count,
+     dc_count,
      dummy_test,
      random_test,
      meta_data_env_test
     ].
 
 
+dc_count(Config) ->
+    [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
+
+    %% Check external DC count
+    DCs1 = rpc:call(Node1, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs2 = rpc:call(Node2, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_descriptors, []),
+
+    ?assertEqual({2,2,2,2}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
+    ok.
+
+
+shard_count(Config) ->
+    [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
+
+    %% Check sharding count
+    Shards1 = rpc:call(Node1, dc_meta_data_utilities, get_dc_ids, [true]),
+    Shards2 = rpc:call(Node2, dc_meta_data_utilities, get_dc_ids, [true]),
+    Shards3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_ids, [true]),
+    Shards4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_ids, [true]),
+
+    ?assertEqual({2,2,1,1}, {length(Shards1), length(Shards2), length(Shards3), length(Shards4)}),
+    ok.
+
 dummy_test(Config) ->
     Bucket = ?BUCKET,
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    [[Node1, Node2] | _] = proplists:get_value(clusters, Config),
+    [Node1, Node2] = proplists:get_value(nodes, Config),
     Key = antidote_key,
     Type = antidote_crdt_counter_pn,
     Object = {Key, Type, Bucket},
