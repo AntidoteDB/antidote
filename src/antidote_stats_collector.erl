@@ -117,6 +117,10 @@ handle_cast({dc_ops_received_size, Bytes}, State) ->
     prometheus_counter:inc(antidote_dc_ops_received_size, Bytes),
     {noreply, State};
 
+handle_cast({dc_count, Number}, State) ->
+    prometheus_gauge:set(antidote_dc_count, Number),
+    {noreply, State};
+
 %% =================
 %% RIAK_CORE METRICS
 %% =================
@@ -194,6 +198,5 @@ init_metrics() ->
     prometheus_counter:new([{name, antidote_operations_internal_total}, {help, "Number of operations executed internally"}, {labels, [type]}]),
     prometheus_counter:new([{name, antidote_dc_ops_received}, {help, "Number of operations received from other antidote datacenters"}]),
     prometheus_counter:new([{name, antidote_dc_ops_received_size}, {help, "Size of operations received from other antidote datacenters"}]),
-    prometheus_counter:new([{name, antidote_log_access}, {help, "How many times the log was accessed"}, {labels, [type]}]).
-
-
+    prometheus_counter:new([{name, antidote_log_access}, {help, "How many times the log was accessed"}, {labels, [type]}]),
+    prometheus_gauge:new([{name, antidote_dc_count}, {help, "Number of known DCs including self"}]).
