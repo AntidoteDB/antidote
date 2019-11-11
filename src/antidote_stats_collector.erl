@@ -95,6 +95,22 @@ handle_cast({log_append, LogId, Size}, State) ->
     prometheus_counter:inc(antidote_log_size, [erlang:phash2(LogId)], Size),
     {noreply, State};
 
+handle_cast(log_read_read, State) ->
+    prometheus_counter:inc(antidote_log_access, [read]),
+    {noreply, State};
+
+handle_cast(log_read_from, State) ->
+    prometheus_counter:inc(antidote_log_access, [from]),
+    {noreply, State};
+
+handle_cast({dc_ops_received, Count}, State) ->
+    prometheus_counter:inc(antidote_dc_ops_received, Count),
+    {noreply, State};
+
+handle_cast({dc_ops_received_size, Bytes}, State) ->
+    prometheus_counter:inc(antidote_dc_ops_received_size, Bytes),
+    {noreply, State};
+
 %% =================
 %% RIAK_CORE METRICS
 %% =================
@@ -169,6 +185,9 @@ init_metrics() ->
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
     prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
     prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]),
-    prometheus_counter:new([{name, antidote_operations_internal_total}, {help, "Number of operations executed internally"}, {labels, [type]}]).
+    prometheus_counter:new([{name, antidote_operations_internal_total}, {help, "Number of operations executed internally"}, {labels, [type]}]),
+    prometheus_counter:new([{name, antidote_dc_ops_received}, {help, "Number of operations received from other antidote datacenters"}]),
+    prometheus_counter:new([{name, antidote_dc_ops_received_size}, {help, "Size of operations received from other antidote datacenters"}]),
+    prometheus_counter:new([{name, antidote_log_access}, {help, "How many times the log was accessed"}, {labels, [type]}]).
 
 
