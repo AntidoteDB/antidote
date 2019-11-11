@@ -88,6 +88,10 @@ handle_cast(operation_update, State) ->
     prometheus_counter:inc(antidote_operations_total, [update]),
     {noreply, State};
 
+handle_cast(operation_update_internal, State) ->
+    prometheus_counter:inc(antidote_operations_internal_total, [update]),
+    {noreply, State};
+
 handle_cast({update_staleness, Val}, State) ->
     prometheus_histogram:observe(antidote_staleness, Val),
     {noreply, State};
