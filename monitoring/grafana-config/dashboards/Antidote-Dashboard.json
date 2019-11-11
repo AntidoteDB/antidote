@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1573476419831,
+  "iteration": 1573485902347,
   "links": [],
   "panels": [
     {
@@ -193,6 +193,93 @@
       "valueName": "current"
     },
     {
+      "cacheTimeout": null,
+      "colorBackground": false,
+      "colorPrefix": false,
+      "colorValue": false,
+      "colors": [
+        "#299c46",
+        "#37872D",
+        "#37872D"
+      ],
+      "description": "",
+      "format": "none",
+      "gauge": {
+        "maxValue": 100,
+        "minValue": 0,
+        "show": false,
+        "thresholdLabels": false,
+        "thresholdMarkers": true
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 61,
+      "interval": null,
+      "links": [],
+      "mappingType": 1,
+      "mappingTypes": [
+        {
+          "name": "value to text",
+          "value": 1
+        },
+        {
+          "name": "range to text",
+          "value": 2
+        }
+      ],
+      "maxDataPoints": 100,
+      "nullPointMode": "connected",
+      "nullText": null,
+      "options": {},
+      "pluginVersion": "6.2.5",
+      "postfix": "",
+      "postfixFontSize": "50%",
+      "prefix": "",
+      "prefixFontSize": "50%",
+      "rangeMaps": [
+        {
+          "from": "null",
+          "text": "N/A",
+          "to": "null"
+        }
+      ],
+      "sparkline": {
+        "fillColor": "#1F60C4",
+        "full": false,
+        "lineColor": "#C4162A",
+        "show": true
+      },
+      "tableColumn": "",
+      "targets": [
+        {
+          "expr": "antidote_dc_count{instance=\"$node\"}",
+          "format": "time_series",
+          "instant": false,
+          "intervalFactor": 1,
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "thresholds": "",
+      "timeFrom": null,
+      "timeShift": null,
+      "title": "DC Count",
+      "type": "singlestat",
+      "valueFontSize": "80%",
+      "valueMaps": [
+        {
+          "op": "=",
+          "text": "N/A",
+          "value": "null"
+        }
+      ],
+      "valueName": "current"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -273,7 +360,7 @@
           "refId": "C"
         },
         {
-          "expr": "irate(antidote_transaction{type=\"aborted\",instance=\"$node\"}[1m])",
+          "expr": "irate(antidote_transaction{type=\"open\",instance=\"$node\"}[1m])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "Open Transactions Rate",
@@ -416,7 +503,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Operations",
+      "title": "Operations Client",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -638,7 +725,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Operations Inter-DC",
+      "title": "Operations DC Communication",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -749,7 +836,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Operations Inter-DC Size",
+      "title": "Operations DC Communication Size",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -1897,7 +1984,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 44
+            "y": 22
           },
           "id": 10,
           "legend": {
@@ -2000,7 +2087,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 52
+            "y": 30
           },
           "id": 15,
           "legend": {
@@ -2119,7 +2206,7 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 59
+            "y": 9
           },
           "id": 49,
           "links": [],
@@ -2185,7 +2272,7 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 65
+            "y": 15
           },
           "id": 52,
           "links": [],
@@ -2253,7 +2340,7 @@
             "h": 8,
             "w": 11,
             "x": 0,
-            "y": 71
+            "y": 21
           },
           "id": 54,
           "legend": {
@@ -2334,7 +2421,7 @@
             "h": 8,
             "w": 13,
             "x": 11,
-            "y": 71
+            "y": 21
           },
           "id": 56,
           "links": [],
@@ -2480,7 +2567,7 @@
             "h": 5,
             "w": 8,
             "x": 0,
-            "y": 60
+            "y": 39
           },
           "id": 12,
           "legend": {
@@ -2588,7 +2675,7 @@
             "h": 5,
             "w": 8,
             "x": 8,
-            "y": 60
+            "y": 39
           },
           "id": 14,
           "legend": {
@@ -2691,7 +2778,7 @@
             "h": 5,
             "w": 8,
             "x": 16,
-            "y": 60
+            "y": 39
           },
           "id": 46,
           "legend": {
@@ -2809,7 +2896,7 @@
     ]
   },
   "time": {
-    "from": "now-2m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
