@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1573228591339,
+  "iteration": 1573476419831,
   "links": [],
   "panels": [
     {
@@ -38,8 +38,8 @@
         "thresholdMarkers": true
       },
       "gridPos": {
-        "h": 5,
-        "w": 3,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -125,9 +125,9 @@
         "thresholdMarkers": true
       },
       "gridPos": {
-        "h": 5,
-        "w": 3,
-        "x": 3,
+        "h": 3,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "id": 40,
@@ -193,14 +193,813 @@
       "valueName": "current"
     },
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 38,
+      "panels": [],
+      "title": "Antidote API",
+      "type": "row"
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "decimals": null,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 18,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*Rate/",
+          "yaxis": 1
+        },
+        {
+          "alias": "Open Transactions",
+          "yaxis": 2
+        },
+        {
+          "alias": "Aborted Transactions Total",
+          "yaxis": 2
+        },
+        {
+          "alias": "Finished Transactions Total",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_transaction{type=\"aborted\",instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Aborted Transactions Rate",
+          "refId": "C"
+        },
+        {
+          "expr": "irate(antidote_transaction{type=\"aborted\",instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Open Transactions Rate",
+          "refId": "D"
+        },
+        {
+          "expr": "antidote_transaction{type=\"open\",instance=\"$node\"}",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Open Transactions",
+          "metric": "antidote_open_transactions",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_transaction{type=\"aborted\",instance=\"$node\"}",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Aborted Transactions Total",
+          "refId": "B"
+        },
+        {
+          "expr": "antidote_transaction{type=\"finished\",instance=\"$node\"}",
+          "format": "time_series",
+          "intervalFactor": 1,
+          "legendFormat": "Finished Transactions Total",
+          "refId": "E"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Transactions",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "txns/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "short",
+          "label": "txns",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "description": "Updates, Reads, Reads (asynchronous)\nRate & Total",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 27,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*total/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_operations_total{instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "instant": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} rate",
+          "metric": "",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_operations_total{instance=\"$node\"}",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} total",
+          "refId": "B",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Operations",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "ops/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "short",
+          "label": "ops",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "description": "Reads, Reads(async) internal",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 57,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*total/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_operations_internal_total{instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "instant": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} rate",
+          "metric": "",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_operations_internal_total{instance=\"$node\"}",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} total",
+          "refId": "B",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Operations Internal",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "ops/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "short",
+          "label": "ops",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "description": "Reads, Reads(async) internal",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 58,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*total/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_dc_ops_received{instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "instant": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "Ops received rate",
+          "metric": "",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_dc_ops_received{instance=\"$node\"}",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "Ops received total",
+          "refId": "B",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Operations Inter-DC",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "ops/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "short",
+          "label": "ops",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "description": "Reads, Reads(async) internal",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 59,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*total/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_dc_ops_received_size{instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "instant": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "Ops received rate",
+          "metric": "",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_dc_ops_received_size{instance=\"$node\"}",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "Ops received total",
+          "refId": "B",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Operations Inter-DC Size",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "bytes",
+          "label": "size/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "bytes",
+          "label": "size",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 17,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "  rate(antidote_staleness_sum{instance=\"$node\"}[5m])\n/\n  rate(antidote_staleness_count{instance=\"$node\"}[5m])",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "Staleness",
+          "refId": "A",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Staleness",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "ms",
+          "label": "",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": "",
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "prometheus",
+      "description": "",
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 60,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "alias": "/.*total/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "irate(antidote_log_access{instance=\"$node\"}[1m])",
+          "format": "time_series",
+          "instant": false,
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} rate",
+          "metric": "",
+          "refId": "A",
+          "step": 2
+        },
+        {
+          "expr": "antidote_log_access{instance=\"$node\"}",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{type}} total",
+          "refId": "B",
+          "step": 2
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Cache Misses/Disk Log Reads",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": "ops/sec",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "decimals": null,
+          "format": "short",
+          "label": "ops",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 39
       },
-      "id": 38,
+      "id": 30,
       "panels": [
         {
           "aliasColors": {},
@@ -208,31 +1007,31 @@
           "dashLength": 10,
           "dashes": false,
           "datasource": "prometheus",
-          "decimals": null,
+          "editable": true,
+          "error": false,
           "fill": 1,
           "fillGradient": 0,
+          "grid": {},
           "gridPos": {
-            "h": 7,
-            "w": 24,
+            "h": 8,
+            "w": 12,
             "x": 0,
-            "y": 6
+            "y": 5
           },
-          "id": 18,
+          "id": 3,
           "legend": {
-            "alignAsTable": false,
             "avg": false,
             "current": false,
             "max": false,
             "min": false,
-            "rightSide": false,
             "show": true,
             "total": false,
             "values": false
           },
           "lines": true,
-          "linewidth": 1,
+          "linewidth": 2,
           "links": [],
-          "nullPointMode": "null",
+          "nullPointMode": "connected",
           "options": {
             "dataLinks": []
           },
@@ -240,61 +1039,54 @@
           "pointradius": 5,
           "points": false,
           "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "/.*Rate/",
-              "yaxis": 1
-            },
-            {
-              "alias": "Open Transactions",
-              "yaxis": 2
-            },
-            {
-              "alias": "Aborted Transactions",
-              "yaxis": 2
-            }
-          ],
+          "seriesOverrides": [],
           "spaceLength": 10,
-          "stack": false,
+          "stack": true,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "irate(antidote_aborted_transactions_total{instance=\"$node\"}[1m])",
-              "format": "time_series",
-              "intervalFactor": 1,
-              "legendFormat": "Aborted Transactions Rate",
-              "refId": "C"
-            },
-            {
-              "expr": "irate(antidote_open_transactions{instance=\"$node\"}[1m])",
-              "format": "time_series",
-              "intervalFactor": 1,
-              "legendFormat": "Open Transactions Rate",
-              "refId": "D"
-            },
-            {
-              "expr": "antidote_open_transactions{instance=\"$node\"}",
-              "format": "time_series",
-              "intervalFactor": 1,
-              "legendFormat": "Open Transactions",
-              "metric": "antidote_open_transactions",
-              "refId": "A",
+              "expr": "erlang_vm_memory_bytes_total{instance=\"$node\", kind=\"processes\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Processes Memory",
+              "refId": "B",
               "step": 2
             },
             {
-              "expr": "antidote_aborted_transactions_total{instance=\"$node\"}",
-              "format": "time_series",
-              "intervalFactor": 1,
-              "legendFormat": "Aborted Transactions",
-              "refId": "B"
+              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"atom\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Atoms",
+              "refId": "C",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"binary\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Binary",
+              "refId": "D",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"code\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Code",
+              "refId": "E",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"ets\"}",
+              "intervalFactor": 2,
+              "legendFormat": "ETS",
+              "refId": "F",
+              "step": 2
             }
           ],
           "thresholds": [],
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Transactions",
+          "title": "VM Memory",
           "tooltip": {
+            "msResolution": false,
             "shared": true,
             "sort": 0,
             "value_type": "individual"
@@ -309,20 +1101,17 @@
           },
           "yaxes": [
             {
-              "format": "short",
-              "label": "txns/sec",
+              "format": "bytes",
               "logBase": 1,
               "max": null,
-              "min": "0",
+              "min": null,
               "show": true
             },
             {
-              "decimals": null,
               "format": "short",
-              "label": "txns",
               "logBase": 1,
               "max": null,
-              "min": "0",
+              "min": null,
               "show": true
             }
           ],
@@ -337,237 +1126,18 @@
           "dashLength": 10,
           "dashes": false,
           "datasource": "prometheus",
-          "description": "Updates, Reads, Reads (asynchronous)\nRate & Total",
+          "editable": true,
+          "error": false,
           "fill": 1,
           "fillGradient": 0,
+          "grid": {},
           "gridPos": {
-            "h": 7,
-            "w": 24,
-            "x": 0,
-            "y": 13
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 5
           },
-          "id": 27,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "links": [],
-          "nullPointMode": "null",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "/.*total/",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "irate(antidote_operations_total{instance=\"$node\"}[1m])",
-              "format": "time_series",
-              "instant": false,
-              "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "{{type}} rate",
-              "metric": "",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "antidote_operations_total{instance=\"$node\"}",
-              "format": "time_series",
-              "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "{{type}} total",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Operations",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": [
-              "total"
-            ]
-          },
-          "yaxes": [
-            {
-              "format": "short",
-              "label": "ops/sec",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "decimals": null,
-              "format": "short",
-              "label": "ops",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "description": "Reads, Reads(async) internal",
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 7,
-            "w": 24,
-            "x": 0,
-            "y": 20
-          },
-          "id": 57,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "links": [],
-          "nullPointMode": "null",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "/.*total/",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "irate(antidote_operations_internal_total{instance=\"$node\"}[1m])",
-              "format": "time_series",
-              "instant": false,
-              "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "{{type}} rate",
-              "metric": "",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "antidote_operations_internal_total{instance=\"$node\"}",
-              "format": "time_series",
-              "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "{{type}} total",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Operations Internal",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": [
-              "total"
-            ]
-          },
-          "yaxes": [
-            {
-              "format": "short",
-              "label": "ops/sec",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "decimals": null,
-              "format": "short",
-              "label": "ops",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 7,
-            "w": 5,
-            "x": 0,
-            "y": 27
-          },
-          "id": 17,
+          "id": 11,
           "legend": {
             "avg": false,
             "current": false,
@@ -578,9 +1148,9 @@
             "values": false
           },
           "lines": true,
-          "linewidth": 1,
+          "linewidth": 2,
           "links": [],
-          "nullPointMode": "null",
+          "nullPointMode": "connected",
           "options": {
             "dataLinks": []
           },
@@ -594,12 +1164,20 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "  rate(antidote_staleness_sum{instance=\"$node\"}[5m])\n/\n  rate(antidote_staleness_count{instance=\"$node\"}[5m])",
+              "expr": "process_virtual_memory_bytes{instance=\"$node\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
-              "legendFormat": "Staleness",
+              "legendFormat": "Virtual Memory",
               "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "process_resident_memory_bytes{instance=\"$node\"}",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Resident Memory",
+              "refId": "B",
               "step": 2
             }
           ],
@@ -607,7 +1185,226 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Staleness",
+          "title": "OS Process Memory",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "editable": true,
+          "error": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 13
+          },
+          "id": 7,
+          "legend": {
+            "alignAsTable": false,
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "alias": "Words Reclaimed",
+              "yaxis": 2
+            },
+            {
+              "alias": "Bytes Reclaimed",
+              "yaxis": 2
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "irate(erlang_vm_statistics_garbage_collection_number_of_gcs{instance=\"$node\"}[5m])",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Number of GCs",
+              "metric": "erlang_vm_statistics_garbage_collection_number_of_gcs",
+              "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "irate(erlang_vm_statistics_garbage_collection_bytes_reclaimed{instance=\"$node\"}[5m])",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Bytes Reclaimed",
+              "metric": "erlang_vm_statistics_garbage_collection_words_reclaimed",
+              "refId": "B",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "VM GC",
+          "tooltip": {
+            "msResolution": false,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "decbytes",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "Memory",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 36,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "cacheTimeout": null,
+          "dashLength": 10,
+          "dashes": false,
+          "description": "Size of Logs combined",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 6
+          },
+          "id": 28,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(antidote_log_size{instance=\"$node\"})",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 1,
+              "legendFormat": "Log Size",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Log Size",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -623,16 +1420,107 @@
           },
           "yaxes": [
             {
-              "format": "ms",
-              "label": "",
+              "format": "bytes",
+              "label": null,
               "logBase": 1,
               "max": null,
-              "min": "0",
+              "min": null,
               "show": true
             },
             {
               "format": "short",
-              "label": "",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "cacheTimeout": null,
+          "dashLength": 10,
+          "dashes": false,
+          "description": "Size of every log",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 13
+          },
+          "id": 23,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "antidote_log_size{instance=\"$node\"}",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 1,
+              "legendFormat": "{{log}}",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Log Sizes",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
               "logBase": 1,
               "max": null,
               "min": null,
@@ -645,7 +1533,7 @@
           }
         }
       ],
-      "title": "Antidote API",
+      "title": "Disk",
       "type": "row"
     },
     {
@@ -654,7 +1542,574 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 41
+      },
+      "id": 34,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "editable": true,
+          "error": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 6,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "irate(erlang_vm_statistics_bytes_output_total{instance=\"$node\"}[5m])",
+              "intervalFactor": 2,
+              "legendFormat": "Output Bytes",
+              "metric": "erlang_vm_statistics_bytes_output_total",
+              "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "irate(erlang_vm_statistics_bytes_received_total{instance=\"$node\"}[5m])",
+              "intervalFactor": 2,
+              "legendFormat": "Received Bytes",
+              "metric": "erlang_vm_statistics_bytes_received_total",
+              "refId": "B",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "VM IO Rate",
+          "tooltip": {
+            "msResolution": false,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "decbytes",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "GBs",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "editable": true,
+          "error": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 47,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "erlang_vm_statistics_bytes_received_total{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Received Bytes",
+              "metric": "erlang_vm_statistics_bytes_received_total",
+              "refId": "B",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_statistics_bytes_output_total{instance=\"$node\"}",
+              "legendFormat": "Sent Bytes",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "VM IO Total",
+          "tooltip": {
+            "msResolution": false,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "decbytes",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "GBs",
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "editable": true,
+          "error": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 14
+          },
+          "id": 8,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "alias": "Max Ports",
+              "yaxis": 2
+            },
+            {
+              "alias": "Ports",
+              "yaxis": 2
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "process_open_fds{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Open FDs",
+              "metric": "",
+              "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "process_max_fds{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Max FDs",
+              "refId": "B",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_port_limit{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Max Ports",
+              "refId": "C",
+              "step": 2
+            },
+            {
+              "expr": "erlang_vm_port_count{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Ports",
+              "refId": "D",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "File Descriptors & Ports",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "none",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "I/O",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 32,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "decimals": null,
+          "editable": true,
+          "error": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 44
+          },
+          "id": 10,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "alias": "Threads",
+              "yaxis": 2
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "process_threads_total{instance=\"$node\"}",
+              "intervalFactor": 2,
+              "legendFormat": "Threads",
+              "metric": "",
+              "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "sum(irate(process_cpu_seconds_total{instance=\"$node\"}[30s])) without (kind) * 100",
+              "intervalFactor": 2,
+              "legendFormat": "CPU",
+              "refId": "B",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Native Threads & CPU",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "percent",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 52
+          },
+          "id": 15,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "alias": "Reductions",
+              "yaxis": 2
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "irate(erlang_vm_statistics_context_switches{instance=\"$node\"}[5m])",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Context Switches",
+              "refId": "B",
+              "step": 2
+            },
+            {
+              "expr": "irate(erlang_vm_statistics_reductions_total{instance=\"$node\"}[5m])",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Reductions",
+              "refId": "C",
+              "step": 2
+            },
+            {
+              "expr": "irate(erlang_vm_statistics_runtime_milliseconds{instance=\"$node\"}[5m])",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "Runtime",
+              "refId": "D",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Load",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "CPU",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
       },
       "id": 51,
       "panels": [
@@ -664,7 +2119,7 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 7
+            "y": 59
           },
           "id": 49,
           "links": [],
@@ -730,7 +2185,7 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 13
+            "y": 65
           },
           "id": 52,
           "links": [],
@@ -798,7 +2253,7 @@
             "h": 8,
             "w": 11,
             "x": 0,
-            "y": 19
+            "y": 71
           },
           "id": 54,
           "legend": {
@@ -879,7 +2334,7 @@
             "h": 8,
             "w": 13,
             "x": 11,
-            "y": 19
+            "y": 71
           },
           "id": 56,
           "links": [],
@@ -1007,1119 +2462,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
-      },
-      "id": 36,
-      "panels": [
-        {
-          "aliasColors": {},
-          "bars": false,
-          "cacheTimeout": null,
-          "dashLength": 10,
-          "dashes": false,
-          "description": "Size of Logs combined",
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 7,
-            "w": 24,
-            "x": 0,
-            "y": 8
-          },
-          "id": 28,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "links": [],
-          "nullPointMode": "null",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "sum(antidote_log_size{instance=\"$node\"})",
-              "format": "time_series",
-              "interval": "",
-              "intervalFactor": 1,
-              "legendFormat": "Log Size",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Log Size",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "bytes",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "cacheTimeout": null,
-          "dashLength": 10,
-          "dashes": false,
-          "description": "Size of every log",
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 24,
-            "x": 0,
-            "y": 15
-          },
-          "id": 23,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "links": [],
-          "nullPointMode": "null",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "antidote_log_size{instance=\"$node\"}",
-              "format": "time_series",
-              "interval": "",
-              "intervalFactor": 1,
-              "legendFormat": "{{log}}",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Log Sizes",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "bytes",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        }
-      ],
-      "title": "Disk",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
-      "id": 34,
-      "panels": [
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 0,
-            "y": 9
-          },
-          "id": 6,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "irate(erlang_vm_statistics_bytes_output_total{instance=\"$node\"}[5m])",
-              "intervalFactor": 2,
-              "legendFormat": "Output Bytes",
-              "metric": "erlang_vm_statistics_bytes_output_total",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "irate(erlang_vm_statistics_bytes_received_total{instance=\"$node\"}[5m])",
-              "intervalFactor": 2,
-              "legendFormat": "Received Bytes",
-              "metric": "erlang_vm_statistics_bytes_received_total",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "VM IO Rate",
-          "tooltip": {
-            "msResolution": false,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "decbytes",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "GBs",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": false
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 12,
-            "y": 9
-          },
-          "id": 47,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "erlang_vm_statistics_bytes_received_total{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Received Bytes",
-              "metric": "erlang_vm_statistics_bytes_received_total",
-              "refId": "B",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_statistics_bytes_output_total{instance=\"$node\"}",
-              "legendFormat": "Sent Bytes",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "VM IO Total",
-          "tooltip": {
-            "msResolution": false,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "decbytes",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "GBs",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": false
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 0,
-            "y": 16
-          },
-          "id": 8,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "Max Ports",
-              "yaxis": 2
-            },
-            {
-              "alias": "Ports",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "process_open_fds{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Open FDs",
-              "metric": "",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "process_max_fds{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Max FDs",
-              "refId": "B",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_port_limit{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Max Ports",
-              "refId": "C",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_port_count{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Ports",
-              "refId": "D",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "File Descriptors & Ports",
-          "tooltip": {
-            "msResolution": true,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "none",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        }
-      ],
-      "title": "I/O",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 9
-      },
-      "id": 32,
-      "panels": [
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "decimals": null,
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 8,
-            "w": 24,
-            "x": 0,
-            "y": 10
-          },
-          "id": 10,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "Threads",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "process_threads_total{instance=\"$node\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Threads",
-              "metric": "",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "sum(irate(process_cpu_seconds_total{instance=\"$node\"}[30s])) without (kind) * 100",
-              "intervalFactor": 2,
-              "legendFormat": "CPU",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Native Threads & CPU",
-          "tooltip": {
-            "msResolution": true,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "percent",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 0,
-            "y": 18
-          },
-          "id": 15,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "links": [],
-          "nullPointMode": "null",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "Reductions",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "irate(erlang_vm_statistics_context_switches{instance=\"$node\"}[5m])",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Context Switches",
-              "refId": "B",
-              "step": 2
-            },
-            {
-              "expr": "irate(erlang_vm_statistics_reductions_total{instance=\"$node\"}[5m])",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Reductions",
-              "refId": "C",
-              "step": 2
-            },
-            {
-              "expr": "irate(erlang_vm_statistics_runtime_milliseconds{instance=\"$node\"}[5m])",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Runtime",
-              "refId": "D",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Load",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        }
-      ],
-      "title": "CPU",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 10
-      },
-      "id": 30,
-      "panels": [
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 11
-          },
-          "id": 3,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": true,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "erlang_vm_memory_bytes_total{instance=\"$node\", kind=\"processes\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Processes Memory",
-              "refId": "B",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"atom\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Atoms",
-              "refId": "C",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"binary\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Binary",
-              "refId": "D",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"code\"}",
-              "intervalFactor": 2,
-              "legendFormat": "Code",
-              "refId": "E",
-              "step": 2
-            },
-            {
-              "expr": "erlang_vm_memory_system_bytes_total{instance=\"$node\", usage=\"ets\"}",
-              "intervalFactor": 2,
-              "legendFormat": "ETS",
-              "refId": "F",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "VM Memory",
-          "tooltip": {
-            "msResolution": false,
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "bytes",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 11
-          },
-          "id": 11,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "process_virtual_memory_bytes{instance=\"$node\"}",
-              "format": "time_series",
-              "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "Virtual Memory",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "process_resident_memory_bytes{instance=\"$node\"}",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Resident Memory",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "OS Process Memory",
-          "tooltip": {
-            "msResolution": true,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "bytes",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "prometheus",
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "fillGradient": 0,
-          "grid": {},
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 0,
-            "y": 19
-          },
-          "id": 7,
-          "legend": {
-            "alignAsTable": false,
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "rightSide": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "options": {
-            "dataLinks": []
-          },
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "alias": "Words Reclaimed",
-              "yaxis": 2
-            },
-            {
-              "alias": "Bytes Reclaimed",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "irate(erlang_vm_statistics_garbage_collection_number_of_gcs{instance=\"$node\"}[5m])",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Number of GCs",
-              "metric": "erlang_vm_statistics_garbage_collection_number_of_gcs",
-              "refId": "A",
-              "step": 2
-            },
-            {
-              "expr": "irate(erlang_vm_statistics_garbage_collection_bytes_reclaimed{instance=\"$node\"}[5m])",
-              "format": "time_series",
-              "intervalFactor": 2,
-              "legendFormat": "Bytes Reclaimed",
-              "metric": "erlang_vm_statistics_garbage_collection_words_reclaimed",
-              "refId": "B",
-              "step": 2
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "VM GC",
-          "tooltip": {
-            "msResolution": false,
-            "shared": true,
-            "sort": 0,
-            "value_type": "cumulative"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "short",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "format": "decbytes",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        }
-      ],
-      "title": "Memory",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 11
+        "y": 44
       },
       "id": 44,
       "panels": [
@@ -2137,7 +2480,7 @@
             "h": 5,
             "w": 8,
             "x": 0,
-            "y": 12
+            "y": 60
           },
           "id": 12,
           "legend": {
@@ -2245,7 +2588,7 @@
             "h": 5,
             "w": 8,
             "x": 8,
-            "y": 12
+            "y": 60
           },
           "id": 14,
           "legend": {
@@ -2348,7 +2691,7 @@
             "h": 5,
             "w": 8,
             "x": 16,
-            "y": 12
+            "y": 60
           },
           "id": 46,
           "legend": {
@@ -2437,7 +2780,6 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
           "tags": [],
           "text": "localhost:8111",
           "value": "localhost:8111"
