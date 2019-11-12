@@ -44,6 +44,9 @@ start(_StartType, _StartArgs) ->
     % set the error logger counting the number of errors during operation
     ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
 
+    % set the warning logger counting the number of warnings during operation
+    ok = logger:add_handler(count_warnings, antidote_warning_monitor, #{level => warning}),
+
     case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),

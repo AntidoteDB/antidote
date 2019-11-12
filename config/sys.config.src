@@ -1,13 +1,21 @@
 [
   "network.config",
+  "lager.config",
 
   %% logger config
   {kernel, [
     {logger, [
+
       {handler, default, logger_std_h,
         #{level => info,
           formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
           config => #{type => standard_io}}},
+
+      {handler, debug, logger_std_h,
+        #{level => info,
+          formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+          config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/info.log"}}}},
+
       {handler, errors, logger_std_h,
         #{level => error,
           formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
@@ -16,10 +24,6 @@
     {logger_level, info}
   ]},
 
-  %% lager logging folder root
-  {lager, [
-    {log_root, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs"}
-  ]},
 
 
   {riak_core, [
@@ -37,6 +41,11 @@
   {antidote, [
     %% antidote data directory
     {data_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_antidote"}
+
+    %% extended_stats:
+    %%        true -> process queues and reductions are monitored for busy processes
+    %%        false -> single process monitoring disables
+    %{extended_stats, true},
 
     %% txn_cert:
     %%        true -> write operations are certified during commit, aborting the transaction if a write conflict is detected (i.e. snapshot isolation

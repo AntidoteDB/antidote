@@ -114,6 +114,8 @@ init(_Args) ->
               type => supervisor,
               modules => [antidote_pb_sup]},
 
+    AntidoteStats = ?CHILD(antidote_stats, worker, []),
+
 
     {ok,
      {{one_for_one, 5, 10},
@@ -136,5 +138,6 @@ init(_Args) ->
        MetaDataSenderSup,
        BCounterManager,
        LogResponseReaderSup,
-       PbSup
+       PbSup,
+       AntidoteStats
        ]}}.
