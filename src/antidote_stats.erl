@@ -95,7 +95,7 @@ handle_info(periodic_update, State = #state{timer = CheapTimer}) ->
 
 handle_info(periodic_expensive_update, State = #state{timer_expensive =  ExpensiveTimer, monitored_processes = Monitored}) ->
     %% ?
-    erlang:cancel_timer(ExpensiveTimer),
+    _ = erlang:cancel_timer(ExpensiveTimer),
 
     %% only collect extended stats if enabled
     case application:get_env(antidote, extended_stats) of
