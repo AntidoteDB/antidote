@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1573485902347,
+  "iteration": 1573555712736,
   "links": [],
   "panels": [
     {
@@ -1103,7 +1103,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 5
+            "y": 40
           },
           "id": 3,
           "legend": {
@@ -1222,7 +1222,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 5
+            "y": 40
           },
           "id": 11,
           "legend": {
@@ -1325,7 +1325,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 13
+            "y": 48
           },
           "id": 7,
           "legend": {
@@ -2201,132 +2201,179 @@
       "id": 51,
       "panels": [
         {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
           "description": "",
+          "fill": 0,
           "gridPos": {
-            "h": 6,
-            "w": 24,
+            "h": 7,
+            "w": 12,
             "x": 0,
-            "y": 9
+            "y": 44
           },
           "id": 49,
-          "links": [],
-          "options": {
-            "fieldOptions": {
-              "calcs": [
-                "last"
-              ],
-              "defaults": {
-                "max": 100,
-                "min": 0,
-                "title": "",
-                "unit": "percent"
-              },
-              "mappings": [],
-              "override": {},
-              "thresholds": [
-                {
-                  "color": "green",
-                  "index": 0,
-                  "value": null
-                },
-                {
-                  "color": "orange",
-                  "index": 1,
-                  "value": 40
-                },
-                {
-                  "color": "semi-dark-red",
-                  "index": 2,
-                  "value": 60
-                },
-                {
-                  "color": "dark-red",
-                  "index": 3,
-                  "value": 80
-                }
-              ],
-              "values": false
-            },
-            "orientation": "auto",
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
           },
+          "lines": true,
+          "linewidth": 3,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {},
+          "percentage": false,
           "pluginVersion": "6.2.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": true,
           "targets": [
             {
-              "expr": "antidote_ring_claimed",
+              "expr": "antidote_ring_claimed{instance=\"$node\"}",
               "format": "time_series",
               "intervalFactor": 1,
-              "legendFormat": "{{instance}}",
+              "legendFormat": "{{node}}",
               "refId": "A"
             }
           ],
+          "thresholds": [],
           "timeFrom": null,
+          "timeRegions": [],
           "timeShift": null,
           "title": "Ring Claimed",
-          "type": "gauge"
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": "100",
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": "100",
+              "min": "0",
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         },
         {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
           "description": "",
+          "fill": 0,
           "gridPos": {
-            "h": 6,
-            "w": 24,
-            "x": 0,
-            "y": 15
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 44
           },
           "id": 52,
-          "links": [],
-          "options": {
-            "fieldOptions": {
-              "calcs": [
-                "last"
-              ],
-              "defaults": {
-                "max": 100,
-                "min": 0,
-                "title": "",
-                "unit": "percent"
-              },
-              "mappings": [],
-              "override": {},
-              "thresholds": [
-                {
-                  "color": "green",
-                  "index": 0,
-                  "value": null
-                },
-                {
-                  "color": "#EAB839",
-                  "index": 1,
-                  "value": 10
-                },
-                {
-                  "color": "dark-orange",
-                  "index": 2,
-                  "value": 50
-                }
-              ],
-              "values": false
-            },
-            "orientation": "auto",
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
           },
+          "lines": true,
+          "linewidth": 3,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {},
+          "percentage": false,
           "pluginVersion": "6.2.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": true,
           "targets": [
             {
-              "expr": "antidote_ring_pending",
+              "expr": "antidote_ring_pending{instance=\"$node\"}",
               "format": "time_series",
               "instant": false,
               "intervalFactor": 1,
-              "legendFormat": "{{instance}}",
+              "legendFormat": "{{node}}",
               "refId": "A"
             }
           ],
+          "thresholds": [],
           "timeFrom": null,
+          "timeRegions": [],
           "timeShift": null,
           "title": "Ring Pending Changes",
-          "type": "gauge"
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": "100",
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": "100",
+              "min": "0",
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         },
         {
           "aliasColors": {},
@@ -2338,9 +2385,9 @@
           "fill": 0,
           "gridPos": {
             "h": 8,
-            "w": 11,
+            "w": 12,
             "x": 0,
-            "y": 21
+            "y": 51
           },
           "id": 54,
           "legend": {
@@ -2379,7 +2426,7 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Member Status",
+          "title": "Member Availability",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -2419,9 +2466,9 @@
         {
           "gridPos": {
             "h": 8,
-            "w": 13,
-            "x": 11,
-            "y": 21
+            "w": 12,
+            "x": 12,
+            "y": 51
           },
           "id": 56,
           "links": [],
@@ -2443,7 +2490,7 @@
                   "text": "Valid",
                   "to": "",
                   "type": 1,
-                  "value": "1"
+                  "value": "0"
                 },
                 {
                   "from": "",
@@ -2452,7 +2499,7 @@
                   "text": "Joining",
                   "to": "",
                   "type": 1,
-                  "value": "0"
+                  "value": "1"
                 },
                 {
                   "from": "",
@@ -2499,23 +2546,18 @@
                   "value": null
                 },
                 {
-                  "color": "#EAB839",
+                  "color": "dark-yellow",
                   "index": 1,
-                  "value": 0
-                },
-                {
-                  "color": "green",
-                  "index": 2,
                   "value": 1
                 },
                 {
                   "color": "dark-orange",
-                  "index": 3,
+                  "index": 2,
                   "value": 2
                 },
                 {
                   "color": "dark-red",
-                  "index": 4,
+                  "index": 3,
                   "value": 5
                 }
               ],
@@ -2526,11 +2568,11 @@
           "pluginVersion": "6.2.5",
           "targets": [
             {
-              "expr": "antidote_cluster_ring_state",
+              "expr": "antidote_ring_node_state{instance=\"$node\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
-              "legendFormat": "{{instance}}",
+              "legendFormat": "{{node}}",
               "refId": "A"
             }
           ],
@@ -2567,7 +2609,7 @@
             "h": 5,
             "w": 8,
             "x": 0,
-            "y": 39
+            "y": 45
           },
           "id": 12,
           "legend": {
@@ -2675,7 +2717,7 @@
             "h": 5,
             "w": 8,
             "x": 8,
-            "y": 39
+            "y": 45
           },
           "id": 14,
           "legend": {
@@ -2705,6 +2747,7 @@
           "targets": [
             {
               "expr": "erlang_vm_process_limit{instance=\"$node\"}",
+              "format": "time_series",
               "hide": true,
               "intervalFactor": 2,
               "legendFormat": "Process Limit",
@@ -2713,6 +2756,7 @@
             },
             {
               "expr": "erlang_vm_process_count{instance=\"$node\"}",
+              "format": "time_series",
               "intervalFactor": 2,
               "legendFormat": "Processes",
               "refId": "B",
@@ -2720,6 +2764,7 @@
             },
             {
               "expr": "erlang_vm_statistics_run_queues_length_total{instance=\"$node\"}",
+              "format": "time_series",
               "intervalFactor": 2,
               "legendFormat": "Run Queues Length",
               "refId": "C",
@@ -2778,7 +2823,7 @@
             "h": 5,
             "w": 8,
             "x": 16,
-            "y": 39
+            "y": 45
           },
           "id": 46,
           "legend": {
@@ -2852,6 +2897,185 @@
             "align": false,
             "alignLevel": null
           }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 5,
+            "w": 8,
+            "x": 0,
+            "y": 50
+          },
+          "id": 62,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "antidote_process_reductions{instance=\"$node\"}",
+              "format": "time_series",
+              "hide": false,
+              "intervalFactor": 2,
+              "legendFormat": "{{process}}",
+              "refId": "A",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Reductions",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "prometheus",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 5,
+            "w": 8,
+            "x": 8,
+            "y": 50
+          },
+          "id": 63,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "null",
+          "options": {
+            "dataLinks": []
+          },
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "antidote_message_queue_length{instance=\"$node\"}",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Message Queues",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         }
       ],
       "title": "Erlang Internals",
@@ -2867,7 +3091,6 @@
       {
         "allValue": null,
         "current": {
-          "tags": [],
           "text": "localhost:8111",
           "value": "localhost:8111"
         },
