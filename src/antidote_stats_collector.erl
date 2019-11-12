@@ -58,6 +58,10 @@ handle_cast(log_warning, State) ->
     prometheus_counter:inc(antidote_warning_count),
     {noreply, State};
 
+handle_cast({process_scrape_time, TimeMs}, State) ->
+    prometheus_gauge:set(antidote_process_scrape_time, TimeMs),
+    {noreply, State};
+
 handle_cast(open_transaction, State) ->
     prometheus_gauge:inc(antidote_open_transactions),
     prometheus_counter:inc(antidote_transaction, [open]),
@@ -200,6 +204,7 @@ init_metrics() ->
     prometheus_gauge:new([{name, antidote_ring_claimed}, {help, "How much of the ring this node has claimed"}, {labels, [node]}]),
     prometheus_gauge:new([{name, antidote_ring_pending}, {help, "How much of the ring this node will claim after resize"}, {labels, [node]}]),
     prometheus_gauge:new([{name, antidote_ring_member_availability}, {help, "Current availability of every member of the ring"}, {labels, [node]}]),
+    prometheus_gauge:new([{name, antidote_process_scrape_time}, {help, "How long it took to scrape erlang process information"}]),
 
     prometheus_gauge:new([{name, antidote_process_reductions}, {help, "Reductions of processes"}, {labels, [process]}]),
     prometheus_gauge:new([{name, antidote_process_message_queue_length}, {help, "Message queue length of processes"}, {labels, [process]}]),
