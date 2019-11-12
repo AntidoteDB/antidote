@@ -144,33 +144,33 @@ handle_cast({ring_ready, false}, State) ->
 %% riak core node state
 %% see type member_status in riak_core
 %% -type member_status() :: valid | joining | invalid | leaving | exiting | down.
-handle_cast({node_state, valid}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 0),
+handle_cast({node_state, Node, valid}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 0),
     {noreply, State};
-handle_cast({node_state, joining}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 1),
+handle_cast({node_state, Node, joining}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 1),
     {noreply, State};
-handle_cast({node_state, invalid}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 2),
+handle_cast({node_state, Node, invalid}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 2),
     {noreply, State};
-handle_cast({node_state, leaving}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 3),
+handle_cast({node_state, Node, leaving}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 3),
     {noreply, State};
-handle_cast({node_state, exiting}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 4),
+handle_cast({node_state, Node, exiting}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 4),
     {noreply, State};
-handle_cast({node_state, down}, State) ->
-    prometheus_gauge:set(antidote_ring_node_state, 5),
+handle_cast({node_state, Node, down}, State) ->
+    prometheus_gauge:set(antidote_ring_node_state, [Node], 5),
     {noreply, State};
 
 %% riak core ring claimed
-handle_cast({ring_claimed, Claimant, Percent}, State) ->
-    prometheus_gauge:set(antidote_ring_claimed, [Claimant], Percent),
+handle_cast({ring_claimed, Node, Percent}, State) ->
+    prometheus_gauge:set(antidote_ring_claimed, [Node], Percent),
     {noreply, State};
 
 %% riak core ring pending
-handle_cast({ring_pending, Claimant, Percent}, State) ->
-    prometheus_gauge:set(antidote_ring_pending, [Claimant], Percent),
+handle_cast({ring_pending, Node, Percent}, State) ->
+    prometheus_gauge:set(antidote_ring_pending, [Node], Percent),
     {noreply, State};
 
 %% riak core ring member availability (-2,-1,1,2)
@@ -192,9 +192,9 @@ code_change(_OldVsn, State, _Extra) ->
 init_metrics() ->
     %% riak_core metrics
     prometheus_gauge:new([{name, antidote_cluster_ring_state}, {help, "If this node agrees on the cluster ring state of the cluster"}]),
-    prometheus_gauge:new([{name, antidote_ring_node_state}, {help, "State of this node in the riak_core cluster"}]),
-    prometheus_gauge:new([{name, antidote_ring_claimed}, {help, "How much of the ring this node has claimed"}, {labels, [claimant]}]),
-    prometheus_gauge:new([{name, antidote_ring_pending}, {help, "How much of the ring this node will claim after resize"}, {labels, [claimant]}]),
+    prometheus_gauge:new([{name, antidote_ring_node_state}, {help, "State of the node members in the riak_core cluster"}, {labels, [node]}]),
+    prometheus_gauge:new([{name, antidote_ring_claimed}, {help, "How much of the ring this node has claimed"}, {labels, [node]}]),
+    prometheus_gauge:new([{name, antidote_ring_pending}, {help, "How much of the ring this node will claim after resize"}, {labels, [node]}]),
     prometheus_gauge:new([{name, antidote_ring_member_availability}, {help, "Current availability of every member of the ring"}, {labels, [node]}]),
 
     prometheus_gauge:new([{name, antidote_process_reductions}, {help, "Reductions of processes"}, {labels, [process]}]),
