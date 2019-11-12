@@ -64,23 +64,24 @@ update_status() ->
     {_Claimant, RingReady, Down, MarkedDown, Changes} = riak_core_status:ring_status(),
     ?STATS({ring_ready, RingReady}),
 
-    %% member status (self)
+
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    NodeState = riak_core_ring:member_status(Ring, node()),
-    ?STATS({node_state, NodeState}),
-
-    %% ring claimed
-    RingClaimed = claim_percent(Ring, node()),
-    ?STATS({ring_claimed, RingClaimed}),
-
-    %% ring pending
-    RingPending = future_claim_percentage(Changes, Ring, node()),
-    ?STATS({ring_pending, RingPending}),
-
-    %% node availability for every member
     Members = riak_core_ring:all_members(Ring),
 
+    %% node availability and ring state for every member as seen by this node
     lists:foreach(fun(Node) ->
+        %% member status
+        NodeState = riak_core_ring:member_status(Ring, Node),
+        ?STATS({node_state, Node, NodeState}),
+
+        %% ring claimed
+        RingClaimed = claim_percent(Ring, Node),
+        ?STATS({ring_claimed, Node, RingClaimed}),
+
+        %% ring pending
+        RingPending = future_claim_percentage(Changes, Ring, Node),
+        ?STATS({ring_pending, Node, RingPending}),
+
         ?STATS({ring_member_availability, Node, node_availability(Node, Down, MarkedDown)})
                   end, Members),
 
