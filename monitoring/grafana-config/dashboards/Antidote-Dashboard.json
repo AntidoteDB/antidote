@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "iteration": 1573555712736,
+  "iteration": 1573558730176,
   "links": [],
   "panels": [
     {
@@ -1450,7 +1450,7 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 6
+            "y": 41
           },
           "id": 28,
           "legend": {
@@ -1541,7 +1541,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 13
+            "y": 48
           },
           "id": 23,
           "legend": {
@@ -1648,7 +1648,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 7
+            "y": 42
           },
           "id": 6,
           "legend": {
@@ -1748,7 +1748,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 42
           },
           "id": 47,
           "legend": {
@@ -1845,7 +1845,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 14
+            "y": 49
           },
           "id": 8,
           "legend": {
@@ -1984,7 +1984,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 22
+            "y": 43
           },
           "id": 10,
           "legend": {
@@ -2087,7 +2087,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 30
+            "y": 51
           },
           "id": 15,
           "legend": {
@@ -2266,6 +2266,7 @@
           },
           "yaxes": [
             {
+              "decimals": null,
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2274,12 +2275,13 @@
               "show": true
             },
             {
+              "decimals": 0,
               "format": "short",
               "label": null,
               "logBase": 1,
               "max": "100",
               "min": "0",
-              "show": true
+              "show": false
             }
           ],
           "yaxis": {
@@ -2354,6 +2356,7 @@
           },
           "yaxes": [
             {
+              "decimals": null,
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2367,7 +2370,7 @@
               "logBase": 1,
               "max": "100",
               "min": "0",
-              "show": true
+              "show": false
             }
           ],
           "yaxis": {
@@ -2400,7 +2403,7 @@
             "values": false
           },
           "lines": true,
-          "linewidth": 1,
+          "linewidth": 3,
           "links": [],
           "nullPointMode": "null",
           "options": {},
@@ -2412,7 +2415,7 @@
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
-          "steppedLine": false,
+          "steppedLine": true,
           "targets": [
             {
               "expr": "antidote_ring_member_availability{instance=\"$node\"}",
@@ -2442,11 +2445,12 @@
           },
           "yaxes": [
             {
+              "decimals": 0,
               "format": "short",
               "label": null,
               "logBase": 1,
-              "max": null,
-              "min": null,
+              "max": "2",
+              "min": "-2",
               "show": true
             },
             {
@@ -2455,7 +2459,7 @@
               "logBase": 1,
               "max": null,
               "min": null,
-              "show": true
+              "show": false
             }
           ],
           "yaxis": {
@@ -3091,6 +3095,8 @@
       {
         "allValue": null,
         "current": {
+          "selected": true,
+          "tags": [],
           "text": "localhost:8111",
           "value": "localhost:8111"
         },
