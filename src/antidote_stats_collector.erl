@@ -121,6 +121,14 @@ handle_cast({dc_count, Number}, State) ->
     prometheus_gauge:set(antidote_dc_count, Number),
     {noreply, State};
 
+handle_cast({process_reductions, Name, Reductions}, State) ->
+    prometheus_gauge:set(antidote_process_reductions, [Name], Reductions),
+    {noreply, State};
+
+handle_cast({process_message_queue_length, Name, Length}, State) ->
+    prometheus_gauge:set(antidote_process_message_queue_length, [Name], Length),
+    {noreply, State};
+
 %% =================
 %% RIAK_CORE METRICS
 %% =================
@@ -188,6 +196,9 @@ init_metrics() ->
     prometheus_gauge:new([{name, antidote_ring_claimed}, {help, "How much of the ring this node has claimed"}]),
     prometheus_gauge:new([{name, antidote_ring_pending}, {help, "How much of the ring this node will claim after resize"}]),
     prometheus_gauge:new([{name, antidote_ring_member_availability}, {help, "Current availability of every member of the ring"}, {labels, [node]}]),
+
+    prometheus_gauge:new([{name, antidote_process_reductions}, {help, "Reductions of processes"}, {labels, [process]}]),
+    prometheus_gauge:new([{name, antidote_process_message_queue_length}, {help, "Message queue length of processes"}, {labels, [process]}]),
 
     prometheus_counter:new([{name, antidote_log_size}, {help, "The size of a single log file in bytes"}, {labels, [log]}]),
     prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
