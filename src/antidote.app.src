@@ -28,6 +28,7 @@
         {enable_logging, true},
         {auto_start_read_servers, true},
         {data_dir, "data_antidote"},
+        {stats, true},
         {extended_stats, true}
     ]}
 ]}.

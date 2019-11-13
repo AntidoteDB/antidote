@@ -25,7 +25,6 @@
   ]},
 
 
-
   {riak_core, [
     %% riak directories
     {ring_state_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_riak_core"},
@@ -38,11 +37,19 @@
     {verify_directories, false}
   ]},
 
+
   {antidote, [
     %% antidote data directory
     {data_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_antidote"}
 
+    %% stats:
+    %% Enables or disables metrics collection for this node. Can be disabled on slow nodes to improve performance.
+    %%        true -> enables collecting statistics via the antidote_stats module
+    %%        false -> disables all statistics collection
+    %{stats, true},
+
     %% extended_stats:
+    %% Expensive metric collection for all erlang processes.
     %%        true -> process queues and reductions are monitored for busy processes
     %%        false -> single process monitoring disables
     %{extended_stats, true},
