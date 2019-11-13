@@ -58,10 +58,12 @@ Topics:
   * [JavaScript Client Repository](https://github.com/AntidoteDB/antidote_ts_client)
   * [Go Client Repository](https://github.com/AntidoteDB/antidote-go-client)
   * [Python Client Repository](https://github.com/AntidoteDB/antidote-python-client)
+  * [REST Client Repository](https://github.com/LightKone/antidote-rest-server)
 
 Applications that use AntidoteDB:
 
 * [Calender App](https://github.com/AntidoteDB/calender-app)
+* [Antidote Web Shell](https://github.com/AntidoteDB/antidote-web-shell)
 
 
 Contributing & Development
