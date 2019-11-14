@@ -44,13 +44,14 @@ and [Jupyter Notebook](https://github.com/AntidoteDB/antidote-jupyter-notebook).
 
 Topics:
 
-* [Configuring Features of Antidote]()
+* [Configuring Features of Antidote](https://antidotedb.gitbook.io/documentation/architecture/configuration)
 * [Benchmarking Antidote](https://github.com/AntidoteDB/Benchmarks)
-* [Deploying Antidote]()
-  * [Natively]()
-  * [Local Docker setup]()
-  * [Docker Swarm]()
-  * [Kubernetes]()
+* Deploying Antidote
+  * [Natively](https://antidotedb.gitbook.io/documentation/deployment/native)
+  * [Local Docker setup](https://antidotedb.gitbook.io/documentation/deployment/docker)
+  * [Docker compose setups](https://antidotedb.gitbook.io/documentation/deployment/docker-compose-setup)
+  * [Docker Swarm](https://antidotedb.gitbook.io/documentation/deployment/dockerswarm)
+  * [Kubernetes](https://antidotedb.gitbook.io/documentation/deployment/kubernetes)
 * [Monitoring an Antidote instance or data center](https://github.com/AntidoteDB/antidote_stats)
 * [Protocol Buffer API](https://antidotedb.gitbook.io/documentation/api/protocol-buffer-api)
   * [Erlang Client Repository](https://github.com/AntidoteDB/antidote-erlang-client)
@@ -70,5 +71,5 @@ Contributing & Development
 ==============
 
 Antidote encourages open-source development.
-If you want to contribute, you can find all necessary information in the [developer documentation]().
+If you want to contribute, you can find all necessary information in the [developer documentation](https://antidotedb.gitbook.io/documentation/development/setup)
 To make yourself familiar with AntidoteDB, you can start by looking at [good first issues](https://github.com/AntidoteDB/antidote/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
