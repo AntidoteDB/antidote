@@ -134,6 +134,7 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote_stats]),
             ok = rpc:call(Node, application, load, [ranch]),
             ok = rpc:call(Node, application, load, [antidote]),
+            ok = rpc:call(Node, application, load, [lager]),
 
             %% get remote working dir of node
             {ok, NodeWorkingDir} = rpc:call(Node, file, get_cwd, []),
@@ -168,6 +169,16 @@ start_node(Name, Config) ->
             %% legacy lager folder until lager is removed
             LagerRoot = filename:join([NodeWorkingDir, Node, "lager"]),
             ok = rpc:call(Node, application, set_env, [lager, log_root, LagerRoot]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_whitelist, [error_logger]]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_redirect, false]),
+            ok = rpc:call(Node, application, set_env, [lager, crash_log, false]),
+            ok = rpc:call(Node, application, set_env, [lager, handlers, [{antidote_lager_backend, [debug]}]]),
+            ok = rpc:call(Node, application, set_env, [lager, logger, log_config(LogRoot)]),
+
+            %% redirect slave logs to ct_master logs
+            ok = rpc:call(Node, application, set_env, [antidote, ct_master, node()]),
+            ConfLog = #{level => debug, formatter => {logger_formatter, #{single_line => true, max_size => 2048}}, config => #{type => standard_io}},
+            _ = rpc:call(Node, logger, add_handler, [antidote_redirect_ct, ct_redirect_handler, ConfLog]),
 
 
             %% ANTIDOTE Configuration
@@ -495,7 +506,8 @@ log_config(LogDir) ->
 
     InfoConfig = #{level => info,
         formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
-        config => #{type => {file, filename:join(LogDir, "info.log")}}},
+        config => #{type => {file, filename:join(LogDir, "info.log")}}
+    },
 
     NoticeConfig = #{level => notice,
         formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
