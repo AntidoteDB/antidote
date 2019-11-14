@@ -140,8 +140,8 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 %% -------------------------------------------------------------------+
 
 init([]) ->
-    Path = filename:join(
-         application:get_env(riak_core, platform_data_dir, undefined), ?TABLE_NAME),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    Path = filename:join(DataDir, ?TABLE_NAME),
 
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
@@ -174,7 +174,7 @@ handle_call({update_meta_data, KeyValueList, IsEnv}, _Sender, State = #state{tab
     true = ets:insert(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
     ok = dets:sync(DetsTable),
-    ?STATS(metadata_update_stable),
+    %?STATS(metadata_update_stable),
     {reply, ok, State};
 
 handle_call({merge_meta_data, Key, Value, MergeFunc, InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->

@@ -360,6 +360,7 @@ handle_command({read, LogId}, _Sender,
 %%
 handle_command({read_from, LogId, _From}, _Sender,
                #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
+    ?STATS(log_read_from),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
@@ -394,6 +395,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
                       op_id_table=OpIdTable,
                       partition=Partition,
               enable_log_to_disk=EnableLog}=State) ->
+    ?STATS(operation_update_internal),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             MyDCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -579,6 +581,7 @@ read_internal(_Log, error, Ops) ->
 read_internal(_Log, eof, Ops) ->
     {eof, Ops};
 read_internal(Log, Continuation, Ops) ->
+    ?STATS(log_read_read),
     {NewContinuation, NewOps} =
         case disk_log:chunk(Log, Continuation) of
             {C, O} -> {C, O};
@@ -905,8 +908,9 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
     LogId = LogFile ++ "--" ++ PreflistString,
-    LogPath = filename:join(
-                application:get_env(riak_core, platform_data_dir, undefined), LogId),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    LogPath = filename:join(DataDir, LogId),
+    ?STATS({log_append, LogPath, filelib:file_size(LogPath ++ ".LOG")}),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
@@ -975,7 +979,10 @@ fold_log(Log, Continuation, F, Acc) ->
 insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
     Result = case EnableLogging of
                  true ->
-                     disk_log:log(Log, {LogId, LogRecord});
+                     BinaryRecord = term_to_binary({LogId, LogRecord}),
+                     ?STATS({log_append, Log, erlang:byte_size(BinaryRecord)}),
+                     ?LOG_DEBUG("Appending ~p bytes", [erlang:byte_size(BinaryRecord)]),
+                     disk_log:blog(Log, term_to_binary({LogId, LogRecord}));
                  false ->
                      ok
              end,

@@ -203,6 +203,7 @@ init([Partition, Id]) ->
                 prepared_cache=PreparedCache, self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction, PropertyList}, Coordinator, SD0) ->
+    ?STATS(operation_read_internal),
     ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0};
 
@@ -210,6 +211,7 @@ handle_call({go_down}, _Sender, SD0) ->
     {stop, shutdown, ok, SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
+    ?STATS(operation_read_async_internal),
     ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
     {noreply, SD0}.
 

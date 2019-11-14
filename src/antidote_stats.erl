@@ -35,8 +35,14 @@
 -behaviour(gen_server).
 %% Interval to collect metrics
 -define(INTERVAL, 10000). %% 10 sec
+%% Interval to collect expensive metrics
+-define(INTERVAL_LONG, 60000). %% 60 seconds
 %% Metrics collection will be started after INIT_INTERVAL after application startup.
 -define(INIT_INTERVAL, 10000). %% 10 seconds
+%% What message queue length should log a warning
+-define(QUEUE_LENGTH_THRESHOLD, 10).
+%% If process collection takes too long, turn it off and alert user
+-define(TIME_METRIC_COLLECTION_THRESHOLD_MS, 40000).
 
 %% API
 -export([start_link/0]).
@@ -45,16 +51,28 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+-record(state, {
+    timer :: any(),
+    timer_expensive :: any(),
+    monitored_processes :: list()
+}).
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    % set the error logger counting the number of errors during operation
-    ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
-
     % start the timer for updating the calculated metrics
-    Timer = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
-    {ok, Timer}.
+    TimerCheap = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
+
+    % start the timer for updating the calculated expensive metrics
+    TimerExpensive = erlang:send_after(?INIT_INTERVAL, self(), periodic_expensive_update),
+
+    {ok, #state{
+        timer = TimerCheap,
+        timer_expensive = TimerExpensive,
+        % start only monitoring inter_dc_query and processes without registered names (undefined)
+        monitored_processes = [inter_dc_query, undefined]
+    }}.
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
@@ -62,16 +80,40 @@ handle_call(_Req, _From, State) ->
 handle_cast(_Req, State) ->
     {noreply, State}.
 
-handle_info(periodic_update, OldTimer) ->
+handle_info(periodic_update, State = #state{timer = CheapTimer}) ->
     %% ?
-    _ = erlang:cancel_timer(OldTimer),
+    _ = erlang:cancel_timer(CheapTimer),
 
     %% update all known stats
     _ = update_staleness(),
 
-    %% schedule tick
+    update_dc_count(),
+
+    %% schedule tick if continue
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
-    {noreply, Timer}.
+    {noreply, State#state{timer = Timer}};
+
+handle_info(periodic_expensive_update, State = #state{timer_expensive =  ExpensiveTimer, monitored_processes = Monitored}) ->
+    %% ?
+    _ = erlang:cancel_timer(ExpensiveTimer),
+
+    %% only collect extended stats if enabled
+    case application:get_env(antidote, extended_stats) of
+        {ok, true} ->
+            %% update process infos
+            {Continue, NewMonitored} = update_processes_info(Monitored),
+
+            %% schedule tick if continue
+            case Continue of
+                true -> Timer = erlang:send_after(?INTERVAL_LONG, self(), periodic_expensive_update);
+                _ -> Timer = undefined
+            end,
+            {noreply, State#state{timer_expensive = Timer, monitored_processes = NewMonitored}};
+
+        _ ->
+            {noreply, State#state{timer_expensive = undefined}}
+    end.
+
 
 terminate(_Reason, _State) ->
     ok.
@@ -99,3 +141,78 @@ calculate_staleness() ->
 
 to_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
+
+update_dc_count() ->
+    DCs = dc_meta_data_utilities:get_dc_ids(true),
+    ?STATS({dc_count, length(DCs)}).
+
+
+update_processes_info(Monitored) ->
+    TimeStart = erlang:system_time(millisecond),
+
+    %% get all processes
+    Processes = erlang:processes(),
+
+    %% collect info of each process
+    Infos = [erlang:process_info(P) || P <- Processes],
+
+
+    %% get only name, queue, and reductions
+    KeyValueList = [
+        {
+            proplists:get_value(registered_name, ProcessInfo),
+            proplists:get_value(message_queue_len, ProcessInfo),
+            proplists:get_value(reductions, ProcessInfo)
+        } || ProcessInfo <- Infos, ProcessInfo /= undefined],
+
+
+    %% fold over list, group by name
+    {QueueMap, ReductionsMap} = lists:foldl(
+        fun({Name, Messages, Reductions}, {QMap, RMap}) ->
+            {
+                maps:put(Name, maps:get(Name, QMap, 0) + Messages, QMap),
+                maps:put(Name, maps:get(Name, RMap, 0) + Reductions, RMap)
+            }
+        end,
+        {maps:new(), maps:new()},
+        KeyValueList
+    ),
+
+    %% for each process, update queue length and reductions only if monitored
+    NewMonitored = maps:fold(fun(Name, Messages, MonitorAcc) ->
+        case lists:any(fun(E) -> E == Name end, MonitorAcc) of
+            true ->
+                ?STATS({process_message_queue_length, Name, Messages}),
+                ?STATS({process_reductions, Name, maps:get(Name, ReductionsMap)}),
+                MonitorAcc;
+            _ ->
+                %% if a process is not monitored and the threshold is reached, add to monitored list
+                case Messages > ?QUEUE_LENGTH_THRESHOLD of
+                    true ->
+                        logger:warning("New process has a message queue and is now being monitored ~p: ~p", [Name, Messages]),
+                        ?STATS({process_message_queue_length, Name, Messages}),
+                        ?STATS({process_reductions, Name, maps:get(Name, ReductionsMap)}),
+                        MonitorAcc ++ [Name];
+                    false ->
+                        MonitorAcc
+                end
+        end
+
+              end,
+        Monitored,
+        QueueMap
+    ),
+
+
+    %% measure time to scrape and report
+    TimeMs = erlang:system_time(millisecond) - TimeStart,
+    ?STATS({process_scrape_time, TimeMs}),
+    case TimeMs > ?TIME_METRIC_COLLECTION_THRESHOLD_MS of
+        true ->
+            logger:alert("System metric process collection took too long (~p ms over ~p ms threshold), turning process info collection off", [TimeMs, ?TIME_METRIC_COLLECTION_THRESHOLD_MS]),
+            {false, NewMonitored};
+        _ ->
+            logger:debug("Took ~p ms to scrape processes", [TimeMs]),
+            {true, NewMonitored}
+    end .

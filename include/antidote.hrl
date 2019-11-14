@@ -268,4 +268,4 @@
 }).
 -type snapshot_get_response() :: #snapshot_get_response{}.
 
--define(STATS(Type), gen_server:cast(antidote_stats_collector, Type)).
+-define(STATS(Type), case application:get_env(antidote, stats, true) of true -> gen_server:cast(antidote_stats_collector, Type); _ -> ok end).

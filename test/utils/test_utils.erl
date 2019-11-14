@@ -108,6 +108,7 @@ at_init_testsuite() ->
 %% ===========================================
 
 start_node(Name, Config) ->
+    %% code path for compiled dependencies (ebin folders)
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     ct:log("Starting node ~p", [Name]),
 
@@ -119,46 +120,73 @@ start_node(Name, Config) ->
 
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
+        %% have the slave nodes monitor the runner node, so they can't outlive it
         {monitor_master, true},
+
         {erl_flags, "-smp"}, %% smp for the eleveldb god
-        {cd, NodeDir},
-        {startup_functions, [
-            {code, set_path, [CodePath]}
-        ]}],
-    case ct_slave_ext:start(Name, NodeConfig) of
+
+        %% set code path for dependencies
+        {startup_functions, [ {code, set_path, [CodePath]} ]}],
+    case ct_slave:start(Name, NodeConfig) of
         {ok, Node} ->
             % load application to allow for configuring the environment before starting
             ok = rpc:call(Node, application, load, [riak_core]),
             ok = rpc:call(Node, application, load, [antidote_stats]),
             ok = rpc:call(Node, application, load, [ranch]),
             ok = rpc:call(Node, application, load, [antidote]),
+            ok = rpc:call(Node, application, load, [lager]),
 
+            %% get remote working dir of node
+            {ok, NodeWorkingDir} = rpc:call(Node, file, get_cwd, []),
 
-            ct:log("Setting environment for riak"),
-            PlatformDir = NodeDir ++ "/data/",
-            RingDir = PlatformDir ++ "/ring/",
-            NumberOfVNodes = 4,
-            filelib:ensure_dir(PlatformDir),
-            filelib:ensure_dir(RingDir),
-            ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
-            ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
-            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
-            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
+            %% DATA DIRS
+            ok = rpc:call(Node, application, set_env, [antidote, data_dir, filename:join([NodeWorkingDir, Node, "antidote-data"])]),
+            ok = rpc:call(Node, application, set_env, [riak_core, ring_state_dir, filename:join([NodeWorkingDir, Node, "data"])]),
+            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, filename:join([NodeWorkingDir, Node, "data"])]),
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, [AntidoteFolder ++ "/_build/default/rel/antidote/lib/"]]),
 
-            ct:log("Setting environment for ranch"),
-            ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
 
-            ct:log("Setting environment for antidote_stats"),
-            ok = rpc:call(Node, application, set_env, [antidote_stats, metrics_port, web_ports(Name) + 4]),
+            %% PORTS
+            Port = web_ports(Name),
+            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, Port]),
+            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, Port + 1]),
+            ok = rpc:call(Node, application, set_env, [ranch, pb_port, Port + 2]),
+            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, Port + 3]),
+            ok = rpc:call(Node, application, set_env, [antidote_stats, metrics_port, Port + 4]),
 
-            ct:log("Setting environment for antidote"),
-            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
-            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
 
-            ct:log("Start antidote"),
+            %% LOGGING Configuration
+            %% add additional logging handlers to ensure easy access to remote node logs
+            %% for each logging level
+            LogRoot = filename:join([NodeWorkingDir, Node, "logs"]),
+            %% set the logger configuration
+            ok = rpc:call(Node, application, set_env, [antidote, logger, log_config(LogRoot)]),
+            %% set primary output level, no filter
+            rpc:call(Node, logger, set_primary_config, [level, all]),
+            %% load additional logger handlers at remote node
+            rpc:call(Node, logger, add_handlers, [antidote]),
+
+            %% legacy lager folder until lager is removed
+            LagerRoot = filename:join([NodeWorkingDir, Node, "lager"]),
+            ok = rpc:call(Node, application, set_env, [lager, log_root, LagerRoot]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_whitelist, [error_logger]]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_redirect, false]),
+            ok = rpc:call(Node, application, set_env, [lager, crash_log, false]),
+            ok = rpc:call(Node, application, set_env, [lager, handlers, [{antidote_lager_backend, [debug]}]]),
+            ok = rpc:call(Node, application, set_env, [lager, logger, log_config(LogRoot)]),
+
+            %% redirect slave logs to ct_master logs
+            ok = rpc:call(Node, application, set_env, [antidote, ct_master, node()]),
+            ConfLog = #{level => debug, formatter => {logger_formatter, #{single_line => true, max_size => 2048}}, config => #{type => standard_io}},
+            _ = rpc:call(Node, logger, add_handler, [antidote_redirect_ct, ct_redirect_handler, ConfLog]),
+
+
+            %% ANTIDOTE Configuration
+            %% reduce number of actual log files created to 4, reduces start-up time of node
+            ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, 4]),
+
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            ct:pal("Node ~p started with ports ~p-~p", [Node, web_ports(Name), web_ports(Name)+4]),
+            ct:pal("Node ~p started with ports ~p-~p", [Node, Port, Port + 4]),
 
             Node;
         {error, already_started, Node} ->
@@ -166,7 +194,7 @@ start_node(Name, Config) ->
             Node;
         {error, Reason, Node} ->
             ct:pal("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
-            ct_slave_ext:stop(Name),
+            ct_slave:stop(Name),
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
@@ -182,7 +210,7 @@ kill_and_restart_nodes(NodeList, Config) ->
 %% @doc Kills all given nodes, crashes if one node cannot be stopped
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
-    lists:map(fun(Node) -> {ok, Name} = ct_slave_ext:stop(get_node_name(Node)), Name end, NodeList).
+    lists:map(fun(Node) -> {ok, Name} = ct_slave:stop(get_node_name(Node)), Name end, NodeList).
 
 
 %% @doc Send force kill signals to all given nodes
@@ -195,7 +223,7 @@ brutal_kill_nodes(NodeList) ->
                   %% kill -9 after X seconds just in case
 %%                  rpc:cast(Node, timer, apply_after,
 %%                      [?FORCE_KILL_TIMER, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-                  ct_slave_ext:stop(get_node_name(Node)),
+                  ct_slave:stop(get_node_name(Node)),
                   rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
                   Node
               end, NodeList).
@@ -467,3 +495,36 @@ bucket(BucketBaseAtom) ->
     Bucket = list_to_atom(atom_to_list(BucketBaseAtom) ++ BucketRandomSuffix),
     ct:log("Using random bucket: ~p", [Bucket]),
     Bucket.
+
+
+%% logger configuration for each level
+%% see http://erlang.org/doc/man/logger.html
+log_config(LogDir) ->
+    DebugConfig = #{level => debug,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "debug.log")}}},
+
+    InfoConfig = #{level => info,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "info.log")}}
+    },
+
+    NoticeConfig = #{level => notice,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "notice.log")}}},
+
+    WarningConfig = #{level => warning,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "warning.log")}}},
+
+    ErrorConfig = #{level => error,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "error.log")}}},
+
+    [
+        {handler, debug_antidote, logger_std_h, DebugConfig},
+        {handler, info_antidote, logger_std_h, InfoConfig},
+        {handler, notice_antidote, logger_std_h, NoticeConfig},
+        {handler, warning_antidote, logger_std_h, WarningConfig},
+        {handler, error_antidote, logger_std_h, ErrorConfig}
+    ].
