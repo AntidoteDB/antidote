@@ -114,8 +114,6 @@ start_node(Name, Config) ->
         %% have the slave nodes monitor the runner node, so they can't outlive it
         {monitor_master, true},
 
-        {erl_flags, "-smp"}, %% smp for the eleveldb god
-
         %% set code path for dependencies
         {startup_functions, [ {code, set_path, [CodePath]} ]}],
     case ct_slave:start(Name, NodeConfig) of
@@ -125,7 +123,6 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote_stats]),
             ok = rpc:call(Node, application, load, [ranch]),
             ok = rpc:call(Node, application, load, [antidote]),
-            ok = rpc:call(Node, application, load, [lager]),
 
             %% get remote working dir of node
             {ok, NodeWorkingDir} = rpc:call(Node, file, get_cwd, []),
@@ -156,15 +153,6 @@ start_node(Name, Config) ->
             rpc:call(Node, logger, set_primary_config, [level, all]),
             %% load additional logger handlers at remote node
             rpc:call(Node, logger, add_handlers, [antidote]),
-
-            %% legacy lager folder until lager is removed
-            LagerRoot = filename:join([NodeWorkingDir, Node, "lager"]),
-            ok = rpc:call(Node, application, set_env, [lager, log_root, LagerRoot]),
-            ok = rpc:call(Node, application, set_env, [lager, error_logger_whitelist, [error_logger]]),
-            ok = rpc:call(Node, application, set_env, [lager, error_logger_redirect, false]),
-            ok = rpc:call(Node, application, set_env, [lager, crash_log, false]),
-            ok = rpc:call(Node, application, set_env, [lager, handlers, [{antidote_lager_backend, [debug]}]]),
-            ok = rpc:call(Node, application, set_env, [lager, logger, log_config(LogRoot)]),
 
             %% redirect slave logs to ct_master logs
             ok = rpc:call(Node, application, set_env, [antidote, ct_master, node()]),

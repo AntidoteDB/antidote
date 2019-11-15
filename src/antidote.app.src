@@ -6,12 +6,10 @@
         kernel,
         stdlib,
         riak_core,
-        cuttlefish,
         erlzmq,
         runtime_tools,
         tools,
-        antidote_stats,
-        lager
+        antidote_stats
     ]},
     {included_applications, [
         vectorclock,
