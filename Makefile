@@ -95,7 +95,7 @@ dialyzer:
 
 docker-build:
 	tmpdir=`mktemp -d` ; \
-	wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/v0.2.1/local-build/Dockerfile" -O "$$tmpdir/Dockerfile" ; \
+	wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/Dockerfile" -O "$$tmpdir/Dockerfile" ; \
 	docker build -f $$tmpdir/Dockerfile -t antidotedb:local-build .
 
 docker-run: docker-build
