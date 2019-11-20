@@ -175,6 +175,7 @@ start_node(Name, Config) ->
             %% ANTIDOTE Configuration
             %% reduce number of actual log files created to 4, reduces start-up time of node
             ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, 4]),
+            ok = rpc:call(Node, application, set_env, [antidote, sync_log, true]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             ct:pal("Node ~p started with ports ~p-~p", [Node, Port, Port + 4]),
