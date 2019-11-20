@@ -26,24 +26,19 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
--module(clocksi_readitem_sup).
--behavior(supervisor).
+-module(antidote_utilities).
 
--export([start_fsm/2,
-         start_link/0]).
-
--export([init/1]).
+-export([execute_remote/2]).
 
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-start_fsm(Partition, Id) ->
-    supervisor:start_child(?MODULE, [Partition, Id]).
-
-init([]) ->
-    {ok, {{simple_one_for_one, 5, 10},
-      [{clocksi_readitem_server,
-        {clocksi_readitem_server, start_link, []},
-        transient, 5000, worker, [clocksi_readitem_server]}]
-     }}.
+%% @doc This calls a given function on a possible remote host. Therefor
+%%      a new process is spawned on the node. This function waits for
+%%      the result of the remote function.
+-spec execute_remote(node(), fun(() -> Result)) -> Result.
+execute_remote(Node, Function) ->
+    Sender = self(),
+    Ref = make_ref(),
+    spawn_link(Node, fun() -> Sender ! {Ref, Function()} end),
+    receive
+        {Ref, Result} -> Result
+    end.
