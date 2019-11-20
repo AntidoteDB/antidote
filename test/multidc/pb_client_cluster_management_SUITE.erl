@@ -74,13 +74,13 @@ all() -> [
 setup_cluster_test(Config) ->
     NodeNames = [clusterdev1, clusterdev2, clusterdev3, clusterdev4],
     Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
-    [Node1, Node2, Node3, Node4] = Nodes,
+    [Node1, Node2, Node3, Node4] = test_utils:unpack(Nodes),
 
     % join cluster 1:
     P1 = spawn_link(fun() ->
         {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev1) + 2),
         ct:pal("joining clusterdev1, clusterdev2"),
- 
+
         Response = antidotec_pb_management:create_dc(Pb, [Node1, Node2]),
         ct:pal("joined clusterdev1, clusterdev2: ~p", [Response]),
         ?assertEqual(ok, Response),
