@@ -98,7 +98,7 @@ dummy_test(Config) ->
 
 
 %% Test that perform NumWrites increments to the key:key1.
-%%      Each increment is sent to a random node of the cluster.
+%%      Each increment is sent to a random node of a random DC.
 %%      Test normal behavior of the antidote
 %%      Performs a read to the first node of the cluster to check whether all the
 %%      increment operations where successfully applied.
@@ -106,7 +106,7 @@ dummy_test(Config) ->
 %%              Nodes: List of the nodes that belong to the built cluster
 random_test(Config) ->
     Bucket = ?BUCKET,
-    Nodes = proplists:get_value(nodes, Config),
+    Nodes = lists:flatten(proplists:get_value(clusters, Config)),
     N = length(Nodes),
 
     % Distribute the updates randomly over all DCs
