@@ -44,8 +44,9 @@
 %% tests
 -export([
          dummy_test/1,
-         random_test/1
-        ]).
+         random_test/1,
+         meta_data_env_test/1
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -68,7 +69,8 @@ end_per_testcase(Name, _) ->
 all() ->
     [
      dummy_test,
-     random_test
+     random_test,
+     meta_data_env_test
     ].
 
 
@@ -96,7 +98,7 @@ dummy_test(Config) ->
 
 
 %% Test that perform NumWrites increments to the key:key1.
-%%      Each increment is sent to a random node of the cluster.
+%%      Each increment is sent to a random node of a random DC.
 %%      Test normal behavior of the antidote
 %%      Performs a read to the first node of the cluster to check whether all the
 %%      increment operations where successfully applied.
@@ -104,7 +106,7 @@ dummy_test(Config) ->
 %%              Nodes: List of the nodes that belong to the built cluster
 random_test(Config) ->
     Bucket = ?BUCKET,
-    Nodes = proplists:get_value(nodes, Config),
+    Nodes = lists:flatten(proplists:get_value(clusters, Config)),
     N = length(Nodes),
 
     % Distribute the updates randomly over all DCs
@@ -130,3 +132,31 @@ random_test(Config) ->
     Retry = 360000 div Delay, %wait for max 1 min
     ok = time_utils:wait_until_result(G, NumWrites, Retry, Delay),
     pass.
+
+
+%% tests the meta data broadcasting mechanism for environment variables
+meta_data_env_test(Config) ->
+    [[Node1, Node2] | _] = proplists:get_value(clusters, Config),
+    DC = [Node1, Node2],
+
+    %% save old value, each node should have the same value
+    OldValue = rpc:call(Node1, dc_meta_data_utilities, get_env_meta_data, [sync_log, undefined]),
+    OldValue = rpc:call(Node2, dc_meta_data_utilities, get_env_meta_data, [sync_log, undefined]),
+
+    %% turn on sync and check for each node if update was propagated
+    ok = rpc:call(Node1, logging_vnode, set_sync_log, [true]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == true end)
+                  end, DC),
+
+    %% turn off sync and check for each node if update was propagated
+    ok = rpc:call(Node2, logging_vnode, set_sync_log, [false]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == false end)
+                  end, DC),
+
+    %% restore sync and check for each node if update was propagated
+    ok = rpc:call(Node1, logging_vnode, set_sync_log, [OldValue]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == OldValue end)
+                  end, DC).
