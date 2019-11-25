@@ -53,7 +53,8 @@ update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
     catch
-        _:_ ->
+        _:_:Stacktrace ->
+	    erlang:display(Stacktrace),
             {error, {unexpected_operation, Op, Type}}
     end.
 
