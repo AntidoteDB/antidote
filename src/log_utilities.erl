@@ -30,6 +30,8 @@
 
 -include("antidote.hrl").
 
+-include_lib("kernel/include/logger.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -58,7 +60,8 @@ get_logid_from_key(Key) ->
 %%      key's logfile will be located.
 -spec get_key_partition(key()) -> index_node().
 get_key_partition(Key) ->
-    hd(get_preflist_from_key(Key)).
+    IndexNode = hd(get_preflist_from_key(Key)),
+    IndexNode.
 
 %% @doc get_preflist_from_key returns a preference list where a given
 %%      key's logfile will be located.
@@ -74,9 +77,11 @@ get_preflist_from_key(Key) ->
 %%
 -spec get_primaries_preflist(non_neg_integer()) -> preflist().
 get_primaries_preflist(Key)->
-    NumPartitions = dc_meta_data_utilities:get_num_partitions(),
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    {NumPartitions, ListOfPartitions} = riak_core_ring:chash(Ring),
     Pos = Key rem NumPartitions + 1,
-    [dc_meta_data_utilities:get_partition_at_index(Pos)].
+    {Index, Node} = lists:nth(Pos, ListOfPartitions),
+    [{Index, Node}].
 
 -spec get_my_node(partition_id()) -> node().
 get_my_node(Partition) ->
@@ -131,9 +136,8 @@ check_log_record_version(LogRecord) ->
     ?LOG_RECORD_VERSION = LogRecord#log_record.version,
     LogRecord.
 
+
 -ifdef(TEST).
-
-
 
 %% Testing remove_node_from_preflist
 remove_node_from_preflist_test()->

@@ -185,7 +185,9 @@
 -type op() :: {op_name(), op_param()}.
 -type effect() :: term().
 
--type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
+
+%% DC Id is the riak_core ring cluster name
+-type dcid() :: term().
 -type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.

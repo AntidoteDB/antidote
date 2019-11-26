@@ -95,10 +95,10 @@ shard_count(Config) ->
     [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
 
     %% Check sharding count
-    Shards1 = rpc:call(Node1, dc_meta_data_utilities, get_dc_ids, [true]),
-    Shards2 = rpc:call(Node2, dc_meta_data_utilities, get_dc_ids, [true]),
-    Shards3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_ids, [true]),
-    Shards4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_ids, [true]),
+    Shards1 = rpc:call(Node1, dc_utilities, get_my_dc_nodes, []),
+    Shards2 = rpc:call(Node2, dc_utilities, get_my_dc_nodes, []),
+    Shards3 = rpc:call(Node3, dc_utilities, get_my_dc_nodes, []),
+    Shards4 = rpc:call(Node4, dc_utilities, get_my_dc_nodes, []),
 
     ?assertEqual({2,2,1,1}, {length(Shards1), length(Shards2), length(Shards3), length(Shards4)}),
     ok.

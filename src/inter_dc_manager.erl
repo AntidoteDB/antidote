@@ -56,7 +56,7 @@ get_descriptor() ->
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
   {ok, #descriptor{
-    dcid = dc_meta_data_utilities:get_my_dc_id(),
+    dcid = dc_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
     publishers = Publishers,
     logreaders = LogReaders
@@ -127,9 +127,8 @@ start_bg_processes(MetaDataName) ->
                       ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
                       ok = rpc:call(Node, meta_data_sender, start, [MetaDataName])
                   end, Nodes),
+
     %% Load the internal meta-data
-    _MyDCId = dc_meta_data_utilities:reset_my_dc_id(),
-    ok = dc_meta_data_utilities:load_partition_meta_data(),
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
     ?LOG_INFO("Starting heartbeat sender timers"),
@@ -233,7 +232,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
 
 -spec forget_dc(descriptor(), [node()]) -> ok.
 forget_dc(#descriptor{dcid = DCID}, Nodes) ->
-  case DCID == dc_meta_data_utilities:get_my_dc_id() of
+  case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       ?LOG_INFO("Forgetting DC ~p", [DCID]),
@@ -265,7 +264,7 @@ drop_ping(DropPing) ->
 %% Utils
 
 wait_for_stable_snapshot(DCID, MinValue) ->
-  case DCID == dc_meta_data_utilities:get_my_dc_id() of
+  case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       {ok, SS} = dc_utilities:get_stable_snapshot(),

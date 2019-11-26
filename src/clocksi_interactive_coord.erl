@@ -50,7 +50,7 @@
 -define(LOGGING_VNODE, mock_partition).
 
 -else.
--define(DC_META_UTIL, dc_meta_data_utilities).
+-define(DC_META_UTIL, dc_utilities).
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).

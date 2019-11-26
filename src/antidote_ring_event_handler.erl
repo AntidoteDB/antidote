@@ -32,6 +32,8 @@
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+-export([update_status/0]).
+
 %% gen_event callbacks
 -export([init/1, handle_event/2, handle_call/2,
          handle_info/2, terminate/2, code_change/3]).
@@ -46,7 +48,7 @@ handle_event({ring_update, _Ring}, State) ->
     update_status(),
     {ok, State}.
 
-handle_call(_Event, State) ->
+handle_call({periodic_update}, State) ->
     {ok, ok, State}.
 
 handle_info(_Info, State) ->
