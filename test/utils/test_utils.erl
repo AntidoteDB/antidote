@@ -311,7 +311,7 @@ set_up_clusters_common(Config) ->
             ready -> ok;
             connect ->
                 ct:pal("Creating a ring for claimant ~p and other nodes ~p", [Claimant, unpack(OtherNodes)]),
-                ok = rpc:call(Claimant, antidote_dc_manager, create_dc, [unpack(Cl)])
+                ok = rpc:call(Claimant, antidote_dc_manager, add_nodes_to_dc, [unpack(Cl)])
         end,
         Cl
                end,

@@ -28,11 +28,22 @@
 
 
 %% This module exports methods to build a data center of multiple nodes and
-%% connect data centers to start replcation among them.
-%%  Usage Example: To create 3 DCs of 2 nodes each:
-%%    create_dc(['antidote@node1', 'antidote@node2']),
-%%    create_dc(['antidote@node3', 'antidote@node4']),
-%%    create_dc(['antidote@node5', 'antidote@node6']),
+%% connect data centers to start replication among them.
+%%
+%%  Usage Example:
+%%
+%%    To create 3 DCs of 2 nodes each execute
+%%
+%%    add_nodes_to_dc(['antidote@node1', 'antidote@node2'])
+%%    add_nodes_to_dc(['antidote@node3', 'antidote@node4'])
+%%    add_nodes_to_dc(['antidote@node5', 'antidote@node6'])
+%%
+%%    on one node of the pair of nodes.
+%%    (Single) Nodes will join the data center of the node the 'add_nodes_to_dc' function is executed on.
+%%    The `add_nodes_to_dc` function is idempotent.
+%%
+%%    To connect these data centers together execute
+%%
 %%    {ok, Descriptor1} = get_connection_descriptor() % on antidote@node1
 %%    {ok, Descriptor2} = get_connection_descriptor() %% on antidote@node3
 %%    {ok, Descriptor3} = get_connection_descriptor() %% on antidote@node5
@@ -47,14 +58,15 @@
 
 -export([
     create_dc/1,
+    add_nodes_to_dc/1,
     get_connection_descriptor/0,
-    subscribe_updates_from/1]
-       ).
+    subscribe_updates_from/1
+]).
 
 
 %% Build a ring of Nodes forming a data center
--spec create_dc([node()]) -> ok | {error, ring_not_ready}.
-create_dc(Nodes) ->
+-spec add_nodes_to_dc([node()]) -> ok | {error, ring_not_ready}.
+add_nodes_to_dc(Nodes) ->
     %% check if ring is ready first
     case riak_core_ring:ring_ready() of
         true -> join_new_nodes(Nodes);
@@ -159,3 +171,7 @@ wait_until_ring_ready(Node) ->
         true -> ok;
         false -> timer:sleep(100), wait_until_ring_ready(Node)
     end.
+
+%% backwards compatible function for add_nodes_to_dc
+-spec create_dc([node()]) -> ok | {error, ring_not_ready}.
+create_dc(Nodes) -> add_nodes_to_dc(Nodes).
