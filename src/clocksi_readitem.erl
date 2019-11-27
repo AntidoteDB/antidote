@@ -41,11 +41,6 @@
     async_read_data_item/6]).
 
 %% Spawn
--record(state, {partition :: partition_id(),
-    id :: non_neg_integer(),
-    prepared_cache ::  cache_id(),
-    self :: atom()}).
--type state() :: #state{}.
 -type read_property_list() :: [].
 -export_type([read_property_list/0]).
 %%%===================================================================
@@ -74,7 +69,7 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {f
 %%% Internal
 %%%===================================================================
 
--spec perform_read_internal(key(), type(), tx(), read_property_list(), state()) ->
+-spec perform_read_internal(key(), type(), tx(), read_property_list(), any()) ->
     {error, term()} | {ok, snapshot()}.
 perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
     TxId = Transaction#transaction.txn_id,
@@ -92,7 +87,7 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
--spec check_clock(key(), clock_time(), ets:tid(), partition_id()) ->
+-spec check_clock(key(), clock_time(), atom(), partition_id()) ->
                          {not_ready, clock_time()} | ready.
 check_clock(Key, TxLocalStartTime, PreparedCache, Partition) ->
     Time = dc_utilities:now_microsec(),
@@ -106,7 +101,7 @@ check_clock(Key, TxLocalStartTime, PreparedCache, Partition) ->
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
--spec check_prepared(key(), clock_time(), ets:tid(), partition_id()) ->
+-spec check_prepared(key(), clock_time(), atom(), partition_id()) ->
                             ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key, TxLocalStartTime, PreparedCache, Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition, PreparedCache),
