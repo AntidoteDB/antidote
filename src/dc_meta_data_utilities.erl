@@ -101,7 +101,7 @@ get_meta_data_name() ->
     stable_meta_data_server:read_meta_data(meta_data_name).
 
 
-%% Store an external dc descriptor
+%% Store an dc descriptor
 -spec store_dc_descriptors([descriptor()]) -> ok.
 store_dc_descriptors(Descriptors) ->
     MergeFunc = fun(DescList, PrevDict) ->
@@ -111,7 +111,7 @@ store_dc_descriptors(Descriptors) ->
                 end,
     stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, MergeFunc, fun dict:new/0).
 
-%% Gets the list of external dc descriptors
+%% Gets the list of all known dc descriptors
 -spec get_dc_descriptors() -> [descriptor()].
 get_dc_descriptors() ->
     case stable_meta_data_server:read_meta_data(external_descriptors) of
@@ -120,7 +120,9 @@ get_dc_descriptors() ->
                               [Desc | Acc]
                       end, [], Dict);
         error ->
-            []
+            ?LOG_WARNING("Could not read shared meta data for external_descriptors"),
+            %% return self descriptor only
+            [inter_dc_manager:get_descriptor()]
     end.
 
 

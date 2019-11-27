@@ -218,6 +218,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
     DCs = lists:map(fun(DC) ->
                         {observe_dc(DC, Nodes), DC}
                     end, Descriptors),
+
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
                       case Res of
                           ok ->
@@ -235,7 +236,7 @@ forget_dc(#descriptor{dcid = DCID}, Nodes) ->
   case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      ?LOG_INFO("Forgetting DC ~p", [DCID]),
+      ?LOG_NOTICE("Forgetting DC ~p", [DCID]),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.

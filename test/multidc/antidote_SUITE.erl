@@ -43,6 +43,7 @@
 
 %% tests
 -export([
+         recreate_dc/1,
          dummy_test/1,
          random_test/1,
          shard_count/1,
@@ -70,6 +71,7 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
+     recreate_dc,
      shard_count,
      dc_count,
      dummy_test,
@@ -77,6 +79,16 @@ all() ->
      meta_data_env_test
     ].
 
+%% Tests that add_nodes_to_dc is idempotent
+%% calling it again on each node of a dc should have no effect
+recreate_dc(Config) ->
+    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+
+    ok = rpc:call(Node1, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+    ok = rpc:call(Node1, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+    ok = rpc:call(Node2, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+
+    ok.
 
 dc_count(Config) ->
     [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
@@ -87,7 +99,7 @@ dc_count(Config) ->
     DCs3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_descriptors, []),
     DCs4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_descriptors, []),
 
-    ?assertEqual({2,2,2,2}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
+    ?assertEqual({3,3,3,3}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
     ok.
 
 
