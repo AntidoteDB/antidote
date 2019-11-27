@@ -139,7 +139,7 @@ wait_until_ring_no_pending_changes() ->
     {ok, CurrentRing} = riak_core_ring_manager:get_my_ring(),
     Nodes = riak_core_ring:all_members(CurrentRing),
 
-    ?LOG_NOTICE("Wait until no pending changes on ~p", [Nodes]),
+    ?LOG_DEBUG("Wait until no pending changes on ~p", [Nodes]),
     F = fun() ->
         _ = rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
         {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
