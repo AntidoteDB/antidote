@@ -48,7 +48,7 @@ handle_event({ring_update, _Ring}, State) ->
     update_status(),
     {ok, State}.
 
-handle_call({periodic_update}, State) ->
+handle_call(_Event, State) ->
     {ok, ok, State}.
 
 handle_info(_Info, State) ->
