@@ -187,7 +187,7 @@
 
 
 %% DC Id is the riak_core ring cluster name
--type dcid() :: term().
+-type dcid() :: undefined | riak_core_ring:riak_core_ring().
 -type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
