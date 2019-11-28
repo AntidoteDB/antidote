@@ -305,7 +305,7 @@ handle_command({get_op_id, DCID, Bucket, Partition}, _Sender, State=#state{op_id
 handle_command({start_timer, undefined}, Sender, State) ->
     handle_command({start_timer, Sender}, Sender, State);
 handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_id_table=OpIdTable, recovered_vector=MaxVector}) ->
-    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCID = dc_utilities:get_my_dc_id(),
     OpId = get_op_id(OpIdTable, {[Partition], MyDCID}),
     IsReady = try
                   ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
@@ -398,7 +398,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
     ?STATS(operation_update_internal),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+            MyDCID = dc_utilities:get_my_dc_id(),
             %% all operations update the per log, operation id
             OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
             #op_number{local = Local, global = Global} = OpId,
@@ -456,7 +456,7 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
                       op_id_table=OpIdTable,
                       partition=Partition,
                       enable_log_to_disk=EnableLog}=State) ->
-    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCID = dc_utilities:get_my_dc_id(),
     {ErrorList, SuccList, UpdatedLogs} =
         lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
                         LogRecord = log_utilities:check_log_record_version(LogRecordOrg),

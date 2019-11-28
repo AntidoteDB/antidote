@@ -499,7 +499,7 @@ reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
+    DcId = dc_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
                 op_type = commit,
                 log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
@@ -635,7 +635,7 @@ check_prepared(_TxId, PreparedTx, Key) ->
 -spec update_materializer([{key(), type(), effect()}], tx(), non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
+    DcId = dc_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                          CommittedDownstreamOp =

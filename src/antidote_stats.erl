@@ -89,6 +89,9 @@ handle_info(periodic_update, State = #state{timer = CheapTimer}) ->
 
     update_dc_count(),
 
+    %% update ring state
+    antidote_ring_event_handler:update_status(),
+
     %% schedule tick if continue
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, State#state{timer = Timer}};
@@ -144,7 +147,7 @@ to_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 
 update_dc_count() ->
-    DCs = dc_meta_data_utilities:get_dc_ids(true),
+    DCs = dc_meta_data_utilities:get_dc_descriptors(),
     ?STATS({dc_count, length(DCs)}).
 
 

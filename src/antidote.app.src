@@ -1,7 +1,7 @@
 %% -*- erlang -*-
 {application, antidote, [
     {description, "A transactional CRDT database"},
-    {vsn, "0.2.1"},
+    {vsn, "0.2.2"},
     {applications, [
         kernel,
         stdlib,

@@ -72,7 +72,7 @@ init([Num]) ->
 handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     {read_log, Partition, From, To} = binary_to_term(BinaryQuery),
     Entries = get_entries_internal(Partition, From, To),
-    BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(), Partition}, Entries}),
+    BinaryResp = term_to_binary({{dc_utilities:get_my_dc_id(), Partition}, Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
     ok = inter_dc_query_receive_socket:send_response(FullResponse, QueryState),
