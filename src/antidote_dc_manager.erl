@@ -57,12 +57,17 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([
+    leave_dc/0,
     create_dc/1,
     add_nodes_to_dc/1,
     get_connection_descriptor/0,
     subscribe_updates_from/1
 ]).
 
+
+%% Command this node to leave the current data center
+-spec leave_dc() -> ok | {error, term()}.
+leave_dc() -> riak_core:leave().
 
 %% Build a ring of Nodes forming a data center
 -spec add_nodes_to_dc([node()]) -> ok | {error, ring_not_ready}.
