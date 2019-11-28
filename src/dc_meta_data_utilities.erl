@@ -120,7 +120,7 @@ get_dc_descriptors() ->
                               [Desc | Acc]
                       end, [], Dict);
         error ->
-            ?LOG_WARNING("Could not read shared meta data for external_descriptors"),
+            ?LOG_DEBUG("Could not read shared meta data for external_descriptors"),
             %% return self descriptor only
             [inter_dc_manager:get_descriptor()]
     end.
