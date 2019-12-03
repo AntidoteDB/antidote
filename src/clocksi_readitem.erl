@@ -40,6 +40,9 @@
 -export([read_data_item/5,
     async_read_data_item/6]).
 
+%% Internal
+-export([perform_read_internal/5]).
+
 %% Spawn
 -type read_property_list() :: [].
 -export_type([read_property_list/0]).
@@ -49,8 +52,7 @@
 
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
-    antidote_utilities:execute_remote(Node, fun() ->
-        perform_read_internal(Key, Type, Transaction, PropertyList, Partition) end).
+    rpc:call(Node, ?MODULE, perform_read_internal, [Key, Type, Transaction, PropertyList, Partition]).
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {fsm, Sender}) ->
