@@ -98,7 +98,7 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_server:read_data_item(Node, Key, Type, TxId, []) of
+    case clocksi_readitem:read_data_item(Node, Key, Type, TxId, []) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
@@ -108,7 +108,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
+    clocksi_readitem:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -269,12 +269,6 @@ open_table(Partition) ->
         open_table(Partition)
     end.
 
-loop_until_started(_Partition, 0) ->
-    0;
-loop_until_started(Partition, Num) ->
-    Ret = clocksi_readitem_server:start_read_servers(Partition, Num),
-    loop_until_started(Partition, Ret).
-
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
@@ -292,12 +286,6 @@ handle_command({send_min_prepared}, _Sender,
     {ok, Time} = get_min_prep(PreparedDict),
     dc_utilities:call_local_vnode(Partition, logging_vnode_master, {send_min_prepared, Time}),
     {noreply, State};
-
-handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
-    loop_until_started(Partition, Serv),
-    Node = node(),
-    Result = clocksi_readitem_server:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
-    {reply, Result, SD0};
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
@@ -436,7 +424,6 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
         _:Reason ->
             ?LOG_ERROR("Error closing table ~p", [Reason])
     end,
-    clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
 
 handle_overload_command(_, _, _) ->

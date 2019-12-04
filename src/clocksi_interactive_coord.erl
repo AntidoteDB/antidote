@@ -111,14 +111,14 @@ stop(Pid) -> gen_statem:stop(Pid).
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
 %%      It either returns the object value or the object state.
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem:read_property_list()) ->
     {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Clock, Key, Type, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
+    case clocksi_readitem:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->

@@ -218,13 +218,13 @@
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
--type index_node() :: {any(), node()}.
+-type index_node() :: {partition_id(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_num() :: non_neg_integer().
 -type op_id() :: {op_num(), node()}.
 -type payload() :: term().
--type partition_id() :: ets:tid() | non_neg_integer(). % TODO 19 adding integer basically makes the tid type non-opaque, because some places of the code depend on it being an integer. This dependency should be removed, if possible.
+-type partition_id() :: chash:index_as_int().
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
