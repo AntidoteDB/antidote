@@ -128,3 +128,15 @@ return(Key, Type, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
+
+
+
+-ifdef(TEST).
+
+check_prepared_list_test() ->
+    ?assertEqual({not_ready, ?SPIN_WAIT}, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 50}])),
+    ?assertEqual(ready, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 101}])).
+
+
+
+-endif.
