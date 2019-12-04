@@ -71,7 +71,7 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {f
 %%% Internal
 %%%===================================================================
 
--spec perform_read_internal(key(), type(), tx(), read_property_list(), any()) ->
+-spec perform_read_internal(key(), type(), tx(), read_property_list(), partition_id()) ->
     {error, term()} | {ok, snapshot()}.
 perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
     TxId = Transaction#transaction.txn_id,
