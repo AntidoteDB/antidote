@@ -43,8 +43,21 @@ init([]) ->
     update_status(),
     {ok, #state{}}.
 
-handle_event({ring_update, _Ring}, State) ->
-    ?LOG_INFO("Ring update~n~p", [riak_core_cluster_cli:status(ok, [], [])]),
+handle_event({ring_update, _}, State) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    Members = riak_core_ring:all_members(Ring),
+    {Claimant, RingReady, Down, MarkedDown, Changes} = riak_core_status:ring_status(),
+    ?LOG_NOTICE("Ring is changing!\nClaimant: ~p\nReady: ~p\nNodes down: ~p\nMarked down: ~p\nChanges: ~p\nClaimed: ~p\nPending: ~p", [
+        Claimant, RingReady, Down, MarkedDown, length(Changes),
+        lists:foldl(fun(Node, ListOfPercentClaimed) ->
+            ListOfPercentClaimed ++ [{Node, claim_percent(Ring, Node)}]
+                    end, [], Members),
+        lists:foldl(fun(Node, ListOfPercentPending) ->
+            ListOfPercentPending ++ [{Node, future_claim_percentage(Changes, Ring, Node)}]
+                    end, [], Members)
+    ]),
+
+%% ring status
     update_status(),
     {ok, State}.
 

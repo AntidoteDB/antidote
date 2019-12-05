@@ -131,6 +131,7 @@ plan_and_commit(NewNodeMembers) ->
 
     %% only after commit returns ok the ring structure will change
     %% even if nothing changes, it returns {error, nothing_planned} indicating some serious error
+    %% could return {error, nothing_planned} if staged joins are disabled
     ok = riak_core_claimant:commit(),
     ?LOG_NOTICE("Ring committed and ring structure is changing. New ring members: ~p", [NewNodeMembers]),
 
