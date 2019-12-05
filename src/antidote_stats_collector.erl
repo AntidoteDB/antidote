@@ -109,6 +109,10 @@ handle_cast({log_append, LogId, Size}, State) ->
     prometheus_counter:inc(antidote_log_size, [erlang:phash2(LogId)], Size),
     {noreply, State};
 
+handle_cast({log_reset, LogId}, State) ->
+    prometheus_counter:reset(antidote_log_size, [erlang:phash2(LogId)]),
+    {noreply, State};
+
 handle_cast(log_read_read, State) ->
     prometheus_counter:inc(antidote_log_access, [read]),
     {noreply, State};
