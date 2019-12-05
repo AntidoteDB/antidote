@@ -785,25 +785,32 @@ check_min_time(SnapshotTime, MinSnapshotTime) ->
 check_max_time(SnapshotTime, MaxSnapshotTime) ->
     ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
 
-handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
-                       #state{logs_map=Map}=State) ->
+handle_handoff_command(?FOLD_REQ{foldfun = FoldFun, acc0 = Acc0}, _Sender,
+                       #state{logs_map = Map, partition = Partition} = State) ->
+    ?LOG_DEBUG("Fold request for partition ~p", [Partition]),
     F = fun({Key, LogRecord}, Acc) -> FoldFun(Key, LogRecord, Acc) end,
     Acc = join_logs(dict:to_list(Map), F, Acc0),
     {reply, Acc, State};
 
-handle_handoff_command({get_all, _logId}, _Sender, State) ->
-    {reply, {error, not_ready}, State}.
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_INFO("Handoff command ignoring: ~p", [Command]),
+    {noreply, State}.
 
-handoff_starting(_TargetNode, State) ->
+handoff_starting(TargetNode, State=#state{partition = Partition}) ->
+    ?LOG_INFO("Handoff starting ~p: ~p", [Partition, TargetNode]),
     {true, State}.
 
-handoff_cancelled(State) ->
+handoff_cancelled(State=#state{partition = Partition}) ->
+    ?LOG_INFO("Handoff cancelled: ~p", [Partition]),
     {ok, State}.
 
-handoff_finished(_TargetNode, State) ->
+handoff_finished(TargetNode, State=#state{partition = Partition}) ->
+    ?LOG_NOTICE("Handoff finished ~p: ~p", [Partition, TargetNode]),
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition = Partition, logs_map = Map, enable_log_to_disk = EnableLog} = State) ->
+%%    ?LOG_NOTICE("Handling handoff data at Partition ~p", [Partition]),
+%%    ?LOG_NOTICE("Data ~p", [binary_to_term(Data)]),
     {LogId, LogRecord} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
@@ -827,7 +834,15 @@ is_empty(State = #state{logs_map=Map}) ->
             {false, State}
     end.
 
-delete(State) ->
+delete(State = #state{partition = Partition}) ->
+    ?LOG_NOTICE("Deleting partition ~p", [Partition]),
+    %% TODO this only works because we do not have intra-dc replication implemented
+    %% re-implement delete for intra-dc replication
+    LogId = integer_to_list(Partition) ++ "--" ++ integer_to_list(Partition),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    LogPath = filename:join(DataDir, LogId),
+    file:delete(LogPath ++ ".LOG"),
+    ?STATS({log_reset, LogPath}),
     {ok, State}.
 
 handle_info({sync, Log, LogId},
