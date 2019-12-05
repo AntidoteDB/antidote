@@ -4,7 +4,7 @@
  {<<"antidote_pb_codec">>,{pkg,<<"antidote_pb_codec">>,<<"0.1.2">>},0},
  {<<"antidote_stats">>,
   {git,"https://github.com/AntidoteDB/antidote_stats",
-       {ref,"50fe89a4fc36985a6a5ac4079a92bb9861c2f351"}},
+       {ref,"7c1d82ec3255aabb59a7c23c9f86deec277d034a"}},
   0},
  {<<"antidotec_pb">>,{pkg,<<"antidotec_pb">>,<<"0.2.9">>},0},
  {<<"basho_stats">>,{pkg,<<"basho_stats">>,<<"1.0.3">>},1},
