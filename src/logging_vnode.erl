@@ -801,25 +801,25 @@ handle_handoff_command(?FOLD_REQ{foldfun = FoldFun, acc0 = OldHandoffState}, _Se
 
 %% a vnode in the handoff livecycle stage will not accept handle_commands anymore
 %% instead every command is redirected to the handle_handoff_command implementations
-%% for simplicity, we block every command except the fold handoff itself
+%% for simplicity, we ignore every command except the fold handoff itself
 %% for extra availability, every handle_command needs to also be implemented as a handle_handoff_command
-handle_handoff_command(Command, Sender, State) ->
-    ?LOG_NOTICE("Handoff command ~p from ~p, block", [Command, Sender]),
-    {reply, {error, processing_handoff}, State}.
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_INFO("Ignoring command in handoff lifecycle: ~p", [Command]),
+    {noreply, State}.
 
 encode_handoff_item(Key, LogRecord) ->
     term_to_binary({Key, LogRecord}).
 
 handoff_starting(TargetNode, State=#state{partition = Partition}) ->
-    ?LOG_INFO("Handoff starting ~p: ~p", [Partition, TargetNode]),
+    ?LOG_DEBUG("Handoff starting ~p: ~p", [Partition, TargetNode]),
     {true, State}.
 
 handoff_cancelled(State=#state{partition = Partition}) ->
-    ?LOG_INFO("Handoff cancelled: ~p", [Partition]),
+    ?LOG_DEBUG("Handoff cancelled: ~p", [Partition]),
     {ok, State}.
 
 handoff_finished(TargetNode, State=#state{partition = Partition}) ->
-    ?LOG_NOTICE("Handoff finished ~p: ~p", [Partition, TargetNode]),
+    ?LOG_INFO("Handoff finished ~p: ~p", [Partition, TargetNode]),
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition = Partition, logs_map = Map, enable_log_to_disk = EnableLog} = State) ->
@@ -845,7 +845,7 @@ is_empty(State = #state{logs_map=Map}) ->
     end.
 
 delete(State = #state{logs_map = _Map, partition = Partition}) ->
-    ?LOG_NOTICE("Deleting partition ~p", [Partition]),
+    ?LOG_INFO("Deleting partition ~p", [Partition]),
     %% TODO this only works without replication (e.g. N = 1)
     %% re-implement this and iterate over logs_map to delete all logs belonging to this note,
     %% not only the primary log
