@@ -853,7 +853,8 @@ delete(State = #state{logs_map = _Map, partition = Partition}) ->
     LogId = integer_to_list(Partition) ++ "--" ++ integer_to_list(Partition),
     {ok, DataDir} = application:get_env(antidote, data_dir),
     LogPath = filename:join(DataDir, LogId),
-    file:delete(LogPath ++ ".LOG"),
+    %% best effort delete
+    _ = file:delete(LogPath ++ ".LOG"),
     ?STATS({log_reset, LogPath}),
     {ok, State}.
 
