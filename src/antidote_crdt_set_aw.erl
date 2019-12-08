@@ -177,7 +177,7 @@ create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|S
         Elem1 > Elem2 ->
             create_downstreams(CreateDownstream, Elems, Set_awRest, DownstreamOps);
         true ->
-            DownstreamOp = CreateDownstream(Elem1, Tokens),
+            DownstreamOp = CreateDownstream(Elem1, []),
             create_downstreams(CreateDownstream, ElemsRest, Set_aw, [DownstreamOp|DownstreamOps])
     end.
 
