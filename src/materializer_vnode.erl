@@ -228,7 +228,11 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
             Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
-    {reply, Acc, State}.
+    {reply, Acc, State};
+
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_WARNING("Unexpected access to the materializer while in handoff lifecycle: ~p", [Command]),
+    {noreply, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -302,6 +306,7 @@ load_from_log_to_tables(Partition, State) ->
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
         {error, Reason} ->
+            ?LOG_ERROR("Could not load all entries from log ~p and node ~p: ~p", [LogId, Node, Reason]),
             {error, Reason};
         {NewContinuation, NewOps, OpsDict} ->
             load_ops(OpsDict, State),

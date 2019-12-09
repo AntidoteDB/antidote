@@ -291,7 +291,9 @@ web_ports(dev4) -> 10045;
 web_ports(clusterdev1) -> 10115;
 web_ports(clusterdev2) -> 10125;
 web_ports(clusterdev3) -> 10135;
-web_ports(clusterdev4) -> 10145.
+web_ports(clusterdev4) -> 10145;
+web_ports(clusterdev5) -> 10155;
+web_ports(clusterdev6) -> 10165.
 
 
 %% Build clusters for all test suites.

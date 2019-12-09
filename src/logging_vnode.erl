@@ -785,22 +785,41 @@ check_min_time(SnapshotTime, MinSnapshotTime) ->
 check_max_time(SnapshotTime, MaxSnapshotTime) ->
     ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
 
-handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
-                       #state{logs_map=Map}=State) ->
-    F = fun({Key, LogRecord}, Acc) -> FoldFun(Key, LogRecord, Acc) end,
-    Acc = join_logs(dict:to_list(Map), F, Acc0),
-    {reply, Acc, State};
+handle_handoff_command(?FOLD_REQ{foldfun = FoldFun, acc0 = OldHandoffState}, _Sender,
+                       #state{logs_map = Map, partition = Partition} = State) ->
+    ?LOG_DEBUG("Fold request for partition ~p", [Partition]),
 
-handle_handoff_command({get_all, _logId}, _Sender, State) ->
-    {reply, {error, not_ready}, State}.
+    %% VisitElement is called for each element in this vnode's state
+    %% here, just encode a {key, record} pair
+    %% FoldFun will call encode_handoff_item, the arguments should match exactly + 1
+    %% (the Acc argument is handled by riak_core)
+    VisitElement = fun({Key, LogRecord}, HandoffState) -> FoldFun(Key, LogRecord, HandoffState) end,
 
-handoff_starting(_TargetNode, State) ->
+    NewHandoffState = join_logs(dict:to_list(Map), VisitElement, OldHandoffState),
+    {reply, NewHandoffState, State};
+
+
+%% a vnode in the handoff livecycle stage will not accept handle_commands anymore
+%% instead every command is redirected to the handle_handoff_command implementations
+%% for simplicity, we ignore every command except the fold handoff itself
+%% for extra availability, every handle_command needs to also be implemented as a handle_handoff_command
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_INFO("Ignoring command in handoff lifecycle: ~p", [Command]),
+    {noreply, State}.
+
+encode_handoff_item(Key, LogRecord) ->
+    term_to_binary({Key, LogRecord}).
+
+handoff_starting(TargetNode, State=#state{partition = Partition}) ->
+    ?LOG_DEBUG("Handoff starting ~p: ~p", [Partition, TargetNode]),
     {true, State}.
 
-handoff_cancelled(State) ->
+handoff_cancelled(State=#state{partition = Partition}) ->
+    ?LOG_DEBUG("Handoff cancelled: ~p", [Partition]),
     {ok, State}.
 
-handoff_finished(_TargetNode, State) ->
+handoff_finished(TargetNode, State=#state{partition = Partition}) ->
+    ?LOG_INFO("Handoff finished ~p: ~p", [Partition, TargetNode]),
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition = Partition, logs_map = Map, enable_log_to_disk = EnableLog} = State) ->
@@ -815,8 +834,6 @@ handle_handoff_data(Data, #state{partition = Partition, logs_map = Map, enable_l
             {reply, {error, Reason}, State}
     end.
 
-encode_handoff_item(Key, Operation) ->
-    term_to_binary({Key, Operation}).
 
 is_empty(State = #state{logs_map=Map}) ->
     LogIds = dict:fetch_keys(Map),
@@ -827,7 +844,18 @@ is_empty(State = #state{logs_map=Map}) ->
             {false, State}
     end.
 
-delete(State) ->
+delete(State = #state{logs_map = _Map, partition = Partition}) ->
+    ?LOG_INFO("Deleting partition ~p", [Partition]),
+    %% TODO this only works without replication (e.g. N = 1)
+    %% re-implement this and iterate over logs_map to delete all logs belonging to this note,
+    %% not only the primary log
+    %% the format of the primary log is primary_preflist--primary_preflist.LOG
+    LogId = integer_to_list(Partition) ++ "--" ++ integer_to_list(Partition),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    LogPath = filename:join(DataDir, LogId),
+    %% best effort delete
+    _ = file:delete(LogPath ++ ".LOG"),
+    ?STATS({log_reset, LogPath}),
     {ok, State}.
 
 handle_info({sync, Log, LogId},

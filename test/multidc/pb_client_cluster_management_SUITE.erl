@@ -38,7 +38,8 @@
 
 %% tests
 -export([
-    setup_cluster_test/1
+    setup_cluster_test/1,
+    setup_single_dc_handoff_test/1
 ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -67,9 +68,60 @@ end_per_testcase(Name, _) ->
 
 
 all() -> [
-    setup_cluster_test
+    setup_cluster_test,
+    setup_single_dc_handoff_test
 ].
 
+
+setup_single_dc_handoff_test(Config) ->
+    NodeNames = [clusterdev5, clusterdev6],
+    Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
+    [Node1, Node2] = test_utils:unpack(Nodes),
+
+    % write counter on clusterdev5:
+    Bucket = ?BUCKET_BIN,
+    Bound_object = {<<"handoff_test">>, antidote_crdt_counter_pn, Bucket},
+    {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev5) + 2),
+    {ok, TxId4} = antidotec_pb:start_transaction(Pb1, ignore, []),
+    ok = antidotec_pb:update_objects(Pb1, [{Bound_object, increment, 4242}], TxId4),
+    {ok, CommitTime} = antidotec_pb:commit_transaction(Pb1, TxId4),
+    ct:pal("Wrote value to counter"),
+    _Disconnected3 = antidotec_pb_socket:stop(Pb1),
+
+    % join cluster:
+    P1 = spawn_link(fun() ->
+        {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev5) + 2),
+        ct:pal("joining clusterdev5, clusterdev6"),
+        Response = antidotec_pb_management:create_dc(Pb, [Node1, Node2]),
+        ct:pal("joined clusterdev5, clusterdev6: ~p", [Response]),
+        ?assertEqual(ok, Response),
+        _Disconnected = antidotec_pb_socket:stop(Pb)
+                    end),
+    wait_for_process(P1),
+    {ok, Pb2} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev6) + 2),
+
+    % wait for converged ring
+    riak_utils:wait_until_no_pending_changes([Node1, Node2]),
+
+    % node 1 leave cluster, force data to transfer to Node2
+    rpc:call(Node1, antidote_dc_manager, leave, []),
+
+    ct:pal("Waiting for node to leave the cluster"),
+
+    % wait until Node1 down (and therefore handoff to be complete)
+    time_utils:wait_until_offline(Node1),
+
+    ct:pal("Node left cluster successfully"),
+
+    % read data from Node2
+    {ok, TxId1} = antidotec_pb:start_transaction(Pb2, CommitTime, []),
+    {ok, [Counter]} = antidotec_pb:read_objects(Pb2, [Bound_object], TxId1),
+    {ok, _} = antidotec_pb:commit_transaction(Pb2, TxId1),
+
+    ?assertMatch(true, antidotec_counter:is_type(Counter)),
+    ?assertEqual(4242, antidotec_counter:value(Counter)),
+
+    _Disconnected3 = antidotec_pb_socket:stop(Pb2).
 
 setup_cluster_test(Config) ->
     NodeNames = [clusterdev1, clusterdev2, clusterdev3, clusterdev4],
