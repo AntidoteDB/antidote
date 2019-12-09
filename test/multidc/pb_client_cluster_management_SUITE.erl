@@ -80,7 +80,7 @@ setup_single_dc_handoff_test(Config) ->
 
     % write counter on clusterdev5:
     Bucket = ?BUCKET_BIN,
-    Bound_object = {<<"key1">>, antidote_crdt_counter_pn, Bucket},
+    Bound_object = {<<"handoff_test">>, antidote_crdt_counter_pn, Bucket},
     {ok, Pb1} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev5) + 2),
     {ok, TxId4} = antidotec_pb:start_transaction(Pb1, ignore, []),
     ok = antidotec_pb:update_objects(Pb1, [{Bound_object, increment, 4242}], TxId4),
