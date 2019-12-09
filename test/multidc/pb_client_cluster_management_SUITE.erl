@@ -86,33 +86,41 @@ setup_single_dc_handoff_test(Config) ->
     ok = antidotec_pb:update_objects(Pb1, [{Bound_object, increment, 4242}], TxId4),
     {ok, CommitTime} = antidotec_pb:commit_transaction(Pb1, TxId4),
     ct:pal("Wrote value to counter"),
+    _Disconnected3 = antidotec_pb_socket:stop(Pb1),
 
     % join cluster:
     P1 = spawn_link(fun() ->
         {ok, Pb} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev5) + 2),
-        ct:pal("joining clusterdev4, clusterdev5"),
+        ct:pal("joining clusterdev5, clusterdev6"),
         Response = antidotec_pb_management:create_dc(Pb, [Node1, Node2]),
-        ct:pal("joined clusterdev4, clusterdev5: ~p", [Response]),
+        ct:pal("joined clusterdev5, clusterdev6: ~p", [Response]),
         ?assertEqual(ok, Response),
         _Disconnected = antidotec_pb_socket:stop(Pb)
                     end),
     wait_for_process(P1),
-
     {ok, Pb2} = antidotec_pb_socket:start(?ADDRESS, test_utils:web_ports(clusterdev6) + 2),
 
+    % wait for converged ring
+    riak_utils:wait_until_no_pending_changes([Node1, Node2]),
 
-    F = fun() ->
-        % read counter on clusterdev6 (wait for handoff):
-        {ok, TxId1} = antidotec_pb:start_transaction(Pb2, CommitTime, []),
-        {ok, [Counter]} = antidotec_pb:read_objects(Pb2, [Bound_object], TxId1),
-        {ok, _} = antidotec_pb:commit_transaction(Pb2, TxId1),
-        antidotec_counter:value(Counter)
-        end,
-    Delay = 100,
-    Retry = 360000 div Delay, %wait for max 1 min
-    ok = time_utils:wait_until_result(F, 4242, Retry, Delay),
+    % node 1 leave cluster, force data to transfer to Node2
+    rpc:call(Node1, antidote_dc_manager, leave, []),
 
-    _Disconnected3 = antidotec_pb_socket:stop(Pb1),
+    ct:pal("Waiting for node to leave the cluster"),
+
+    % wait until Node1 down (and therefore handoff to be complete)
+    time_utils:wait_until_offline(Node1),
+
+    ct:pal("Node left cluster successfully"),
+
+    % read data from Node2
+    {ok, TxId1} = antidotec_pb:start_transaction(Pb2, CommitTime, []),
+    {ok, [Counter]} = antidotec_pb:read_objects(Pb2, [Bound_object], TxId1),
+    {ok, _} = antidotec_pb:commit_transaction(Pb2, TxId1),
+
+    ?assertMatch(true, antidotec_counter:is_type(Counter)),
+    ?assertEqual(4242, antidotec_counter:value(Counter)),
+
     _Disconnected3 = antidotec_pb_socket:stop(Pb2).
 
 setup_cluster_test(Config) ->
