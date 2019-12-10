@@ -21,6 +21,9 @@ cleantests:
 shell:
 	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
 
+shell1:
+	$(REBAR) shell --name='antidote1@127.0.0.1' --setcookie antidote --config config/sys-debug1.config
+
 # same as shell, but automatically reloads code when changed
 # to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
 # the tool requires inotifywait (sudo apt install inotify-tools)
