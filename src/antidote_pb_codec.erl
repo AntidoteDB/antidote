@@ -364,6 +364,8 @@ encode_txn_properties(Props) ->
     exclusive_locks = proplists:get_value(exclusive_locks, Props, [])
   }.
 
+decode_txn_properties(undefined) ->
+  [];
 decode_txn_properties(#'ApbTxnProperties'{shared_locks = SharedLocks, exclusive_locks = ExclusiveLocks}) ->
   [{shared_locks, all_to_binary(SharedLocks)} || SharedLocks /= []]
   ++ [{exclusive_locks, all_to_binary(ExclusiveLocks)} || ExclusiveLocks /= []].
