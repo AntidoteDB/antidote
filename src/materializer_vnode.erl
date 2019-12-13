@@ -32,6 +32,8 @@
 
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
@@ -77,14 +79,14 @@
          handle_overload_info/2
   ]).
 
--type op_and_id() :: {non_neg_integer(), #clocksi_payload{}}.
+-type op_and_id() :: {non_neg_integer(), clocksi_payload()}.
 -record(state, {
     partition :: partition_id(),
     ops_cache :: cache_id(),
     snapshot_cache :: cache_id(),
     is_ready :: boolean()
 }).
-
+-type state() :: #state{}.
 %%---------------- API Functions -------------------%%
 
 start_vnode(I) ->
@@ -93,7 +95,7 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem_server:read_property_list(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+-spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem:read_property_list(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
     OpsCache = get_cache_name(Partition, ops_cache),
     SnapshotCache = get_cache_name(Partition, snapshot_cache),
@@ -111,7 +113,7 @@ update(Key, DownstreamOp) ->
 
 %%@doc write snapshot to cache for future read, snapshots are stored
 %%     one at a time into the ets table
--spec store_ss(key(), #materialized_snapshot{}, snapshot_time()) -> ok.
+-spec store_ss(key(), materialized_snapshot(), snapshot_time()) -> ok.
 store_ss(Key, Snapshot, CommitTime) ->
     IndexNode = log_utilities:get_key_partition(Key),
     riak_core_vnode_master:command(IndexNode, {store_ss, Key, Snapshot, CommitTime},
@@ -122,7 +124,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
-                    logger:debug("Trying to recover the materializer from log ~p", [Partition]),
+                    ?LOG_DEBUG("Trying to recover the materializer from log ~p", [Partition]),
                     riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
                     false;
                 _ ->
@@ -193,17 +195,17 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
     IsReady = try
                 case load_from_log_to_tables(Partition, State) of
                     ok ->
-                        logger:debug("Finished loading from log to materializer on partition ~w", [Partition]),
+                        ?LOG_DEBUG("Finished loading from log to materializer on partition ~w", [Partition]),
                         true;
                     {error, not_ready} ->
                         false;
                     {error, Reason} ->
-                        logger:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+                        ?LOG_ERROR("Unable to load logs from disk: ~w, continuing", [Reason]),
                         true
                 end
             catch
                 _:Reason1 ->
-                    logger:debug("Error loading from log ~w, will retry", [Reason1]),
+                    ?LOG_DEBUG("Error loading from log ~w, will retry", [Reason1]),
                     false
             end,
     ok = case IsReady of
@@ -226,7 +228,11 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
             Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
-    {reply, Acc, State}.
+    {reply, Acc, State};
+
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_WARNING("Unexpected access to the materializer while in handoff lifecycle: ~p", [Command]),
+    {noreply, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -285,7 +291,7 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCach
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
--spec load_from_log_to_tables(partition_id(), #state{}) -> ok | {error, reason()}.
+-spec load_from_log_to_tables(partition_id(), state()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
     LogId = [Partition],
     Node = {Partition, log_utilities:get_my_node(Partition)},
@@ -295,11 +301,12 @@ load_from_log_to_tables(Partition, State) ->
             log_id(),
             start | disk_log:continuation(),
             dict:dict(txid(), [any_log_payload()]),
-            #state{}) ->
+            state()) ->
                    ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
         {error, Reason} ->
+            ?LOG_ERROR("Could not load all entries from log ~p and node ~p: ~p", [LogId, Node, Reason]),
             {error, Reason};
         {NewContinuation, NewOps, OpsDict} ->
             load_ops(OpsDict, State),
@@ -309,7 +316,7 @@ loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
             ok
     end.
 
--spec load_ops(dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]), #state{}) -> true.
+-spec load_ops(dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]), state()) -> true.
 load_ops(OpsDict, State) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
                   lists:foreach(fun({_OpId, Op}) ->
@@ -326,7 +333,7 @@ open_table(Partition, Name) ->
                 [set, protected, named_table, ?TABLE_CONCURRENCY]);
         _ ->
             %% Other vnode hasn't finished closing tables
-            logger:debug("Unable to open ets table in materializer vnode, retrying"),
+            ?LOG_DEBUG("Unable to open ets table in materializer vnode, retrying"),
             timer:sleep(100),
             try
                 ets:delete(get_cache_name(Partition, Name))
@@ -338,7 +345,7 @@ open_table(Partition, Name) ->
     end.
 
 
--spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #state{}) -> boolean().
+-spec internal_store_ss(key(), materialized_snapshot(), snapshot_time(), boolean(), state()) -> boolean().
 internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, CommitTime, ShouldGc, State = #state{snapshot_cache=SnapshotCache}) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
                        [] ->
@@ -365,7 +372,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_server:read_property_list(), boolean(), #state{})
+-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem:read_property_list(), boolean(), state())
            -> {ok, snapshot()} | {error, no_snapshot}.
 
 internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
@@ -379,7 +386,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
 %%
 %%      If there's no in-memory suitable snapshot, it will fetch it from the replication log.
 %%
--spec get_from_snapshot_cache(txid() | ignore, key(), type(), snapshot_time(), #state{}) -> #snapshot_get_response{}.
+-spec get_from_snapshot_cache(txid() | ignore, key(), type(), snapshot_time(), state()) -> snapshot_get_response().
 
 get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
             ops_cache=OpsCache,
@@ -412,7 +419,7 @@ get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
             end
     end.
 
--spec get_from_snapshot_log(key(), type(), snapshot_time()) -> #snapshot_get_response{}.
+-spec get_from_snapshot_log(key(), type(), snapshot_time()) -> snapshot_get_response().
 get_from_snapshot_log(Key, Type, SnapshotTime) ->
     LogId = log_utilities:get_logid_from_key(Key),
     Partition = log_utilities:get_key_partition(Key),
@@ -422,7 +429,7 @@ get_from_snapshot_log(Key, Type, SnapshotTime) ->
 %%
 %%      If `ShouldGC' is true, it will try to prune the in-memory cache before inserting.
 %%
--spec store_snapshot(txid() | ignore, key(), #materialized_snapshot{}, snapshot_time(), boolean(), #state{}) -> ok.
+-spec store_snapshot(txid() | ignore, key(), materialized_snapshot(), snapshot_time(), boolean(), state()) -> ok.
 store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
     %% AB: Why don't we need to synchronize through the gen_server if the TxId is ignore??
      case TxId of
@@ -434,8 +441,8 @@ store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
      end.
 
 %% @doc Given a snapshot from the cache, update it from the ops cache.
--spec update_snapshot_from_cache({{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()}, key(), cache_id())
-    -> #snapshot_get_response{}.
+-spec update_snapshot_from_cache({{snapshot_time() | ignore, materialized_snapshot()}, boolean()}, key(), cache_id())
+    -> snapshot_get_response().
 
 update_snapshot_from_cache(SnapshotResponse, Key, OpsCache) ->
     {{SnapshotCommitTime, LatestSnapshot}, IsFirst} = SnapshotResponse,
@@ -463,7 +470,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
             {CachedOps, Length}
     end.
 
--spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), #state{}, #snapshot_get_response{})
+-spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), state(), snapshot_get_response())
     -> {ok, snapshot_time()} | {error, reason()}.
 
 materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snapshot_get_response{
@@ -511,7 +518,7 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotRes
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
-                         boolean(), #state{}) -> true.
+                         boolean(), state()) -> true.
 snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = SnapshotCache, ops_cache = OpsCache})->
     %% Perform the garbage collection when the size of the snapshot dict passed the threshold
     %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
@@ -589,7 +596,7 @@ prune_ops({Len, OpsTuple}, Threshold)->
 %% of the remaining operations and the size of that list
 %% It is used during garbage collection to filter out operations that are older than any
 %% of the cached snapshots
--spec check_filter(fun(({non_neg_integer(), #clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+-spec check_filter(fun(({non_neg_integer(), clocksi_payload()}) -> boolean()), non_neg_integer(), non_neg_integer(),
            non_neg_integer(), tuple(), non_neg_integer(), [{non_neg_integer(), op_and_id()}]) ->
               {non_neg_integer(), [{non_neg_integer(), op_and_id()}]}.
 check_filter(_Fun, Id, Last, _NewId, _Tuple, NewSize, NewOps) when (Id == Last) ->
@@ -618,7 +625,7 @@ deconstruct_opscache_entry(Tuple) ->
     {Key, Length, OpId, ListLen, Tuple}.
 
 %% @doc Insert an operation and optionally start garbage collection triggered by writes.
--spec op_insert_gc(key(), clocksi_payload(), #state{}) -> true.
+-spec op_insert_gc(key(), clocksi_payload(), state()) -> true.
 op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
     %% Check whether there is an ops cache entry for the key
     case ets:member(OpsCache, Key) of
@@ -832,9 +839,7 @@ concurrent_write_test() ->
     %% Read different snapshots
     {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 1}, {DC2, 0}]), ignore, [], false, State),
     ?assertEqual(1, Type:value(ReadDC1)),
-    io:format("Result1 = ~p", [ReadDC1]),
     {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 0}, {DC2, 1}]), ignore, [], false, State),
-    io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
 
     %% Read snapshot including both increments

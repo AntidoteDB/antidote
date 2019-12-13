@@ -173,8 +173,8 @@ spawn_read(Node, TxId, Return, Key, Type, Bucket) ->
 
 
 get_random_key() ->
-    rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    rand_compat:uniform(1000).  % TODO use deterministic keys in testcase
+    rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
+    rand:uniform(1000).  % TODO use deterministic keys in testcase
 
 
 find_key_same_node(FirstNode, IndexNode, Num) ->

@@ -30,10 +30,12 @@
 %% This vnode is used to publish interDC transactions.
 
 -module(inter_dc_pub).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
-
+-include_lib("kernel/include/logger.hrl").
 %% API
 -export([
   broadcast/1,
@@ -84,10 +86,10 @@ get_address_list() ->
     Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
 
--spec broadcast(#interdc_txn{}) -> ok.
+-spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
   case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+    {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
 
@@ -98,7 +100,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
   {_, Port} = get_address(),
   Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  logger:info("Publisher started on port ~p", [Port]),
+  ?LOG_INFO("Publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.

@@ -33,9 +33,12 @@
 %% As well as in the sender of the query at inter_dc_query
 
 -module(inter_dc_query_receive_socket).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -90,7 +93,7 @@ get_address_list() ->
     AddressList = [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}],
     {PartitionList, AddressList}.
 
--spec send_response(binary(), #inter_dc_query_state{}) -> ok.
+-spec send_response(binary(), inter_dc_query_state()) -> ok.
 send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sender}) ->
     ok = gen_server:cast(Sender, {send_response, BinaryResponse, QueryState}).
 
@@ -101,8 +104,8 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     {_, Port} = get_address(),
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-    _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    logger:info("Log reader started on port ~p", [Port]),
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
+    ?LOG_INFO("Log reader started on port ~p", [Port]),
     {ok, #state{socket = Socket, next=getid}}.
 
 %% Handle the remote request
@@ -138,7 +141,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
     end,
     {noreply, State#state{next=getid}};
 handle_info(Info, State) ->
-    logger:info("got weird info ~p", [Info]),
+    ?LOG_INFO("got weird info ~p", [Info]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.

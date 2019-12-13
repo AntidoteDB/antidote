@@ -82,7 +82,7 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 -spec materialize(type(),
                   txid() | ignore,
                   snapshot_time() | ignore,
-                  #snapshot_get_response{}
+                  snapshot_get_response()
                  ) ->
                          {ok, snapshot(), integer(), snapshot_time() | ignore,
                           boolean(), non_neg_integer()} | {error, reason()}.

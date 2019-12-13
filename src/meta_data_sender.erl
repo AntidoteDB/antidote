@@ -96,12 +96,15 @@
 %% Start meta data sender
 -spec start(atom()) -> ok.
 start(Name) ->
-    gen_statem:call(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)), start).
+    gen_statem:call(get_name(Name), start).
 
 -spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Name) ->
-    gen_statem:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
-               ?MODULE, [Name], []).
+    gen_statem:start_link({local, get_name(Name)}, ?MODULE, [Name], []).
+
+-spec get_name(atom()) -> atom().
+get_name(Name) ->
+    list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)).
 
 %% Insert meta data for some partition
 -spec put_meta(atom(), partition_id(), term()) -> ok.
@@ -172,6 +175,8 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
     {HasChanged, NewResult} = update_stable(LastResult, MergedDict, Name),
     Store = case HasChanged of
                 true ->
+                    %% update changed counter for this metadata type
+                    %?STATS({metadata_updated, Name}),
                     true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
                     NewResult;
                 false ->

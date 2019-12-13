@@ -61,9 +61,6 @@
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
-%% At commit, if this is set to true, the logging vnode
-%% will ensure that the transaction record is written to disk
--define(SYNC_LOG, false).
 %% Uncomment the following line to use erlang:now()
 %% Otherwise os:timestamp() is used which can go backwards
 %% which is unsafe for clock-si
@@ -100,6 +97,7 @@
     commit_time :: dc_and_commit_time(),
     snapshot_time :: snapshot_time()
 }).
+-type commit_log_payload() :: #commit_log_payload{}.
 
 -record(update_log_payload, {
     key :: key(),
@@ -107,6 +105,7 @@
     type :: type(),
     op :: op()
 }).
+-type update_log_payload() :: #update_log_payload{}.
 
 -record(abort_log_payload, {}).
 
@@ -126,6 +125,7 @@
              | noop,
     log_payload :: any_log_payload()
 }).
+-type log_operation() :: #log_operation{}.
 
 -record(op_number, {
     %% TODO 19 undefined is required here, because of the use in inter_dc_log_sender_vnode.
@@ -134,16 +134,17 @@
     global :: undefined | non_neg_integer(),
     local :: undefined | non_neg_integer()
 }).
+-type op_number() :: #op_number{}.
 
 %% The way records are stored in the log.
 -record(log_record, {
     %% The version of the log record, for backwards compatability
     version :: non_neg_integer(),
-    op_number :: #op_number{},
-    bucket_op_number :: #op_number{},
-    log_operation :: #log_operation{}
+    op_number :: op_number(),
+    bucket_op_number :: op_number(),
+    log_operation :: log_operation()
 }).
-
+-type log_record() :: #log_record{}.
 %% Clock SI
 
 %% MIN is Used for generating the timeStamp of a new snapshot
@@ -174,7 +175,7 @@
     last_op_id :: op_num(),
     value :: snapshot()
 }).
-
+-type materialized_snapshot() :: #materialized_snapshot{}.
 %%---------------------------------------------------------------------
 -type actor() :: term().
 -type key() :: term().
@@ -184,7 +185,9 @@
 -type op() :: {op_name(), op_param()}.
 -type effect() :: term().
 
--type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
+
+%% DC Id is the riak_core ring cluster name
+-type dcid() :: undefined | riak_core_ring:riak_core_ring().
 -type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
@@ -215,13 +218,13 @@
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
--type index_node() :: {any(), node()}.
+-type index_node() :: {partition_id(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_num() :: non_neg_integer().
 -type op_id() :: {op_num(), node()}.
 -type payload() :: term().
--type partition_id() :: ets:tid() | non_neg_integer(). % TODO 19 adding integer basically makes the tid type non-opaque, because some places of the code depend on it being an integer. This dependency should be removed, if possible.
+-type partition_id() :: chash:index_as_int().
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
@@ -245,7 +248,10 @@
               bound_object/0,
               module_name/0,
               function_name/0,
-              clocksi_payload/0]).
+              clocksi_payload/0,
+              materialized_snapshot/0,
+              snapshot_get_response/0, log_operation/0, log_record/0, op_number/0,
+              update_log_payload/0, commit_log_payload/0]).
 
 
 %% The record is using during materialization to keep the
@@ -256,9 +262,12 @@
     %% size of ops_list
     number_of_ops :: non_neg_integer(),
     %% the previous snapshot to apply the ops to
-    materialized_snapshot :: #materialized_snapshot{},
+    materialized_snapshot :: materialized_snapshot(),
     %% The version vector time of the snapshot
     snapshot_time :: snapshot_time() | ignore,
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).
+-type snapshot_get_response() :: #snapshot_get_response{}.
+
+-define(STATS(Type), case application:get_env(antidote, stats, true) of true -> gen_server:cast(antidote_stats_collector, Type); _ -> ok end).

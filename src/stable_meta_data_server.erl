@@ -35,6 +35,8 @@
 -module(stable_meta_data_server).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 -define(TABLE_NAME, a_stable_meta_data_table).
 
@@ -138,22 +140,18 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 %% -------------------------------------------------------------------+
 
 init([]) ->
-    Path = filename:join(
-         application:get_env(riak_core, platform_data_dir, undefined), ?TABLE_NAME),
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    Path = filename:join(DataDir, ?TABLE_NAME),
 
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
 
-    LoadFromDisk = case application:get_env(antidote, recover_meta_data_on_start) of
-                       {ok, true} ->
-                          true;
-                       _ ->
-                          false
-                   end,
+    LoadFromDisk = application:get_env(antidote, recover_meta_data_on_start, false),
+
     UpdatedTable = case LoadFromDisk of
         true ->
             TableFromDets = dets:to_ets(DetsTable, Table),
-            logger:info("Loaded meta data from disk"),
+            ?LOG_INFO("Loaded meta data from disk"),
             TableFromDets;
         false ->
             ok = dets:delete_all_objects(DetsTable),
@@ -176,6 +174,7 @@ handle_call({update_meta_data, KeyValueList, IsEnv}, _Sender, State = #state{tab
     true = ets:insert(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
     ok = dets:sync(DetsTable),
+    %?STATS(metadata_update_stable),
     {reply, ok, State};
 
 handle_call({merge_meta_data, Key, Value, MergeFunc, InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->

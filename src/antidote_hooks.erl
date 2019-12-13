@@ -58,6 +58,7 @@
 -module(antidote_hooks).
 
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -92,7 +93,7 @@ register_pre_hook(Bucket, Module, Function) ->
 register_hook(Prefix, Bucket, Module, Function) ->
     case erlang:function_exported(Module, Function, 1) of
         true ->
-            riak_core_metadata:put(Prefix, Bucket, {Module, Function}),
+            stable_meta_data_server:broadcast_meta_data({Prefix, Bucket}, {Module, Function}),
             ok;
         false ->
             {error, function_not_exported}
@@ -100,16 +101,22 @@ register_hook(Prefix, Bucket, Module, Function) ->
 
 -spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.
 unregister_hook(pre_commit, Bucket) ->
-    riak_core_metadata:delete(?PREFIX_PRE, Bucket);
-
+    stable_meta_data_server:broadcast_meta_data({?PREFIX_PRE, Bucket}, undefined);
 unregister_hook(post_commit, Bucket) ->
-    riak_core_metadata:delete(?PREFIX_POST, Bucket).
+    stable_meta_data_server:broadcast_meta_data({?PREFIX_POST, Bucket}, undefined).
 
 get_hooks(pre_commit, Bucket) ->
-    riak_core_metadata:get(?PREFIX_PRE, Bucket);
-
+    R = stable_meta_data_server:read_meta_data({?PREFIX_PRE, Bucket}),
+    case R of
+        {ok, Hooks} -> Hooks;
+        error -> undefined
+    end;
 get_hooks(post_commit, Bucket) ->
-    riak_core_metadata:get(?PREFIX_POST, Bucket).
+    R = stable_meta_data_server:read_meta_data({?PREFIX_POST, Bucket}),
+    case R of
+        {ok, Hooks} -> Hooks;
+        error -> undefined
+    end.
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
         {term(), type(), op_param()} | {error, reason()}.
@@ -151,7 +158,7 @@ execute_post_commit_hook(Key, Type, Param) ->
 %% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
 
 test_commit_hook(Object) ->
-    logger:info("Executing test commit hook"),
+    ?LOG_INFO("Executing test commit hook"),
     {ok, Object}.
 
 test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) ->

@@ -40,6 +40,7 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -73,7 +74,7 @@
 %%          the second is a #request_cache_entry{} record
 %%          Note that the function should not perform anywork, instead just send
 %%%         the work to another thread, otherwise it will block other messages
--spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(), #request_cache_entry{})->ok))
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(), request_cache_entry()) -> ok))
              -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
     gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
@@ -180,12 +181,12 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
                 <<RequestType, RestBinary/binary>> ->
                     Func(RestBinary, CacheEntry);
                 Other ->
-                    logger:error("Received unknown reply: ~p", [Other])
+                    ?LOG_ERROR("Received unknown reply: ~p", [Other])
             end,
             %% Remove the request from the list of unanswered queries.
             true = ets:delete(Table, ReqIdBinary);
         [] ->
-            logger:error("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
+            ?LOG_ERROR("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
     {noreply, State}.
 
@@ -215,7 +216,7 @@ req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_i
 %% A node is a list of addresses because it can have multiple interfaces
 %% this just goes through the list and connects to the first interface that works
 connect_to_node([]) ->
-    logger:error("Unable to subscribe to DC log reader"),
+    ?LOG_ERROR("Unable to subscribe to DC log reader"),
     connection_error;
 connect_to_node([Address| Rest]) ->
     %% Test the connection

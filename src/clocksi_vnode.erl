@@ -31,6 +31,7 @@
 
 -include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([start_vnode/1,
     read_data_item/5,
@@ -97,7 +98,7 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_server:read_data_item(Node, Key, Type, TxId, []) of
+    case clocksi_readitem:read_data_item(Node, Key, Type, TxId, []) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
@@ -107,7 +108,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
+    clocksi_readitem:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -257,7 +258,7 @@ open_table(Partition) ->
             [set, protected, named_table, ?TABLE_CONCURRENCY]);
     _ ->
         %% Other vnode hasn't finished closing tables
-        logger:debug("Unable to open ets table in clocksi vnode, retrying"),
+        ?LOG_DEBUG("Unable to open ets table in clocksi vnode, retrying"),
         timer:sleep(100),
         try
         ets:delete(get_cache_name(Partition, prepared))
@@ -267,12 +268,6 @@ open_table(Partition) ->
         end,
         open_table(Partition)
     end.
-
-loop_until_started(_Partition, 0) ->
-    0;
-loop_until_started(Partition, Num) ->
-    Ret = clocksi_readitem_server:start_read_servers(Partition, Num),
-    loop_until_started(Partition, Ret).
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
@@ -291,12 +286,6 @@ handle_command({send_min_prepared}, _Sender,
     {ok, Time} = get_min_prep(PreparedDict),
     dc_utilities:call_local_vnode(Partition, logging_vnode_master, {send_min_prepared, Time}),
     {noreply, State};
-
-handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
-    loop_until_started(Partition, Serv),
-    Node = node(),
-    Result = clocksi_readitem_server:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
-    {reply, Result, SD0};
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
@@ -433,9 +422,8 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
         ets:delete(get_cache_name(Partition, prepared))
     catch
         _:Reason ->
-            logger:error("Error closing table ~p", [Reason])
+            ?LOG_ERROR("Error closing table ~p", [Reason])
     end,
-    clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
 
 handle_overload_command(_, _, _) ->
@@ -493,12 +481,12 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
-    logger:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+    ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p", [{Key, TxId, Time}]),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
+    DcId = dc_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
                 op_type = commit,
                 log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
@@ -634,7 +622,7 @@ check_prepared(_TxId, PreparedTx, Key) ->
 -spec update_materializer([{key(), type(), effect()}], tx(), non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
+    DcId = dc_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                          CommittedDownstreamOp =

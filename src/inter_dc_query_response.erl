@@ -54,13 +54,13 @@
 start_link(Num) ->
     gen_server:start_link({local, generate_server_name(Num)}, ?MODULE, [Num], []).
 
--spec get_entries(binary(), #inter_dc_query_state{}) -> ok.
+-spec get_entries(binary(), inter_dc_query_state()) -> ok.
 get_entries(BinaryQuery, QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries, BinaryQuery, QueryState}).
+    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries, BinaryQuery, QueryState}).
 
--spec request_permissions(binary(), #inter_dc_query_state{}) -> ok.
+-spec request_permissions(binary(), inter_dc_query_state()) -> ok.
 request_permissions(BinaryRequest, QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
+    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -72,7 +72,7 @@ init([Num]) ->
 handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     {read_log, Partition, From, To} = binary_to_term(BinaryQuery),
     Entries = get_entries_internal(Partition, From, To),
-    BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(), Partition}, Entries}),
+    BinaryResp = term_to_binary({{dc_utilities:get_my_dc_id(), Partition}, Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
     ok = inter_dc_query_receive_socket:send_response(FullResponse, QueryState),
@@ -94,7 +94,7 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
--spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
+-spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [interdc_txn()].
 get_entries_internal(Partition, From, To) ->
   Node = case lists:member(Partition, dc_utilities:get_my_partitions()) of
              true -> node();
@@ -111,13 +111,13 @@ get_entries_internal(Partition, From, To) ->
 
 %% TODO: re-implement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
--spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#log_record{}].
+-spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [log_record()].
 log_read_range(Partition, Node, From, To) ->
   {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
   OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
   filter_operations(OpList, From, To).
 
--spec filter_operations([#log_record{}], log_opid(), log_opid()) -> [#log_record{}].
+-spec filter_operations([log_record()], log_opid(), log_opid()) -> [log_record()].
 filter_operations(Ops, Min, Max) ->
   F = fun(Op) ->
     Num = Op#log_record.op_number#op_number.local,

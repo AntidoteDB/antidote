@@ -29,8 +29,10 @@
 %% Transaction buffer, used to check for message loss through operation log id gaps.
 
 -module(inter_dc_sub_buf).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% Expected time to wait until the logging_vnode is started
 -define(LOG_STARTUP_WAIT, 1000).
@@ -43,7 +45,7 @@
 %%%% API --------------------------------------------------------------------+
 
 %% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
--spec new_state(pdcid()) -> #inter_dc_sub_buf{}.
+-spec new_state(pdcid()) -> inter_dc_sub_buf().
 new_state(PDCID) ->
   {ok, EnableLogging} = application:get_env(antidote, enable_logging),
   #inter_dc_sub_buf{
@@ -54,7 +56,7 @@ new_state(PDCID) ->
     logging_enabled = EnableLogging
   }.
 
--spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+-spec process({txn, interdc_txn()} | {log_reader_resp, [interdc_txn()]}, inter_dc_sub_buf()) -> inter_dc_sub_buf().
 process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
@@ -64,11 +66,11 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
                          DCID, Partition)
              catch
                  _:Reason ->
-                     logger:debug("Error loading last opid from log: ~w, will retry", [Reason])
+                     ?LOG_DEBUG("Error loading last opid from log: ~w, will retry", [Reason])
              end,
     case Result of
     {ok, OpId} ->
-        logger:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
+        ?LOG_DEBUG("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
         process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=OpId});
     _ ->
         riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
@@ -76,7 +78,7 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
-  logger:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
+  ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   push(Txn, State);
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
@@ -90,7 +92,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
   %% This case must not happen
-  logger:critical("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
+  ?LOG_CRITICAL("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
   State.
 
 
@@ -112,19 +114,19 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
         gt ->
         case EnableLogging of
           true ->
-            logger:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+            ?LOG_INFO("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
                   [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
             try
               case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
                 ok ->
                   State#inter_dc_sub_buf{state_name = buffering};
                 _  ->
-                  logger:warning("Failed to send log query to DC, will retry on next ping message"),
+                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
                   State#inter_dc_sub_buf{state_name = normal}
               end
             catch
               _:_ ->
-                  logger:warning("Failed to send log query to DC, will retry on next ping message"),
+                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
                   State#inter_dc_sub_buf{state_name = normal}
             end;
           false -> %% we deliver the transaction as we can't ask anything to the remote log
@@ -136,17 +138,17 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction has an old value, drop it.
         lt ->
-            logger:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
             process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
 
--spec deliver(#interdc_txn{}) -> ok.
+-spec deliver(interdc_txn()) -> ok.
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 
 %% TODO: consider dropping messages if the queue grows too large.
 %% The lost messages would be then fetched again by the log_reader.
--spec push(#interdc_txn{}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+-spec push(interdc_txn(), inter_dc_sub_buf()) -> inter_dc_sub_buf().
 push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_sub_buf.queue)}.
 
 %% Instructs the log reader to ask the remote DC for a given range of operations.
