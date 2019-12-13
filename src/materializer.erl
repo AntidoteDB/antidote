@@ -51,7 +51,10 @@ create_snapshot(Type) ->
 -spec update_snapshot(type(), snapshot(), effect()) -> {ok, snapshot()} | {error, reason()}.
 update_snapshot(Type, Snapshot, Op) ->
     try
-        Type:update(Op, Snapshot)
+        case Type of
+            antidote_crdt_generic -> Type:snapshot(Op, Snapshot);
+            _ -> Type:update(Op, Snapshot)
+        end
     catch
         _:_ ->
             {error, {unexpected_operation, Op, Type}}
