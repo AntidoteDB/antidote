@@ -90,7 +90,7 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = ets:new(queries, [set])}}.
+init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = create_queries_table()}}.
 
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
@@ -122,7 +122,7 @@ handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
                                         false -> ok
                                     end
                                 end,
-                            ets:foldl(F, undefined, NewAccState#state.unanswered_queries),
+                            fold_queries_table(F, NewAccState#state.unanswered_queries),
                             {ResultAcc, NewAccState};
                         connection_error ->
                             {error, AccState}
@@ -175,8 +175,8 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
     <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>>
     = binary_utilities:check_message_version(BinaryMsg),
     %% Be sure this is a request from this socket
-    case ets:lookup(Table, ReqIdBinary) of
-        [{ReqIdBinary, CacheEntry=#request_cache_entry{request_type=RequestType, func=Func}}] ->
+    case get_request(Table, ReqIdBinary) of
+        {ok, CacheEntry=#request_cache_entry{request_type=RequestType, func=Func}} ->
             case RestMsg of
                 <<RequestType, RestBinary/binary>> ->
                     Func(RestBinary, CacheEntry);
@@ -184,8 +184,8 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
                     ?LOG_ERROR("Received unknown reply: ~p", [Other])
             end,
             %% Remove the request from the list of unanswered queries.
-            true = ets:delete(Table, ReqIdBinary);
-        [] ->
+            true = delete_request(Table, ReqIdBinary);
+        not_found ->
             ?LOG_ERROR("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
     {noreply, State}.
@@ -210,7 +210,7 @@ del_dc(DCID, State) ->
 
 %% Saves the request in the state, so it can be resent if the DC was disconnected.
 req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_id=OldReq}) ->
-    true = ets:insert(Table, {ReqIdBinary, RequestEntry}),
+    true = insert_request(Table, ReqIdBinary, RequestEntry),
     State#state{req_id=(OldReq+1)}.
 
 %% A node is a list of addresses because it can have multiple interfaces
@@ -241,4 +241,35 @@ connect_to_node([Address| Rest]) ->
             {ok, Socket};
         _ ->
             connect_to_node(Rest)
+    end.
+
+%%%===================================================================
+%%%  Ets tables
+%%%
+%%%  unanswered_queries_table:
+%%%===================================================================
+
+-spec create_queries_table() -> ets:tid().
+create_queries_table() ->
+    ets:new(queries, [set]).
+
+-spec fold_queries_table(fun(), ets:tid()) -> term().
+fold_queries_table(F, Table) ->
+    ets:foldl(F, undefined, Table).
+
+-spec insert_request(ets:tid(), binary(), request_cache_entry()) -> true.
+insert_request(Table, ReqIdBinary, RequestEntry) ->
+    ets:insert(Table, {ReqIdBinary, RequestEntry}).
+
+-spec delete_request(ets:tid(), binary()) -> true.
+delete_request(Table, ReqIdBinary) ->
+    ets:delete(Table, ReqIdBinary).
+
+-spec get_request(ets:tid(), binary()) -> not_found | {ok, request_cache_entry()}.
+get_request(Table, ReqIdBinary) ->
+    case ets:lookup(Table, ReqIdBinary) of
+        [] ->
+            not_found;
+        [{ReqIdBinary, Val}] ->
+            {ok, Val}
     end.
