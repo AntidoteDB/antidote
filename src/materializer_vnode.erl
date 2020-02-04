@@ -705,7 +705,7 @@ get_snapshot_dict(SnapshotCache, Key) ->
             {ok, SnapshotDictA}
     end.
 
--spec get_ops_from_cache(cache_id(), key()) -> not_found | {ok,{key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}}.
+-spec get_ops_from_cache(cache_id(), key()) -> not_found | {ok, {key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}}.
 get_ops_from_cache(OpsCache, Key) ->
     case ets:lookup(OpsCache, Key) of
         [] ->

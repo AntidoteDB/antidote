@@ -295,7 +295,7 @@ start() ->
     _Table2 = antidote_ets_meta_data:create_meta_data_table(MetaType),
     _Table3 = ets:new(node_table, [set, named_table, public]),
     _Table4 = antidote_ets_meta_data:create_remote_meta_data_table(MetaType),
-    true = antidote_ets_meta_data:insert_meta_data_stable_merged_data(MetaType:initial_merged()),
+    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(MetaType, MetaType:initial_merged()),
     MetaType.
 
 stop(MetaType) ->
