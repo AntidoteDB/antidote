@@ -11,7 +11,7 @@ Technische Universität Kaiserslautern, Germany
 Université Pierre et Marie Curie / Sorbonne-Université, France
 Universidade NOVA de Lisboa, Portugal
 Université catholique de Louvain (UCL), Belgique
-INESC TEC, Portugal 
+INESC TEC, Portugal
 >
 
 The list of the contributors to the development of Antidote is given in the AUTHORS file.
@@ -50,5 +50,4 @@ elli                            MIT
 prometheus                      MIT
 prometheus_process_collector    MIT
 elli_prometheus                 BSD-3
-rand_compat                     Apache 2.0
 lager                           Apache 2.0

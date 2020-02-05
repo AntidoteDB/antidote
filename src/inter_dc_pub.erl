@@ -30,11 +30,14 @@
 %% This vnode is used to publish interDC transactions.
 
 -module(inter_dc_pub).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
 -include_lib("antidote_channels/include/antidote_channel.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -90,7 +93,7 @@ get_address_list() ->
 broadcast(#interdc_txn{partition = P} = Txn) ->
     case catch gen_server:call(?MODULE, {publish, inter_dc_txn:partition_to_bin(P), Txn}) of
         {'EXIT', _Reason} ->
-            logger:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+            ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
         Normal -> Normal
     end.
 

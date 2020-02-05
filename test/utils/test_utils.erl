@@ -39,22 +39,13 @@
     bucket/1,
     init_single_dc/2,
     init_multi_dc/2,
-    connect_cluster/1,
     get_node_name/1,
-    descriptors/1,
     web_ports/1,
-    plan_and_commit/1,
-    do_commit/1,
-    try_nodes_ready/3,
-    wait_until_nodes_ready/1,
-    is_ready/1,
-    wait_until_nodes_agree_about_ownership/1,
-    staged_join/2,
     restart_nodes/2,
     partition_cluster/2,
     heal_cluster/2,
-    join_cluster/1,
-    set_up_clusters_common/1
+    set_up_clusters_common/1,
+    unpack/1
 ]).
 
 %% ===========================================
@@ -77,7 +68,7 @@ init_single_dc(Suite, Config) ->
     test_utils:at_init_testsuite(),
 
     StartDCs = fun(Nodes) ->
-        test_utils:pmap(fun(N) -> test_utils:start_node(N, Config) end, Nodes)
+        test_utils:pmap(fun(N) -> {_Status, Node} = test_utils:start_node(N, Config), Node end, Nodes)
                end,
     [Nodes] = test_utils:pmap( fun(N) -> StartDCs(N) end, [[dev1]] ),
     [Node] = Nodes,
@@ -108,6 +99,7 @@ at_init_testsuite() ->
 %% ===========================================
 
 start_node(Name, Config) ->
+    %% code path for compiled dependencies (ebin folders)
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     ct:log("Starting node ~p", [Name]),
 
@@ -119,52 +111,82 @@ start_node(Name, Config) ->
 
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
+        %% have the slave nodes monitor the runner node, so they can't outlive it
         {monitor_master, true},
+
         {erl_flags, "-smp"}, %% smp for the eleveldb god
-        {cd, NodeDir},
-        {startup_functions, [
-            {code, set_path, [CodePath]}
-        ]}],
-    case ct_slave_ext:start(Name, NodeConfig) of
+
+        %% set code path for dependencies
+        {startup_functions, [ {code, set_path, [CodePath]} ]}],
+    case ct_slave:start(Name, NodeConfig) of
         {ok, Node} ->
-
-            ct:log("Starting riak_core"),
+            % load application to allow for configuring the environment before starting
             ok = rpc:call(Node, application, load, [riak_core]),
+            ok = rpc:call(Node, application, load, [antidote_stats]),
+            ok = rpc:call(Node, application, load, [ranch]),
+            ok = rpc:call(Node, application, load, [antidote]),
+            ok = rpc:call(Node, application, load, [lager]),
 
+            %% get remote working dir of node
+            {ok, NodeWorkingDir} = rpc:call(Node, file, get_cwd, []),
 
-            PlatformDir = NodeDir ++ "/data/",
-            RingDir = PlatformDir ++ "/ring/",
-            NumberOfVNodes = 4,
-            filelib:ensure_dir(PlatformDir),
-            filelib:ensure_dir(RingDir),
-
-            ct:log("Setting environment for riak"),
-            ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
-            ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
-
-            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
-            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
-
+            %% DATA DIRS
+            ok = rpc:call(Node, application, set_env, [antidote, data_dir, filename:join([NodeWorkingDir, Node, "antidote-data"])]),
+            ok = rpc:call(Node, application, set_env, [riak_core, ring_state_dir, filename:join([NodeWorkingDir, Node, "data"])]),
+            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, filename:join([NodeWorkingDir, Node, "data"])]),
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, [AntidoteFolder ++ "/_build/default/rel/antidote/lib/"]]),
 
-            ok = rpc:call(Node, application, set_env, [ranch, pb_port, web_ports(Name) + 2]),
 
-            ct:log("Starting antidote"),
-            ok = rpc:call(Node, application, load, [antidote]),
-            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
-            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-            ok = rpc:call(Node, application, set_env, [antidote, metrics_port, web_ports(Name) + 4]),
+            %% PORTS
+            Port = web_ports(Name),
+            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, Port]),
+            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, Port + 1]),
+            ok = rpc:call(Node, application, set_env, [ranch, pb_port, Port + 2]),
+            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, Port + 3]),
+            ok = rpc:call(Node, application, set_env, [antidote_stats, metrics_port, Port + 4]),
+
+
+            %% LOGGING Configuration
+            %% add additional logging handlers to ensure easy access to remote node logs
+            %% for each logging level
+            LogRoot = filename:join([NodeWorkingDir, Node, "logs"]),
+            %% set the logger configuration
+            ok = rpc:call(Node, application, set_env, [antidote, logger, log_config(LogRoot)]),
+            %% set primary output level, no filter
+            rpc:call(Node, logger, set_primary_config, [level, all]),
+            %% load additional logger handlers at remote node
+            rpc:call(Node, logger, add_handlers, [antidote]),
+
+            %% legacy lager folder until lager is removed
+            LagerRoot = filename:join([NodeWorkingDir, Node, "lager"]),
+            ok = rpc:call(Node, application, set_env, [lager, log_root, LagerRoot]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_whitelist, [error_logger]]),
+            ok = rpc:call(Node, application, set_env, [lager, error_logger_redirect, false]),
+            ok = rpc:call(Node, application, set_env, [lager, crash_log, false]),
+            ok = rpc:call(Node, application, set_env, [lager, handlers, [{antidote_lager_backend, [debug]}]]),
+            ok = rpc:call(Node, application, set_env, [lager, logger, log_config(LogRoot)]),
+
+            %% redirect slave logs to ct_master logs
+            ok = rpc:call(Node, application, set_env, [antidote, ct_master, node()]),
+            ConfLog = #{level => debug, formatter => {logger_formatter, #{single_line => true, max_size => 2048}}, config => #{type => standard_io}},
+            _ = rpc:call(Node, logger, add_handler, [antidote_redirect_ct, ct_redirect_handler, ConfLog]),
+
+
+            %% ANTIDOTE Configuration
+            %% reduce number of actual log files created to 4, reduces start-up time of node
+            ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, 4]),
+            ok = rpc:call(Node, application, set_env, [antidote, sync_log, true]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            ct:pal("Node ~p started with ports ~p-~p", [Node, web_ports(Name), web_ports(Name)+4]),
+            ct:pal("Node ~p started with ports ~p-~p", [Node, Port, Port + 4]),
 
-            Node;
+            {connect, Node};
         {error, already_started, Node} ->
             ct:log("Node ~p already started, reusing node", [Node]),
-            Node;
+            {ready, Node};
         {error, Reason, Node} ->
             ct:pal("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
-            ct_slave_ext:stop(Name),
+            ct_slave:stop(Name),
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
@@ -180,7 +202,7 @@ kill_and_restart_nodes(NodeList, Config) ->
 %% @doc Kills all given nodes, crashes if one node cannot be stopped
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
-    lists:map(fun(Node) -> {ok, Name} = ct_slave_ext:stop(get_node_name(Node)), Name end, NodeList).
+    lists:map(fun(Node) -> {ok, Name} = ct_slave:stop(get_node_name(Node)), Name end, NodeList).
 
 
 %% @doc Send force kill signals to all given nodes
@@ -193,7 +215,7 @@ brutal_kill_nodes(NodeList) ->
                   %% kill -9 after X seconds just in case
 %%                  rpc:cast(Node, timer, apply_after,
 %%                      [?FORCE_KILL_TIMER, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-                  ct_slave_ext:stop(get_node_name(Node)),
+                  ct_slave:stop(get_node_name(Node)),
                   rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
                   Node
               end, NodeList).
@@ -261,45 +283,6 @@ heal_cluster(ANodes, BNodes) ->
     ok.
 
 
-connect_cluster(Nodes) ->
-  Clusters = [[Node] || Node <- Nodes],
-  ct:log("Connecting DC clusters..."),
-
-  pmap(fun(Cluster) ->
-              Node1 = hd(Cluster),
-              ct:log("Waiting until vnodes start on node ~p", [Node1]),
-              time_utils:wait_until_registered(Node1, inter_dc_pub),
-              time_utils:wait_until_registered(Node1, inter_dc_query_receive_socket),
-              time_utils:wait_until_registered(Node1, inter_dc_query_response_sup),
-              time_utils:wait_until_registered(Node1, inter_dc_query),
-              time_utils:wait_until_registered(Node1, inter_dc_sub),
-              time_utils:wait_until_registered(Node1, meta_data_sender_sup),
-              time_utils:wait_until_registered(Node1, meta_data_manager_sup),
-              ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable_time_functions]),
-              ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
-          end, Clusters),
-
-    Descriptors = descriptors(Clusters),
-    Res = [ok || _ <- Clusters],
-    pmap(fun(Cluster) ->
-              Node = hd(Cluster),
-              ct:log("Making node ~p observe other DCs...", [Node]),
-              %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-              Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
-          end, Clusters),
-    pmap(fun(Cluster) ->
-              Node = hd(Cluster),
-              ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
-          end, Clusters),
-    ct:log("DC clusters connected!").
-
-
-descriptors(Clusters) ->
-  lists:map(fun(Cluster) ->
-    {ok, Descriptor} = rpc:call(hd(Cluster), inter_dc_manager, get_descriptor, []),
-    Descriptor
-  end, Clusters).
-
 
 web_ports(dev1) -> 10015;
 web_ports(dev2) -> 10025;
@@ -308,156 +291,57 @@ web_ports(dev4) -> 10045;
 web_ports(clusterdev1) -> 10115;
 web_ports(clusterdev2) -> 10125;
 web_ports(clusterdev3) -> 10135;
-web_ports(clusterdev4) -> 10145.
-
-%% Build clusters
-join_cluster(Nodes) ->
-    ct:log("Joining: ~p", [Nodes]),
-    %% Ensure each node owns 100% of it's own ring
-    [?assertEqual([Node], riak_utils:owners_according_to(Node)) || Node <- Nodes],
-    %% Join nodes
-    [Node1|OtherNodes] = Nodes,
-    case OtherNodes of
-        [] ->
-            %% no other nodes, nothing to join/plan/commit
-            ok;
-        _ ->
-            %% ok do a staged join and then commit it, this eliminates the
-            %% large amount of redundant handoff done in a sequential join
-            [staged_join(Node, Node1) || Node <- OtherNodes],
-            plan_and_commit(Node1),
-            try_nodes_ready(Nodes, 3, 500)
-    end,
-
-    ct:log("Wait until nodes read"),
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
-
-    %% Ensure each node owns a portion of the ring
-    ct:log("Wait until agree about ownership"),
-    wait_until_nodes_agree_about_ownership(Nodes),
-
-    ct:log("Wait until no pending changes"),
-    ?assertEqual(ok, riak_utils:wait_until_no_pending_changes(Nodes)),
-
-    ct:log("Wait until ring converged"),
-    riak_utils:wait_until_ring_converged(Nodes),
-
-    ct:log("Check if nodes are fully ready"),
-    time_utils:wait_until(hd(Nodes), fun wait_init:check_ready/1),
-    ok.
-
-
-
-%% @doc Have `Node' send a join request to `PNode'
-staged_join(Node, PNode) ->
-    timer:sleep(100),
-    R = rpc:call(Node, riak_core, staged_join, [PNode]),
-    ct:log("[join] ~p to (~p): ~p", [Node, PNode, R]),
-    ?assertEqual(ok, R),
-    ok.
-
-
-plan_and_commit(Node) ->
-    timer:sleep(100),
-    ct:log("planning and committing cluster join"),
-    case rpc:call(Node, riak_core_claimant, plan, []) of
-        {error, ring_not_ready} ->
-            ct:log("plan: ring not ready"),
-            riak_utils:maybe_wait_for_changes(Node),
-            plan_and_commit(Node);
-        {ok, _, _} ->
-            do_commit(Node)
-    end.
-
-
-do_commit(Node) ->
-    ct:log("Committing"),
-    case rpc:call(Node, riak_core_claimant, commit, []) of
-        {error, plan_changed} ->
-            ct:log("commit: plan changed"),
-            timer:sleep(100),
-            riak_utils:maybe_wait_for_changes(Node),
-            plan_and_commit(Node);
-        {error, ring_not_ready} ->
-            ct:log("commit: ring not ready"),
-            timer:sleep(100),
-            riak_utils:maybe_wait_for_changes(Node),
-            do_commit(Node);
-        {error, nothing_planned} ->
-            %% Assume plan actually committed somehow
-            ok;
-        ok ->
-            ok
-    end
-.
-
-try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
-      ct:log("Nodes not ready after initial plan/commit, retrying"),
-      plan_and_commit(Node1);
-try_nodes_ready(Nodes, N, SleepMs) ->
-  ReadyNodes = [Node || Node <- Nodes, is_ready(Node) =:= true],
-  case ReadyNodes of
-      Nodes ->
-          ok;
-      _ ->
-          try_nodes_ready(Nodes, N-1, SleepMs)
-  end.
-
-
-%% @doc Given a list of nodes, wait until all nodes are considered ready.
-%%      See {@link wait_until_ready/1} for definition of ready.
-wait_until_nodes_ready(Nodes) ->
-    ct:log("Wait until nodes are ready : ~p", [Nodes]),
-    [?assertEqual(ok, time_utils:wait_until(Node, fun is_ready/1)) || Node <- Nodes],
-    ok.
-
-
-%% @private
-is_ready(Node) ->
-    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
-        {ok, Ring} ->
-            case lists:member(Node, riak_core_ring:ready_members(Ring)) of
-                true -> true;
-                false -> {not_ready, Node}
-            end;
-        Other ->
-            Other
-    end.
-
-
-wait_until_nodes_agree_about_ownership(Nodes) ->
-    ct:log("Wait until nodes agree about ownership ~p", [Nodes]),
-    Results = [ time_utils:wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
-    ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
+web_ports(clusterdev4) -> 10145;
+web_ports(clusterdev5) -> 10155;
+web_ports(clusterdev6) -> 10165.
 
 
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
-    ct:log("Building cluster"),
+    ClusterAndDcConfiguration = [[dev1, dev2], [dev3], [dev4]],
 
     StartDCs = fun(Nodes) ->
-                      pmap(fun(N) -> start_node(N, Config) end, Nodes)
+        %% start each node
+        Cl = pmap(fun(N) ->
+            start_node(N, Config)
                   end,
+            Nodes),
+        [{Status, Claimant} | OtherNodes] = Cl,
 
-    Clusters = pmap(
-            fun(N) -> StartDCs(N) end,
-            [[dev1, dev2], [dev3], [dev4]]
-        ),
+        %% check if node was reused or not
+        case Status of
+            ready -> ok;
+            connect ->
+                ct:pal("Creating a ring for claimant ~p and other nodes ~p", [Claimant, unpack(OtherNodes)]),
+                ok = rpc:call(Claimant, antidote_dc_manager, add_nodes_to_dc, [unpack(Cl)])
+        end,
+        Cl
+               end,
+
+    Clusters = pmap(fun(Cluster) ->
+        StartDCs(Cluster)
+                    end, ClusterAndDcConfiguration),
+
+    %% DCs started, but not connected yet
+    pmap(fun([{Status, MainNode} | _] = CurrentCluster) ->
+        case Status of
+            ready -> ok;
+            connect ->
+                ct:pal("~p of ~p subscribing to other external DCs", [MainNode, unpack(CurrentCluster)]),
+
+                Descriptors = lists:foldl(fun([{_Status, FirstNode} | _], Descriptors) ->
+                    {ok, Descriptor} = rpc:call(FirstNode, antidote_dc_manager, get_connection_descriptor, []),
+                    Descriptors ++ [Descriptor]
+                                          end, [], Clusters),
+
+                %% subscribe to descriptors of other dcs
+                ok = rpc:call(MainNode, antidote_dc_manager, subscribe_updates_from, [Descriptors])
+        end
+         end, Clusters),
 
 
-   [Cluster1, Cluster2, Cluster3] = Clusters,
-   %% Do not join cluster if it is already done
-   case riak_utils:owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
-     Cluster1 ->
-         ok; % No need to build Cluster
-     _ ->
-        [join_cluster(Cluster) || Cluster <- Clusters],
-        Clusterheads = [hd(Cluster) || Cluster <- Clusters],
-        connect_cluster(Clusterheads)
-   end,
-
-   ct:log("Cluster joined and connected: ~p  ~p  ~p", [Cluster1, Cluster2, Cluster3]),
-   [Cluster1, Cluster2, Cluster3].
+    ct:log("Clusters joined and data centers connected connected: ~p", [ClusterAndDcConfiguration]),
+    [unpack(DC) || DC <- Clusters].
 
 
 bucket(BucketBaseAtom) ->
@@ -465,3 +349,39 @@ bucket(BucketBaseAtom) ->
     Bucket = list_to_atom(atom_to_list(BucketBaseAtom) ++ BucketRandomSuffix),
     ct:log("Using random bucket: ~p", [Bucket]),
     Bucket.
+
+
+%% logger configuration for each level
+%% see http://erlang.org/doc/man/logger.html
+log_config(LogDir) ->
+    DebugConfig = #{level => debug,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "debug.log")}}},
+
+    InfoConfig = #{level => info,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "info.log")}}},
+
+    NoticeConfig = #{level => notice,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "notice.log")}}},
+
+    WarningConfig = #{level => warning,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "warning.log")}}},
+
+    ErrorConfig = #{level => error,
+        formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        config => #{type => {file, filename:join(LogDir, "error.log")}}},
+
+    [
+        {handler, debug_antidote, logger_std_h, DebugConfig},
+        {handler, info_antidote, logger_std_h, InfoConfig},
+        {handler, notice_antidote, logger_std_h, NoticeConfig},
+        {handler, warning_antidote, logger_std_h, WarningConfig},
+        {handler, error_antidote, logger_std_h, ErrorConfig}
+    ].
+
+-spec unpack([{ready | connect, atom()}]) -> [atom()].
+unpack(NodesWithStatus) ->
+    [Node || {_Status, Node} <- NodesWithStatus].

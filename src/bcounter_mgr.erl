@@ -52,6 +52,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -record(state, {req_queue :: orddict:orddict(),
                 last_transfers :: orddict:orddict(),
@@ -69,7 +70,6 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    logger:info("Started Bounded counter manager at node ~p", [node()]),
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 
@@ -78,13 +78,13 @@ init([]) ->
 %% below 0), operation fails, otherwhise a downstream for the decrement
 %% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     gen_server:call(?MODULE, {consume, Key, {decrement, {V, MyDCId}}, BCounter});
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
 generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 
 %% @doc Processes a trasfer operation between two owners of the
@@ -102,7 +102,7 @@ process_transfer({transfer, TransferOp}) ->
 
 handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=State) ->
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case can_process(Key, Requester, NewLT) of
         true ->
             {SKey, Bucket} = Key,
@@ -115,7 +115,7 @@ handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=Stat
     end.
 
 handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case ?DATA_TYPE:generate_downstream_check({Op, Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
             Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
@@ -166,7 +166,7 @@ queue_request(Key, Amount, RequestsQueue) ->
 request_remote(0, _Key) -> 0;
 
 request_remote(RequiredSum, Key) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     {SKey, Bucket} = Key,
     BObj = {SKey, ?DATA_TYPE, Bucket},
     {ok, [Obj], _} = antidote:read_objects(ignore, [], [BObj]),
@@ -194,7 +194,7 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
 
 %% Orders the reservation of each DC, from high to low.
 pref_list(Obj) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
     OtherDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
                                      case Id == MyDCId of
@@ -227,7 +227,7 @@ clear_pending_req(LastRequests, Period) ->
                    end , LastRequests).
 
 can_process(Key, Requester, LastTransfers) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case Requester == MyDCId of
         false ->
             case orddict:find({Key, Requester}, LastTransfers) of

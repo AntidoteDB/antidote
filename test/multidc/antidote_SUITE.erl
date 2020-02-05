@@ -43,9 +43,13 @@
 
 %% tests
 -export([
+         recreate_dc/1,
          dummy_test/1,
-         random_test/1
-        ]).
+         random_test/1,
+         shard_count/1,
+         dc_count/1,
+         meta_data_env_test/1
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -67,14 +71,54 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
+     recreate_dc,
+     shard_count,
+     dc_count,
      dummy_test,
-     random_test
+     random_test,
+     meta_data_env_test
     ].
 
+%% Tests that add_nodes_to_dc is idempotent
+%% calling it again on each node of a dc should have no effect
+recreate_dc(Config) ->
+    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+
+    ok = rpc:call(Node1, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+    ok = rpc:call(Node1, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+    ok = rpc:call(Node2, antidote_dc_manager, add_nodes_to_dc, [[Node1, Node2]]),
+
+    ok.
+
+dc_count(Config) ->
+    [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
+
+    %% Check external DC count
+    DCs1 = rpc:call(Node1, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs2 = rpc:call(Node2, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_descriptors, []),
+    DCs4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_descriptors, []),
+
+    ?assertEqual({3,3,3,3}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
+    ok.
+
+
+shard_count(Config) ->
+    [[Node1, Node2], [Node3], [Node4]] = proplists:get_value(clusters, Config),
+
+    %% Check sharding count
+    Shards1 = rpc:call(Node1, dc_utilities, get_my_dc_nodes, []),
+    Shards2 = rpc:call(Node2, dc_utilities, get_my_dc_nodes, []),
+    Shards3 = rpc:call(Node3, dc_utilities, get_my_dc_nodes, []),
+    Shards4 = rpc:call(Node4, dc_utilities, get_my_dc_nodes, []),
+
+    ?assertEqual({2,2,1,1}, {length(Shards1), length(Shards2), length(Shards3), length(Shards4)}),
+    ok.
 
 dummy_test(Config) ->
     Bucket = ?BUCKET,
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    [[Node1, Node2] | _] = proplists:get_value(clusters, Config),
+    [Node1, Node2] = proplists:get_value(nodes, Config),
     Key = antidote_key,
     Type = antidote_crdt_counter_pn,
     Object = {Key, Type, Bucket},
@@ -96,7 +140,7 @@ dummy_test(Config) ->
 
 
 %% Test that perform NumWrites increments to the key:key1.
-%%      Each increment is sent to a random node of the cluster.
+%%      Each increment is sent to a random node of a random DC.
 %%      Test normal behavior of the antidote
 %%      Performs a read to the first node of the cluster to check whether all the
 %%      increment operations where successfully applied.
@@ -104,12 +148,12 @@ dummy_test(Config) ->
 %%              Nodes: List of the nodes that belong to the built cluster
 random_test(Config) ->
     Bucket = ?BUCKET,
-    Nodes = proplists:get_value(nodes, Config),
+    Nodes = lists:flatten(proplists:get_value(clusters, Config)),
     N = length(Nodes),
 
     % Distribute the updates randomly over all DCs
     NumWrites = 100,
-    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid non-determinism in tests
+    ListIds = [rand:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid non-determinism in tests
 
     Obj = {log_test_key1, antidote_crdt_counter_pn, Bucket},
     F = fun(Elem) ->
@@ -130,3 +174,31 @@ random_test(Config) ->
     Retry = 360000 div Delay, %wait for max 1 min
     ok = time_utils:wait_until_result(G, NumWrites, Retry, Delay),
     pass.
+
+
+%% tests the meta data broadcasting mechanism for environment variables
+meta_data_env_test(Config) ->
+    [[Node1, Node2] | _] = proplists:get_value(clusters, Config),
+    DC = [Node1, Node2],
+
+    %% save old value, each node should have the same value
+    OldValue = rpc:call(Node1, dc_meta_data_utilities, get_env_meta_data, [sync_log, undefined]),
+    OldValue = rpc:call(Node2, dc_meta_data_utilities, get_env_meta_data, [sync_log, undefined]),
+
+    %% turn on sync and check for each node if update was propagated
+    ok = rpc:call(Node1, logging_vnode, set_sync_log, [true]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == true end)
+                  end, DC),
+
+    %% turn off sync and check for each node if update was propagated
+    ok = rpc:call(Node2, logging_vnode, set_sync_log, [false]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == false end)
+                  end, DC),
+
+    %% restore sync and check for each node if update was propagated
+    ok = rpc:call(Node1, logging_vnode, set_sync_log, [OldValue]),
+    lists:foreach(fun(Node) ->
+        time_utils:wait_until(fun() -> Value = rpc:call(Node, logging_vnode, is_sync_log, []), Value == OldValue end)
+                  end, DC).

@@ -32,6 +32,8 @@
 
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
@@ -93,7 +95,7 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem_server:read_property_list(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+-spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem:read_property_list(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
     OpsCache = get_cache_name(Partition, ops_cache),
     SnapshotCache = get_cache_name(Partition, snapshot_cache),
@@ -122,7 +124,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
-                    logger:debug("Trying to recover the materializer from log ~p", [Partition]),
+                    ?LOG_DEBUG("Trying to recover the materializer from log ~p", [Partition]),
                     riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
                     false;
                 _ ->
@@ -193,17 +195,17 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
     IsReady = try
                 case load_from_log_to_tables(Partition, State) of
                     ok ->
-                        logger:debug("Finished loading from log to materializer on partition ~w", [Partition]),
+                        ?LOG_DEBUG("Finished loading from log to materializer on partition ~w", [Partition]),
                         true;
                     {error, not_ready} ->
                         false;
                     {error, Reason} ->
-                        logger:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+                        ?LOG_ERROR("Unable to load logs from disk: ~w, continuing", [Reason]),
                         true
                 end
             catch
                 _:Reason1 ->
-                    logger:debug("Error loading from log ~w, will retry", [Reason1]),
+                    ?LOG_DEBUG("Error loading from log ~w, will retry", [Reason1]),
                     false
             end,
     ok = case IsReady of
@@ -226,7 +228,11 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
             Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
-    {reply, Acc, State}.
+    {reply, Acc, State};
+
+handle_handoff_command(Command, _Sender, State) ->
+    ?LOG_WARNING("Unexpected access to the materializer while in handoff lifecycle: ~p", [Command]),
+    {noreply, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -300,6 +306,7 @@ load_from_log_to_tables(Partition, State) ->
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
         {error, Reason} ->
+            ?LOG_ERROR("Could not load all entries from log ~p and node ~p: ~p", [LogId, Node, Reason]),
             {error, Reason};
         {NewContinuation, NewOps, OpsDict} ->
             load_ops(OpsDict, State),
@@ -326,7 +333,7 @@ open_table(Partition, Name) ->
                 [set, protected, named_table, ?TABLE_CONCURRENCY]);
         _ ->
             %% Other vnode hasn't finished closing tables
-            logger:debug("Unable to open ets table in materializer vnode, retrying"),
+            ?LOG_DEBUG("Unable to open ets table in materializer vnode, retrying"),
             timer:sleep(100),
             try
                 ets:delete(get_cache_name(Partition, Name))
@@ -365,7 +372,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_server:read_property_list(), boolean(), state())
+-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem:read_property_list(), boolean(), state())
            -> {ok, snapshot()} | {error, no_snapshot}.
 
 internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
@@ -832,9 +839,7 @@ concurrent_write_test() ->
     %% Read different snapshots
     {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 1}, {DC2, 0}]), ignore, [], false, State),
     ?assertEqual(1, Type:value(ReadDC1)),
-    io:format("Result1 = ~p", [ReadDC1]),
     {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 0}, {DC2, 1}]), ignore, [], false, State),
-    io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
 
     %% Read snapshot including both increments

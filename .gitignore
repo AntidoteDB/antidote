@@ -12,6 +12,8 @@ dialyzer_warnings
 doc/
 .DS_Store
 logs/
+logger_logs/
+eunit_logs/
 tags
 rel/vars/*.config
 docs/_site/
@@ -30,3 +32,5 @@ test/.rebar3/erlcinfo
 .idea/
 antidote.iml
 edoc/
+#docker local builds uses a tmp dir to fetch build scripts
+docker-tmpdir*

@@ -1,5 +1,6 @@
 REBAR = $(shell pwd)/rebar3
-.PHONY: rel test relgentlerain
+COVERPATH = $(shell pwd)/_build/test/cover
+.PHONY: rel test relgentlerain docker-build docker-run
 
 all: compile
 
@@ -18,15 +19,11 @@ cleantests:
 	rm -f test/multidc/*.beam
 	rm -rf logs/
 
-shell:
-	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
-
-# same as shell, but automatically reloads code when changed
-# to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
-# the tool requires inotifywait (sudo apt install inotify-tools)
-# see https://github.com/vans163/rebar3_auto or http://blog.erlware.org/rebar3-auto-comile-and-load-plugin/
-auto:
-	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+shell: rel
+	export NODE_NAME=antidote@127.0.0.1 ; \
+	export COOKIE=antidote ; \
+	export ROOT_DIR_PREFIX=$$NODE_NAME/ ; \
+	_build/default/rel/antidote/bin/antidote console ${ARGS}
 
 rel:
 	$(REBAR) release
@@ -58,10 +55,13 @@ compile-utils: compile
 	done
 
 test:
-	mkdir -p logs
 	${REBAR} eunit skip_deps=true
 
 coverage:
+	# copy the coverdata files with a wildcard filter
+	# won't work if there are multiple folders (multiple systests)
+	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
+	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
 	${REBAR} cover --verbose
 
 singledc: compile-utils rel
@@ -94,8 +94,14 @@ dialyzer:
 	${REBAR} dialyzer
 
 docker-build:
-	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles
+	tmpdir=`mktemp -d` ; \
+	wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/Dockerfile" -O "$$tmpdir/Dockerfile" ; \
+	docker build -f $$tmpdir/Dockerfile -t antidotedb:local-build .
 
-docker-local:
-	docker run --rm -v $(shell pwd):/code -w /code erlang:21 make rel
-	docker build -f Dockerfiles/Dockerfile-local -t antidotedb/antidote:local .
+docker-run: docker-build
+	docker run -d --name antidote -p "8087:8087" antidotedb:local-build
+
+docker-clean:
+ifneq ($(docker images -q antidotedb:local-build 2> /dev/null), "")
+	docker image rm -f antidotedb:local-build
+endif

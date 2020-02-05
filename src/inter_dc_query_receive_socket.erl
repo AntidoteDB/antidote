@@ -33,10 +33,13 @@
 %% As well as in the sender of the query at inter_dc_query
 
 -module(inter_dc_query_receive_socket).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("antidote_channels/include/antidote_channel.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -113,7 +116,7 @@ init([]) ->
     },
     {ok, Channel} = antidote_channel:start_link(Config),
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    logger:info("Log reader started on port ~p", [Port]),
+    ?LOG_INFO("Log reader started on port ~p", [Port]),
     {ok, #state{channel = Channel}}.
 
 

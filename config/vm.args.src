@@ -1,0 +1,18 @@
+## Name of the node
+-${SHORT_NAME_PREFIX}name ${NODE_NAME}
+
+## Cookie for distributed erlang
+-setcookie ${COOKIE}
+
+## Enable kernel poll and a few async threads
++K true
++A 5
+
+## Tweak GC to run more often
+-env ERL_FULLSWEEP_AFTER 10
+
+## Increase distribution port buffer size.
++zdbbl 32768
+
+## Enable time warp once Issue #226 is fixed
+##+C multi_time_warp

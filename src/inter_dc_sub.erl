@@ -30,10 +30,14 @@
 %% The messages are filter based on a binary prefix.
 
 -module(inter_dc_sub).
+
 -behaviour(gen_server).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("antidote_channels/include/antidote_channel.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 
 %% API
 -export([
@@ -122,7 +126,7 @@ connect_to_nodes([Node | Rest], Acc) ->
     end.
 
 connect_to_node([]) ->
-    logger:error("Unable to subscribe to DC"),
+    ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([{Host, Port} = Address | Rest]) ->
     case antidote_channel:is_alive(channel_zeromq, #pub_sub_zmq_params{host = Host, port = Port}) of

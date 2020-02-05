@@ -1,3 +1,2 @@
-*
-!_build/default/rel/antidote
-!Dockerfiles
+_build
+test
