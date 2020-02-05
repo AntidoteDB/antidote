@@ -38,7 +38,6 @@
     async_read_data_item/4,
     send_min_prepared/1,
     get_active_txns_key/2,
-    get_active_txns/1,
     prepare/2,
     commit/3,
     single_commit/2,
@@ -122,18 +121,6 @@ get_active_txns_key(Key, Partition) ->
             {ok, antidote_ets_txn_caches:get_prepared_txns_by_key(Partition, Key)}
     end.
 
-%% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
-%% should be run from same physical node
-get_active_txns(Partition) ->
-    case antidote_ets_txn_caches:has_prepared_txns_cache(Partition) of
-        false ->
-            riak_core_vnode_master:sync_command({Partition, node()},
-                {get_active_txns},
-                clocksi_vnode_master,
-                infinity);
-        true ->
-            {ok, antidote_ets_txn_caches:get_prepared_txns(Partition)}
-    end.
 
 
 send_min_prepared(Partition) ->
@@ -329,10 +316,6 @@ handle_command({abort, Transaction, Updates}, _Sender,
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
-
-handle_command({get_active_txns}, _Sender,
-    #state{partition = Partition} = State) ->
-    {reply,  {ok, antidote_ets_txn_caches:get_prepared_txns(Partition)}, State};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.

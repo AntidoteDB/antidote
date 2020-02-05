@@ -39,7 +39,6 @@
 
 -export([has_prepared_txns_cache/1,
     get_prepared_txns_by_key/2,
-    get_prepared_txns/1,
     get_prepared_txn_by_key_and_table/2,
     create_prepared_txns_cache/1,
     delete_prepared_txns_cache/1,
@@ -62,11 +61,6 @@ has_prepared_txns_cache(Partition) ->
 -spec get_prepared_txns_by_key(partition_id(), key()) -> list().
 get_prepared_txns_by_key(Partition, Key) ->
     get_prepared_txn_by_key_and_table(get_prepared_cache_name(Partition), Key).
-
--spec get_prepared_txns(partition_id()) -> list().
-get_prepared_txns(Partition) ->
-    EntryList = ets:tab2list(get_prepared_cache_name(Partition)),
-    lists:flatmap(fun({_, List}) -> List end, EntryList).
 
 -spec get_prepared_txn_by_key_and_table(cache_id(), key()) -> list().
 get_prepared_txn_by_key_and_table(Table, Key) ->

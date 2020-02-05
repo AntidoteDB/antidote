@@ -40,7 +40,6 @@
     create_remote_meta_data_table/1,
     insert_meta_data_sender_merged_data/2,
     insert_meta_data/3,
-    get_meta_data/3,
     delete_meta_data_partition/2,
     get_meta_data_sender_merged_data/2,
     remote_table_ready/1,
@@ -77,15 +76,6 @@ insert_meta_data_sender_merged_data(Name, Data) ->
 insert_meta_data(Name, Partition, Data) ->
     ets:insert(get_table_name(Name, ?META_TABLE_NAME), {Partition, Data}).
 
-%% Get meta data for some partition
--spec get_meta_data(atom(), partition_id(), X) -> X.
-get_meta_data(Name, Partition, Default) ->
-    case ets:lookup( get_table_name(Name, ?META_TABLE_NAME), Partition) of
-        [] ->
-            Default;
-        [{Partition, Other}] ->
-            Other
-    end.
 
 %% Remove meta data for partition
 -spec delete_meta_data_partition(atom(), partition_id()) -> true.

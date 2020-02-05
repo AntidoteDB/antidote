@@ -42,7 +42,6 @@
 -export([start_link/1,
     start/1,
     put_meta/3,
-    get_meta/3,
     get_node_list/0,
     get_node_and_partition_list/0,
     get_merged_data/2,
@@ -110,11 +109,6 @@ get_name(Name) ->
 put_meta(Name, Partition, NewData) ->
     true = antidote_ets_meta_data:insert_meta_data(Name, Partition, NewData),
     ok.
-
-%% Get meta data for some partition
--spec get_meta(atom(), partition_id(), X) -> X.
-get_meta(Name, Partition, Default) ->
-    antidote_ets_meta_data:get_meta_data(Name, Partition, Default).
 
 %% Remove meta data for partition
 -spec remove_partition(atom(), partition_id()) -> ok.
