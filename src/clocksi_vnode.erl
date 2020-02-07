@@ -146,12 +146,7 @@ get_active_txns(Partition, TableName) ->
     end.
 
 get_active_txns_internal(TableName) ->
-    ActiveTxs = case ets:tab2list(TableName) of
-                    [] ->
-                        [];
-                    [{Key1, List1} | Rest1] ->
-                        lists:flatmap(fun({_, _List}) -> _List end, [{Key1, List1} | Rest1])
-                end,
+    ActiveTxs = lists:flatmap(fun({_, List}) -> List end, ets:tab2list(TableName)),
     {ok, ActiveTxs}.
 
 send_min_prepared(Partition) ->
