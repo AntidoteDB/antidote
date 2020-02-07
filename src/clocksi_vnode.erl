@@ -150,15 +150,7 @@ get_active_txns_internal(TableName) ->
                     [] ->
                         [];
                     [{Key1, List1} | Rest1] ->
-                        lists:foldl(fun({_Key, List}, Acc) ->
-                            case List of
-                                [] ->
-                                    Acc;
-                                _ ->
-                                    List ++ Acc
-                            end
-                        end,
-                            [], [{Key1, List1} | Rest1])
+                        lists:flatmap(fun({_, _List}) -> _List end, [{Key1, List1} | Rest1])
                 end,
     {ok, ActiveTxs}.
 
