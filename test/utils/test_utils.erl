@@ -329,10 +329,10 @@ set_up_clusters_common(Config) ->
             connect ->
                 ct:pal("~p of ~p subscribing to other external DCs", [MainNode, unpack(CurrentCluster)]),
 
-                Descriptors = lists:foldl(fun([{_Status, FirstNode} | _], Descriptors) ->
+                Descriptors = lists:map(fun([{_Status, FirstNode} | _]) ->
                     {ok, Descriptor} = rpc:call(FirstNode, antidote_dc_manager, get_connection_descriptor, []),
-                    Descriptors ++ [Descriptor]
-                                          end, [], Clusters),
+                    Descriptor
+                                        end, Clusters),
 
                 %% subscribe to descriptors of other dcs
                 ok = rpc:call(MainNode, antidote_dc_manager, subscribe_updates_from, [Descriptors])
