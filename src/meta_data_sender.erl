@@ -42,12 +42,10 @@
 -export([start_link/1,
     start/1,
     put_meta/3,
-    get_meta/3,
     get_node_list/0,
     get_node_and_partition_list/0,
     get_merged_data/2,
     remove_partition/2,
-    get_table_name/2,
     send_meta_data/3,
     callback_mode/0]).
 
@@ -109,45 +107,28 @@ get_name(Name) ->
 %% Insert meta data for some partition
 -spec put_meta(atom(), partition_id(), term()) -> ok.
 put_meta(Name, Partition, NewData) ->
-    MetaTableName = get_table_name(Name, ?META_TABLE_NAME),
-    true = ets:insert(MetaTableName, {Partition, NewData}),
+    true = antidote_ets_meta_data:insert_meta_data(Name, Partition, NewData),
     ok.
-
-%% Get meta data for some partition
--spec get_meta(atom(), partition_id(), X) -> X.
-get_meta(Name, Partition, Default) ->
-    MetaTableName = get_table_name(Name, ?META_TABLE_NAME),
-    case ets:lookup(MetaTableName, Partition) of
-        [] ->
-            Default;
-        [{Partition, Other}] ->
-            Other
-    end.
 
 %% Remove meta data for partition
 -spec remove_partition(atom(), partition_id()) -> ok.
 remove_partition(Name, Partition) ->
-    true = ets:delete(get_table_name(Name, ?META_TABLE_NAME), Partition),
+    true = antidote_ets_meta_data:delete_meta_data_partition(Name, Partition),
     ok.
 
 %% Get merged meta data
 -spec get_merged_data(atom(), X) -> X.
 get_merged_data(Name, Default) ->
-    case ets:lookup(get_table_name(Name, ?META_TABLE_STABLE_NAME), merged_data) of
-        [] ->
-            Default;
-        [{merged_data, Other}] ->
-            Other
-    end.
+    antidote_ets_meta_data:get_meta_data_sender_merged_data(Name, Default).
 
 %% ===================================================================
 %% gen_statem callbacks
 %% ===================================================================
 
 init([Name]) ->
-    _MetaTable = ets:new(get_table_name(Name, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    _StableTable = ets:new(get_table_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
-    true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, Name:initial_merged()}),
+    _MetaTable = antidote_ets_meta_data:create_meta_data_table(Name),
+    _StableTable = antidote_ets_meta_data:create_meta_data_sender_table(Name),
+    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(Name, Name:initial_merged()),
     {ok, send_meta_data, #state{last_result = Name:initial_local(),
                                 name = Name,
                                 should_check_nodes = true}}.
@@ -177,7 +158,7 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                 true ->
                     %% update changed counter for this metadata type
                     %?STATS({metadata_updated, Name}),
-                    true = ets:insert(get_table_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
+                    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(Name, NewResult),
                     NewResult;
                 false ->
                     LastResult
@@ -199,12 +180,7 @@ terminate(_Reason, _SN, _SD) -> ok.
 %% @private
 -spec remote_table_ready(atom()) -> boolean().
 remote_table_ready(Name) ->
-    case ets:info(get_table_name(Name, ?REMOTE_META_TABLE_NAME)) of
-        undefined ->
-            false;
-        _ ->
-            true
-    end.
+    antidote_ets_meta_data:remote_table_ready(Name).
 
 %% @private
 -spec update(atom(), map(), [atom()], fun((atom(), atom(), T) -> any()), fun((atom(), atom()) -> any()), T) -> map().
@@ -233,8 +209,8 @@ get_merged_meta_data(Name, CheckNodes) ->
             not_ready;
         true ->
             {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
-            Remote = maps:from_list(ets:tab2list(get_table_name(Name, ?REMOTE_META_TABLE_NAME))),
-            Local = maps:from_list(ets:tab2list(get_table_name(Name, ?META_TABLE_NAME))),
+            Remote = antidote_ets_meta_data:get_remote_meta_data_as_map(Name),
+            Local = antidote_ets_meta_data:get_meta_data_as_map(Name),
             %% Be sure that you are only checking active nodes
             %% This isn't the most efficient way to do this because are checking the list
             %% of nodes and partitions every time to see if any have been removed/added
@@ -288,10 +264,6 @@ get_node_and_partition_list() ->
     Resize = true,
     {NodeList, PartitionList, Resize}.
 
-%% @private
--spec get_table_name(atom(), atom()) -> atom().
-get_table_name(Name, TableName) ->
-    list_to_atom(atom_to_list(Name) ++ atom_to_list(TableName) ++ atom_to_list(node())).
 
 -ifdef(TEST).
 
@@ -313,18 +285,18 @@ meta_data_sender_test_() ->
 
 start() ->
     MetaType = stable_time_functions,
-    _Table  = ets:new(get_table_name(MetaType, ?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    _Table2 = ets:new(get_table_name(MetaType, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
+    _Table  = antidote_ets_meta_data:create_meta_data_sender_table(MetaType),
+    _Table2 = antidote_ets_meta_data:create_meta_data_table(MetaType),
     _Table3 = ets:new(node_table, [set, named_table, public]),
-    _Table4 = ets:new(get_table_name(MetaType, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
-    true = ets:insert(get_table_name(MetaType, ?META_TABLE_STABLE_NAME), {merged_data, MetaType:initial_merged()}),
+    _Table4 = antidote_ets_meta_data:create_remote_meta_data_table(MetaType),
+    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(MetaType, MetaType:initial_merged()),
     MetaType.
 
 stop(MetaType) ->
-    true = ets:delete(get_table_name(MetaType, ?META_TABLE_STABLE_NAME)),
-    true = ets:delete(get_table_name(MetaType, ?META_TABLE_NAME)),
+    true = antidote_ets_meta_data:delete_meta_data_table(MetaType),
+    true = antidote_ets_meta_data:delete_meta_data_sender_table(MetaType),
     true = ets:delete(node_table),
-    true = ets:delete(get_table_name(MetaType, ?REMOTE_META_TABLE_NAME)),
+    true = antidote_ets_meta_data:delete_remote_meta_data_table(MetaType),
     ok.
 
 -spec set_nodes_and_partitions_and_willchange([node()], [partition_id()], boolean()) -> ok.

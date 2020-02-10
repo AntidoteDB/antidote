@@ -268,7 +268,7 @@ init([Partition]) ->
     LogFile = integer_to_list(Partition),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
-    OpIdTable = ets:new(op_id_table, [set]),
+    OpIdTable = create_op_id_table(),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     ?LOG_DEBUG("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, vectorclock:new()) of
@@ -653,13 +653,13 @@ get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
 -spec update_ets_op_id({log_id(), dcid()} | {log_id(), bucket(), dcid()}, op_number(), cache_id()) -> true.
 update_ets_op_id(Key, NewOp, ClockTable) ->
     #op_number{local = Num, global = GlobalNum} = NewOp,
-    case ets:lookup(ClockTable, Key) of
-        [] ->
-            ets:insert(ClockTable, {Key, NewOp});
-        [{Key, #op_number{local = OldNum, global = OldGlobal}}] ->
+    case get_op_number(ClockTable, Key) of
+        not_found ->
+            insert_op_number(ClockTable, Key, NewOp);
+        {ok, #op_number{local = OldNum, global = OldGlobal}} ->
             case ((Num > OldNum) or (GlobalNum > OldGlobal)) of
                 true ->
-                    ets:insert(ClockTable, {Key, NewOp});
+                    insert_op_number(ClockTable, Key, NewOp);
                 false ->
                     true
             end
@@ -942,12 +942,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            ?LOG_DEBUG("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
+            ?LOG_DEBUG("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, get_op_numbers(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            ?LOG_DEBUG("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), vectorclock:to_list(NewMaxVector)]),
+            ?LOG_DEBUG("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, get_op_numbers(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->
@@ -1032,20 +1032,48 @@ preflist_member(Partition, Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
 
 -spec get_op_id(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}) -> op_number().
-get_op_id(ClockTable, {LogId, DCID}) ->
-    case ets:lookup(ClockTable, {LogId, DCID}) of
-        [] ->
+get_op_id(ClockTable, Key = {_, DCID}) ->
+    case get_op_number(ClockTable, Key) of
+        not_found ->
             #op_number{node = {node(), DCID}, global = 0, local = 0};
-        [{{LogId, DCID}, Val2}] ->
-            Val2
+        {ok, Val} ->
+            Val
     end;
-get_op_id(ClockTable, {LogId, Bucket, DCID}) ->
-    case ets:lookup(ClockTable, {LogId, Bucket, DCID}) of
-        [] ->
+get_op_id(ClockTable, Key = {_, _, DCID}) ->
+    case get_op_number(ClockTable, Key) of
+        not_found ->
             #op_number{node = {node(), DCID}, global = 0, local = 0};
-        [{{LogId, Bucket, DCID}, Val2}] ->
-            Val2
+        {ok, Val} ->
+            Val
     end.
+
+%%%===================================================================
+%%%  Ets tables
+%%%
+%%%  op_id_table: Stores the count of ops appended to each log
+%%%===================================================================
+
+-spec create_op_id_table() -> ets:tab().
+create_op_id_table() ->
+    ets:new(op_id_table, [set]).
+
+-spec get_op_number(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}) -> not_found | {ok, op_number()}.
+get_op_number(ClockTable, Key) ->
+    case ets:lookup(ClockTable, Key) of
+        [] ->
+            not_found;
+        [{Key, Val}] ->
+            {ok, Val}
+    end.
+
+-spec get_op_numbers(cache_id()) -> [{log_id(), dcid(), op_number()} | {log_id(), bucket(), dcid(), op_number()}].
+get_op_numbers(ClockTable) ->
+    ets:tab2list(ClockTable).
+
+-spec insert_op_number(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}, op_number()) -> true.
+insert_op_number(ClockTable, Key, NewOp) ->
+    ets:insert(ClockTable, {Key, NewOp}).
+
 
 -ifdef(TEST).
 

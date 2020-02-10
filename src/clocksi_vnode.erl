@@ -36,10 +36,8 @@
 -export([start_vnode/1,
     read_data_item/5,
     async_read_data_item/4,
-    get_cache_name/2,
     send_min_prepared/1,
-    get_active_txns_key/3,
-    get_active_txns/2,
+    get_active_txns_key/2,
     prepare/2,
     commit/3,
     single_commit/2,
@@ -112,42 +110,19 @@ async_read_data_item(Node, TxId, Key, Type) ->
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
-get_active_txns_key(Key, Partition, TableName) ->
-    case ets:info(TableName) of
-        undefined ->
+get_active_txns_key(Key, Partition) ->
+    case antidote_ets_txn_caches:has_prepared_txns_cache(Partition) of
+        false ->
             riak_core_vnode_master:sync_command({Partition, node()},
                 {get_active_txns, Key},
                 clocksi_vnode_master,
                 infinity);
-        _ ->
-            get_active_txns_key_internal(Key, TableName)
+        true ->
+            {ok, antidote_ets_txn_caches:get_prepared_txns_by_key(Partition, Key)}
     end.
 
-get_active_txns_key_internal(Key, TableName) ->
-    ActiveTxs = case ets:lookup(TableName, Key) of
-                    [] ->
-                        [];
-                    [{Key, List}] ->
-                        List
-                end,
-    {ok, ActiveTxs}.
 
-%% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
-%% should be run from same physical node
-get_active_txns(Partition, TableName) ->
-    case ets:info(TableName) of
-        undefined ->
-            riak_core_vnode_master:sync_command({Partition, node()},
-                {get_active_txns},
-                clocksi_vnode_master,
-                infinity);
-        _ ->
-            get_active_txns_internal(TableName)
-    end.
 
-get_active_txns_internal(TableName) ->
-    ActiveTxs = lists:flatmap(fun({_, List}) -> List end, ets:tab2list(TableName)),
-    {ok, ActiveTxs}.
 
 send_min_prepared(Partition) ->
     dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
@@ -196,14 +171,12 @@ abort(ListofNodes, TxId) ->
             ?CLOCKSI_MASTER)
     end, ListofNodes).
 
-get_cache_name(Partition, Base) ->
-    list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    PreparedTx = open_table(Partition),
-    CommittedTx = ets:new(committed_tx, [set]),
+    PreparedTx = antidote_ets_txn_caches:create_prepared_txns_cache(Partition),
+    CommittedTx = create_committed_txns_cache(),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
@@ -238,34 +211,12 @@ check_table_ready([{Partition, Node} | Rest]) ->
             false
     end.
 
-open_table(Partition) ->
-    case ets:info(get_cache_name(Partition, prepared)) of
-    undefined ->
-        ets:new(get_cache_name(Partition, prepared),
-            [set, protected, named_table, ?TABLE_CONCURRENCY]);
-    _ ->
-        %% Other vnode hasn't finished closing tables
-        ?LOG_DEBUG("Unable to open ets table in clocksi vnode, retrying"),
-        timer:sleep(100),
-        try
-        ets:delete(get_cache_name(Partition, prepared))
-        catch
-        _:_Reason->
-            ok
-        end,
-        open_table(Partition)
-    end.
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
 handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
-    Result = case ets:info(get_cache_name(Partition, prepared)) of
-                 undefined ->
-                     false;
-                 _ ->
-                     true
-             end,
+    Result = antidote_ets_txn_caches:has_prepared_txns_cache(Partition),
     {reply, Result, SD0};
 
 handle_command({send_min_prepared}, _Sender,
@@ -367,10 +318,6 @@ handle_command({abort, Transaction, Updates}, _Sender,
             {reply, {error, no_tx_record}, State}
     end;
 
-handle_command({get_active_txns}, _Sender,
-    #state{partition = Partition} = State) ->
-    {reply, get_active_txns_internal(Partition), State};
-
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -405,12 +352,7 @@ handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{partition = Partition} = _State) ->
-    try
-        ets:delete(get_cache_name(Partition, prepared))
-    catch
-        _:Reason ->
-            ?LOG_ERROR("Error closing table ~p", [Reason])
-    end,
+    antidote_ets_txn_caches:delete_prepared_txns_cache(Partition),
     ok.
 
 handle_overload_command(_, _, _) ->
@@ -449,17 +391,12 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
 set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
-    ActiveTxs = case ets:lookup(PreparedTx, Key) of
-                    [] ->
-                        [];
-                    [{Key, List}] ->
-                        List
-                end,
+    ActiveTxs = antidote_ets_txn_caches:get_prepared_txn_by_key_and_table(PreparedTx, Key),
     case lists:keymember(TxId, 1, ActiveTxs) of
         true ->
             set_prepared(PreparedTx, Rest, TxId, Time, Acc);
         false ->
-            true = ets:insert(PreparedTx, {Key, [{TxId, Time} | ActiveTxs]}),
+            true = antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, [{TxId, Time} | ActiveTxs]),
             set_prepared(PreparedTx, Rest, TxId, Time, dict:append_list(Key, ActiveTxs, Acc))
     end.
 
@@ -467,7 +404,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    true = antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]),
     ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p", [{Key, TxId, Time}]),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
@@ -482,7 +419,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
         [{Key, _Type, _Update} | _Rest] ->
         case application:get_env(antidote, txn_cert) of
         {ok, true} ->
-            lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+            lists:foreach(fun({K, _, _}) -> true = insert_committed_txn(CommittedTx, K, TxCommitTime) end,
                   Updates);
         _ ->
             ok
@@ -541,18 +478,13 @@ clean_and_notify(TxId, Updates, #state{
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
 clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
-    ActiveTxs = case ets:lookup(PreparedTx, Key) of
-                    [] ->
-                        [];
-                    [{Key, List}] ->
-                        List
-                end,
+    ActiveTxs = antidote_ets_txn_caches:get_prepared_txn_by_key_and_table(PreparedTx, Key),
     NewActive = lists:keydelete(TxId, 1, ActiveTxs),
     true = case NewActive of
                [] ->
-                   ets:delete(PreparedTx, Key);
+                   antidote_ets_txn_caches:delete_prepared_txn_by_table(PreparedTx, Key);
                _ ->
-                   ets:insert(PreparedTx, {Key, NewActive})
+                   antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, NewActive)
            end,
     clean_prepared(PreparedTx, Rest, TxId).
 
@@ -576,8 +508,8 @@ certification_with_check(_, [], _, _) ->
 certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
     TxLocalStartTime = TxId#tx_id.local_start_time,
     {Key, _, _} = H,
-    case ets:lookup(CommittedTx, Key) of
-        [{Key, CommitTime}] ->
+    case get_committed_txn(CommittedTx, Key) of
+        {ok, CommitTime} ->
             case CommitTime > TxLocalStartTime of
                 true ->
                     false;
@@ -589,7 +521,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
                             false
                     end
             end;
-        [] ->
+        not_found ->
             case check_prepared(TxId, PreparedTx, Key) of
                 true ->
                     certification_with_check(TxId, T, CommittedTx, PreparedTx);
@@ -599,12 +531,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
     end.
 
 check_prepared(_TxId, PreparedTx, Key) ->
-    case ets:lookup(PreparedTx, Key) of
-        [] ->
-            true;
-        _ ->
-            false
-    end.
+    antidote_ets_txn_caches:is_prepared_txn_by_table(PreparedTx, Key).
 
 -spec update_materializer([{key(), type(), effect()}], tx(), non_neg_integer()) ->
     ok | error.
@@ -662,6 +589,33 @@ get_time([{Time, TxId} | Rest], TxIdCheck) ->
         false ->
             get_time(Rest, TxIdCheck)
     end.
+
+
+%%%===================================================================
+%%%  Ets tables
+%%%
+%%%  committed_tx_cache: the transaction commit time of the last committed
+%%%                      transaction for each key.
+%%%===================================================================
+
+-spec create_committed_txns_cache() -> cache_id().
+create_committed_txns_cache() ->
+    ets:new(committed_tx, [set]).
+
+-spec insert_committed_txn(cache_id(), key(), clock_time()) -> true.
+insert_committed_txn(CommittedTxCache, Key, TxCommitTime) ->
+    ets:insert(CommittedTxCache, {Key, TxCommitTime}).
+
+-spec get_committed_txn(cache_id(), key()) -> not_found | {ok, clock_time()}.
+get_committed_txn(CommittedTxCache, Key) ->
+    case ets:lookup(CommittedTxCache, Key) of
+        [{_, CommitTime}] ->
+            {ok, CommitTime};
+        [] ->
+            not_found
+    end.
+
+
 
 -ifdef(TEST).
 

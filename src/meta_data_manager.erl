@@ -76,19 +76,19 @@ add_node(Name, NodeId, Initial) ->
 %% ===================================================================
 
 init([Name]) ->
-    Table = ets:new(meta_data_sender:get_table_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    Table = antidote_ets_meta_data:create_remote_meta_data_table(Name),
     {ok, #state{table = Table}}.
 
 handle_cast({send_meta_data, NodeId, Data}, State = #state{table = Table}) ->
-    true = ets:insert(Table, {NodeId, Data}),
+    true = antidote_ets_meta_data:insert_remote_meta_data(Table, NodeId, Data),
     {noreply, State};
 
 handle_cast({add_node, NodeId, Initial}, State = #state{table = Table}) ->
-    ets:insert_new(Table, {NodeId, Initial}),
+    true = antidote_ets_meta_data:insert_remote_meta_data_new(Table, NodeId, Initial),
     {noreply, State};
 
 handle_cast({remove_node, NodeId}, State = #state{table = Table}) ->
-    ets:delete(Table, NodeId),
+    true = antidote_ets_meta_data:delete_remote_meta_data_node(Table, NodeId),
     {noreply, State};
 
 handle_cast(_Info, State) ->

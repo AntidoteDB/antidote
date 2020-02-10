@@ -72,26 +72,21 @@ start_link() ->
 
 -spec check_tables_ready() -> boolean().
 check_tables_ready() ->
-    case ets:info(?TABLE_NAME) of
-        undefined ->
-            false;
-        _ ->
-            true
-    end.
+    has_stable_meta_data_table().
 
 %% Reads the value of a key stored in the table
 -spec read_meta_data(term()) -> {ok, term()} | error.
 read_meta_data(Key) ->
-    case ets:lookup(?TABLE_NAME, Key) of
-        [] ->
+    case get_value_from_stable_meta_data_table(Key) of
+        not_found ->
             error;
-        [{Key, Value}]->
+        {ok, Value}->
             {ok, Value}
     end.
 
 -spec read_all_meta_data() -> [tuple()].
 read_all_meta_data() ->
-    ets:tab2list(?TABLE_NAME).
+    get_all_values_from_stable_meta_data_table().
 
 %% Tells each node in the DC to broadcast all its entries to all other DCs
 -spec sync_meta_data() -> ok.
@@ -144,7 +139,7 @@ init([]) ->
     Path = filename:join(DataDir, ?TABLE_NAME),
 
     {ok, DetsTable} = dets:open_file(Path, [{type, set}]),
-    Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
+    Table = create_stable_meta_data_table(),
 
     LoadFromDisk = application:get_env(antidote, recover_meta_data_on_start, false),
 
@@ -171,33 +166,33 @@ handle_call({update_meta_data, KeyValueList, IsEnv}, _Sender, State = #state{tab
                   end, KeyValueList);
         false -> ok
     end,
-    true = ets:insert(Table, KeyValueList),
+    true = insert_meta_data(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
     ok = dets:sync(DetsTable),
     %?STATS(metadata_update_stable),
     {reply, ok, State};
 
 handle_call({merge_meta_data, Key, Value, MergeFunc, InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
-    Prev = case ets:lookup(Table, Key) of
-               [] ->
+    Prev = case get_value_by_table(Table, Key) of
+               not_found ->
                   InitFunc();
-               [{Key, PrevVal}]->
+               {ok, PrevVal}->
                   PrevVal
            end,
-    true = ets:insert(Table, {Key, MergeFunc(Value, Prev)}),
+    true = insert_meta_data(Table, {Key, MergeFunc(Value, Prev)}),
     ok = dets:insert(DetsTable, {Key, MergeFunc(Value, Prev)}),
     ok = dets:sync(DetsTable),
     {reply, ok, State};
 
 handle_call({sync_meta_data, NewList}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
-    true = ets:insert(Table, NewList),
+    true = insert_meta_data(Table, NewList),
     ok = dets:insert(DetsTable, NewList),
     ok = dets:sync(DetsTable),
     {reply, ok, State};
 
 handle_call({broadcast_meta_data}, _Sender, State = #state{table = Table}) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
-    List = ets:tab2list(Table),
+    List = get_all_values_by_table(Table),
     ok = lists:foreach(fun(Node) ->
                            ok = gen_server:call({global, generate_server_name(Node)}, {sync_meta_data, List})
                        end, NodeList),
@@ -219,3 +214,47 @@ code_change(_OldVsn, State, _Extra) ->
 
 generate_server_name(Node) ->
     list_to_atom("stable_meta_data" ++ atom_to_list(Node)).
+
+%%%===================================================================
+%%%  Ets tables
+%%%
+%%%  a_stable_meta_data_table
+%%%===================================================================
+
+-spec create_stable_meta_data_table() -> ets:tid().
+create_stable_meta_data_table() ->
+    ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]).
+
+-spec has_stable_meta_data_table() -> boolean().
+has_stable_meta_data_table() ->
+    case ets:info(?TABLE_NAME) of
+        undefined ->
+            false;
+        _ ->
+            true
+    end.
+
+-spec get_value_from_stable_meta_data_table(key()) -> not_found | {ok, term()}.
+get_value_from_stable_meta_data_table(Key) ->
+    get_value_by_table(?TABLE_NAME, Key).
+
+-spec get_all_values_from_stable_meta_data_table() -> [term()].
+get_all_values_from_stable_meta_data_table() ->
+    ets:tab2list(?TABLE_NAME).
+
+-spec insert_meta_data(ets:tid(), {key(), term()} | [{key(), term()}]) -> true.
+insert_meta_data(Table, Tuple) ->
+    ets:insert(Table, Tuple).
+
+-spec get_all_values_by_table(ets:tid()) -> [term()].
+get_all_values_by_table(Table) ->
+    ets:tab2list(Table).
+
+-spec get_value_by_table(ets:tid() | atom(), key()) -> not_found | {ok, term()}.
+get_value_by_table(Table, Key) ->
+    case ets:lookup(Table, Key) of
+        [] ->
+            not_found;
+        [{Key, Value}] ->
+            {ok, Value}
+    end.
