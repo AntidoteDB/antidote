@@ -76,8 +76,7 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {f
 perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
-    PreparedCache = clocksi_vnode:get_cache_name(Partition, prepared),
-    case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
+    case check_clock(Key, TxLocalStartTime, Partition) of
         {not_ready, Time} ->
             timer:sleep(Time),
             perform_read_internal(Key, Type, Transaction, PropertyList, Partition);
@@ -89,24 +88,24 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
--spec check_clock(key(), clock_time(), atom(), partition_id()) ->
+-spec check_clock(key(), clock_time(), partition_id()) ->
                          {not_ready, clock_time()} | ready.
-check_clock(Key, TxLocalStartTime, PreparedCache, Partition) ->
+check_clock(Key, TxLocalStartTime, Partition) ->
     Time = dc_utilities:now_microsec(),
     case TxLocalStartTime > Time of
         true ->
             {not_ready, (TxLocalStartTime - Time) div 1000 +1};
         false ->
-            check_prepared(Key, TxLocalStartTime, PreparedCache, Partition)
+            check_prepared(Key, TxLocalStartTime, Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
-%%      being prepared on the tranaction being read, and
+%%      being prepared on the transaction being read, and
 %%      if they could violate the correctness of the read
--spec check_prepared(key(), clock_time(), atom(), partition_id()) ->
+-spec check_prepared(key(), clock_time(), partition_id()) ->
                             ready | {not_ready, ?SPIN_WAIT}.
-check_prepared(Key, TxLocalStartTime, PreparedCache, Partition) ->
-    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition, PreparedCache),
+check_prepared(Key, TxLocalStartTime, Partition) ->
+    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition),
     check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
 -spec check_prepared_list(key(), clock_time(), [{txid(), clock_time()}]) ->
