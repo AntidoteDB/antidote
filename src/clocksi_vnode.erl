@@ -123,17 +123,18 @@ get_active_txns_key(Key, Partition) ->
 
 
 
+
 send_min_prepared(Partition) ->
     dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {prepare, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 
 %% @doc Sends prepare+commit to a single partition
@@ -154,21 +155,21 @@ single_commit_sync([{Node, WriteSet}], TxId) ->
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {commit, TxId, CommitTime, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {abort, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 
 %% @doc Initializes all data structures that vnode needs to track information
