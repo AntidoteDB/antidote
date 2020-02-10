@@ -154,12 +154,12 @@ send_min_prepared(Partition) ->
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {prepare, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 
 %% @doc Sends prepare+commit to a single partition
@@ -180,21 +180,21 @@ single_commit_sync([{Node, WriteSet}], TxId) ->
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {commit, TxId, CommitTime, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
-    lists:foldl(fun({Node, WriteSet}, _Acc) ->
+    lists:foreach(fun({Node, WriteSet}) ->
         riak_core_vnode_master:command(Node,
             {abort, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+    end, ListofNodes).
 
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
