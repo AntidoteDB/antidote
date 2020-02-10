@@ -196,18 +196,9 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
 pref_list(Obj) ->
     MyDCId = dc_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
-    OtherDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
-                                     case Id == MyDCId of
-                                         true -> IdsList;
-                                         false -> [Id | IdsList]
-                                     end
-                             end, [], OtherDCDescriptors),
-    lists:sort(
-      fun({_, A}, {_, B}) -> A =< B end,
-      lists:foldl(fun(Id, Accum) ->
-                          Permissions = ?DATA_TYPE:localPermissions(Id, Obj),
-                          [{Id, Permissions} | Accum]
-                  end, [], OtherDCIds)).
+    OtherDCIds = [ Id || #descriptor{dcid=Id} <- OtherDCDescriptors, Id /= MyDCId ],
+    OtherDCPermissions = [ {Id, ?DATA_TYPE:localPermissions(Id, Obj)} || Id <- OtherDCIds],
+    lists:sort(fun({_, A}, {_, B}) -> A =< B end, OtherDCPermissions).
 
 %% Request response - do nothing.
 request_response(_BinaryRep, _RequestCacheEntry) -> ok.
