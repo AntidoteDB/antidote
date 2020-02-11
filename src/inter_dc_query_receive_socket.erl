@@ -115,7 +115,7 @@ init([]) ->
         }
     },
     {ok, Channel} = antidote_channel:start_link(Config),
-    _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
     ?LOG_INFO("Log reader started on port ~p", [Port]),
     {ok, #state{channel = Channel}}.
 
