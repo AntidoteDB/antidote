@@ -52,7 +52,6 @@
   check_staleness/0,
   check_registered/1,
   get_scalar_stable_time/0,
-  get_partition_snapshot/1,
   get_stable_snapshot/0,
   check_registered_global/1,
   now_microsec/0,
@@ -269,17 +268,6 @@ get_stable_snapshot() ->
                             {ok, vectorclock:set_all(GST, StableSnapshot)}
                     end
             end
-    end.
-
--spec get_partition_snapshot(partition_id()) -> vectorclock:vectorclock().
-get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta(stable_time_functions, Partition, vectorclock:new()) of
-        undefined ->
-            %% The partition isn't ready yet, wait for startup
-            timer:sleep(10),
-            get_partition_snapshot(Partition);
-        SS ->
-            SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
