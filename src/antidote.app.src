@@ -6,11 +6,9 @@
         kernel,
         stdlib,
         riak_core,
-        cuttlefish,
         runtime_tools,
         tools,
         antidote_stats,
-        lager,
         ranch
     ]},
     {included_applications, [

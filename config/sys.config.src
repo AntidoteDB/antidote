@@ -1,6 +1,5 @@
 [
   "network.config",
-  "lager.config",
 
   %% logger config
   {kernel, [
