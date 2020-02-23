@@ -25,6 +25,11 @@
 %% List of the contributors to the development of Antidote: see AUTHORS file.
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
+
+%% @doc Implements application callbacks, starts the antidote supervisor
+%% process, registers riak_core applications and stops the server
+%%
+
 -module(antidote_app).
 
 -include_lib("kernel/include/logger.hrl").
