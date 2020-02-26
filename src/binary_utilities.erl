@@ -26,6 +26,7 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utility functions for binary inter_dc messages.
 -module(binary_utilities).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").

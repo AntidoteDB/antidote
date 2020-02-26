@@ -26,6 +26,8 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Responsible for generating the object versions requested by clients.
+
 -module(materializer).
 -include("antidote.hrl").
 

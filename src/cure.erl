@@ -26,6 +26,15 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides a transaction API based on the CURE protocol
+%%      to replicate updates from one cluster to another.
+%%      CURE provides causal consistency along with high availability
+%%      and enables the updates to be made asynchronously.
+%%      CURE also allows applications to pack reads and writes to
+%%      multiple objects in a transaction.
+%%      CURE assumes each DC to keep the same number of partitions.
+%%      Link to the paper: https://pages.lip6.fr/Marc.Shapiro/papers/Cure-final-ICDCS16.pdf
+
 -module(cure).
 
 -include("antidote.hrl").

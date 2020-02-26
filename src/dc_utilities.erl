@@ -26,6 +26,9 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utility functions for data centers.
+%%      Note: This module acts as an adapter for raik_core.
+
 -module(dc_utilities).
 
 -include("antidote.hrl").

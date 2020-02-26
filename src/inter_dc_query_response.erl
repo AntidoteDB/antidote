@@ -26,6 +26,10 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Starts a GenServer process and exposes an API to get node entries
+%%      and permissions.
+%%      Entries are values stored in different partitions of a DC.
+
 -module(inter_dc_query_response).
 -behaviour(gen_server).
 

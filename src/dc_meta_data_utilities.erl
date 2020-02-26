@@ -26,6 +26,9 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utilities to retrieve and store dc metadata like
+%%      env variables and descriptors.
+
 -module(dc_meta_data_utilities).
 
 -include("antidote.hrl").
