@@ -27,7 +27,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Provides utility functions for data centers.
-%%      Note: This module acts as an adapter for raik_core.
+%%      Note: This module acts as an adapter for riak_core.
 
 -module(dc_utilities).
 
