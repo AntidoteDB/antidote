@@ -27,8 +27,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Provides an API to read and write to the materializer cache.
-%%      Materializer is partioned as per the CURE protocol. Partitions
-%%      are actually vnodes hence we use raik_core_vnode here.
+%%      Materializer is partioned as per the CURE protocol.
 
 -module(materializer_vnode).
 
