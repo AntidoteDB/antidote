@@ -25,14 +25,6 @@
 %% List of the contributors to the development of Antidote: see AUTHORS file.
 %% Description and complete License: see LICENSE file.
 
-%% -------------------------------------------------------------------
-%% -*- coding: utf-8 -*-
-%% --------------------------------------------------------------------------
-%%
-%% antidote_crdt_counter_b: A convergent, replicated, operation-based bounded counter.
-%%
-%% --------------------------------------------------------------------------
-
 %% @doc
 %% An operation based implementation of the bounded counter CRDT.
 %% This counter is able to maintain a non-negative value by
@@ -68,10 +60,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([antidote_crdt_counter_b/0, binary_antidote_crdt_counter_b/0, antidote_crdt_counter_b_op/0, id/0]).
-
 -type antidote_crdt_counter_b() :: {orddict:orddict(), orddict:orddict()}.
--type binary_antidote_crdt_counter_b() :: binary().
 -type antidote_crdt_counter_b_op() :: antidote_crdt_counter_b_anon_op() | antidote_crdt_counter_b_src_op().
 -type antidote_crdt_counter_b_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.

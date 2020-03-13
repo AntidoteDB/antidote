@@ -59,9 +59,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([antidote_crdt_register_mv/0, antidote_crdt_register_mv_op/0]).
-
-%% TODO: make opaque
 -type antidote_crdt_register_mv() :: [{term(), uniqueToken()}].
 -type uniqueToken() :: term().
 -type antidote_crdt_register_mv_effect() ::

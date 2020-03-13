@@ -71,8 +71,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([antidote_crdt_set_aw/0, binary_antidote_crdt_set_aw/0, antidote_crdt_set_aw_op/0]).
--opaque antidote_crdt_set_aw() :: orddict:orddict(member(), tokens()).
+-type antidote_crdt_set_aw() :: orddict:orddict(member(), tokens()).
 
 -type binary_antidote_crdt_set_aw() :: binary(). %% A binary that from_binary/1 will operate on.
 

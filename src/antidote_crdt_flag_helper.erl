@@ -44,8 +44,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([flag/0, binary_flag/0, op/0]).
--opaque flag() :: tokens().
+-export_type([tokens/0, binary_flag/0, op/0]).
 
 -type binary_flag() :: binary(). %% A binary that from_binary/1 will operate on.
 

@@ -51,9 +51,7 @@
           require_state_downstream/1
         ]).
 
--export_type([antidote_crdt_register_lww/0, antidote_crdt_register_lww_op/0]).
-
--opaque antidote_crdt_register_lww() :: {non_neg_integer(), term()}.
+-type antidote_crdt_register_lww() :: {non_neg_integer(), term()}.
 
 -type antidote_crdt_register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
 

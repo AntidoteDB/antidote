@@ -54,8 +54,7 @@
 -define(TAG, 77).
 -define(V1_VERS, 1).
 
--export_type([flag_dw/0]).
--opaque flag_dw() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
+-type flag_dw() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
 
 %% SeenTokens, NewEnableTokens, NewDisableTokens
 -type downstream_op() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
