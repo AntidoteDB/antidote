@@ -100,22 +100,22 @@ update({Token, Value}, FatCtr) ->
     % insert new value
     {ok, orddict:store(Token, Value, FatCtr)};
 update(Overridden, FatCtr) ->
-  {ok, apply_downstreams(Overridden, FatCtr)}.
+    {ok, apply_downstreams(Overridden, FatCtr)}.
 
 %% @private apply a list of downstream ops to a given orset
 apply_downstreams([], FatCtr) ->
-  FatCtr;
+    FatCtr;
 apply_downstreams(_Tokens, []) ->
-  [];
+    [];
 apply_downstreams([Token1|TokensRest]=Tokens, [{Token2, Value2}|FatCtrRest]=FatCtr) ->
-  if
-    Token1 == Token2 ->
-      apply_downstreams(TokensRest, FatCtrRest);
-    Token1 > Token2 ->
-      [{Token2, Value2} | apply_downstreams(Tokens, FatCtrRest)];
-    true ->
-      apply_downstreams(TokensRest, FatCtr)
-  end.
+    if
+        Token1 == Token2 ->
+            apply_downstreams(TokensRest, FatCtrRest);
+        Token1 > Token2 ->
+            [{Token2, Value2} | apply_downstreams(Tokens, FatCtrRest)];
+        true ->
+            apply_downstreams(TokensRest, FatCtr)
+    end.
 
 -spec equal(state(), state()) -> boolean().
 equal(FatCtr1, FatCtr2) ->
@@ -134,7 +134,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     {ok, antidote_crdt:from_binary(Bin)}.
 
 is_bottom(FatCtr) ->
-  FatCtr == new().
+    FatCtr == new().
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
@@ -145,7 +145,7 @@ is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(Op) ->
-  Op == {reset, {}}.
+    Op == {reset, {}}.
 
 
 

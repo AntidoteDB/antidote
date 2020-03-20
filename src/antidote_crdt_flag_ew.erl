@@ -61,31 +61,31 @@
 
 -spec new() -> flag_ew().
 new() ->
-  [].
+    [].
 
 -spec value(flag_ew()) -> boolean().
 value(EnableTokens) ->
-  EnableTokens =/= [].
+    EnableTokens =/= [].
 
 -spec downstream(antidote_crdt_flag_helper:op(), flag_ew()) -> {ok, downstream_op()}.
 downstream({disable, {}}, Tokens) ->
-  {ok, {Tokens, []}};
+    {ok, {Tokens, []}};
 downstream({enable, {}}, Tokens) ->
-  {ok, {Tokens, [antidote_crdt_flag_helper:unique()]}};
+    {ok, {Tokens, [antidote_crdt_flag_helper:unique()]}};
 downstream({reset, {}}, Tokens) ->
-  {ok, {Tokens, []}}.
+    {ok, {Tokens, []}}.
 
 -spec update(downstream_op(), flag_ew()) -> {ok, flag_ew()}.
-  update({SeenTokens, NewTokens}, CurrentTokens) ->
+update({SeenTokens, NewTokens}, CurrentTokens) ->
     FinalTokens = (CurrentTokens ++ NewTokens) -- SeenTokens,
     {ok, FinalTokens}.
 
 -spec equal(flag_ew(), flag_ew()) -> boolean().
-  equal(Flag1, Flag2) ->
+equal(Flag1, Flag2) ->
     Flag1 == Flag2. % Everything inside is ordered, so this should work
 
 -spec to_binary(flag_ew()) -> antidote_crdt_flag_helper:binary_flag().
-  to_binary(Flag) ->
+to_binary(Flag) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
 
@@ -96,7 +96,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 is_operation(A) -> antidote_crdt_flag_helper:is_operation(A).
 
 is_bottom(Flag) ->
-  Flag == new().
+    Flag == new().
 
 require_state_downstream(A) -> antidote_crdt_flag_helper:require_state_downstream(A).
 
@@ -105,23 +105,23 @@ require_state_downstream(A) -> antidote_crdt_flag_helper:require_state_downstrea
 %% ===================================================================
 -ifdef(TEST).
 
-  prop1_test() ->
-  Flag0 = new(),
-  % DC1 add a
-  {ok, Enable1Effect} = downstream({enable, {}}, Flag0),
-  {ok, Flag1a} = update(Enable1Effect, Flag0),
-  % DC1 reset
-  {ok, Reset1Effect} = downstream({reset, {}}, Flag1a),
-  {ok, Flag1b} = update(Reset1Effect, Flag1a),
+prop1_test() ->
+    Flag0 = new(),
+    % DC1 add a
+    {ok, Enable1Effect} = downstream({enable, {}}, Flag0),
+    {ok, Flag1a} = update(Enable1Effect, Flag0),
+    % DC1 reset
+    {ok, Reset1Effect} = downstream({reset, {}}, Flag1a),
+    {ok, Flag1b} = update(Reset1Effect, Flag1a),
 
-  io:format("Reset1Effect = ~p~n", [Reset1Effect]),
-  io:format("Enable1Effect = ~p~n", [Enable1Effect]),
+    io:format("Reset1Effect = ~p~n", [Reset1Effect]),
+    io:format("Enable1Effect = ~p~n", [Enable1Effect]),
 
-  io:format("Flag1a = ~p~n", [Flag1a]),
-  io:format("Flag1b = ~p~n", [Flag1b]),
+    io:format("Flag1a = ~p~n", [Flag1a]),
+    io:format("Flag1b = ~p~n", [Flag1b]),
 
-  ?assertEqual(false, value(Flag0)),
-  ?assertEqual(true, value(Flag1a)),
-  ?assertEqual(false, value(Flag1b)).
+    ?assertEqual(false, value(Flag0)),
+    ?assertEqual(true, value(Flag1a)),
+    ?assertEqual(false, value(Flag1b)).
 
 -endif.

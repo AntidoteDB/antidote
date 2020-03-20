@@ -89,8 +89,8 @@ downstream({assign, Value}, MVReg) ->
     Overridden = [Tok || {_, Tok} <- MVReg],
     {ok, {Value, Token, Overridden}};
 downstream({reset, {}}, MVReg) ->
-  Overridden = [Tok || {_, Tok} <- MVReg],
-  {ok, {reset, Overridden}}.
+    Overridden = [Tok || {_, Tok} <- MVReg],
+    {ok, {reset, Overridden}}.
 
 -spec unique() -> uniqueToken().
 unique() ->
@@ -104,8 +104,8 @@ update({Value, Token, Overridden}, MVreg) ->
     % insert new value
     {ok, insert_sorted({Value, Token}, MVreg2)};
 update({reset, Overridden}, MVreg) ->
-  MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
-  {ok, MVreg2}.
+    MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
+    {ok, MVreg2}.
 
 % insert value into sorted list
 insert_sorted(A, []) -> [A];
@@ -163,6 +163,5 @@ reset_test() ->
     R3 = upd({reset, {}}, R2),
     ?assertEqual([], value(R3)),
     ?assertEqual(true, is_bottom(R3)).
-
 
 -endif.

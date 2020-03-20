@@ -56,16 +56,16 @@
 -type antidote_crdt_register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
 
 new() ->
-  {0, <<>>}.
+    {0, <<>>}.
 
 value({_Time, Val}) ->
     Val.
 
 -spec downstream(antidote_crdt_register_lww_op(), antidote_crdt_register_lww()) -> {ok, term()}.
 downstream({assign, Value, Time}, {OldTime, _OldValue}) ->
-  {ok, {max(Time, OldTime + 1), Value}};
+    {ok, {max(Time, OldTime + 1), Value}};
 downstream({assign, Value}, State) ->
-  downstream({assign, Value, make_micro_epoch()}, State).
+    downstream({assign, Value, make_micro_epoch()}, State).
 
 make_micro_epoch() ->
     {Mega, Sec, Micro} = os:timestamp(),
@@ -73,8 +73,8 @@ make_micro_epoch() ->
 
 
 update(Effect, State) ->
-  % take the state with maximum time, if times are equal use maximum state
-  {ok, max(Effect, State)}.
+    % take the state with maximum time, if times are equal use maximum state
+    {ok, max(Effect, State)}.
 
 
 require_state_downstream(_Operation) -> true.
@@ -91,9 +91,13 @@ to_binary(CRDT) ->
     erlang:term_to_binary(CRDT).
 
 from_binary(Bin) ->
-  {ok, erlang:binary_to_term(Bin)}.
+    {ok, erlang:binary_to_term(Bin)}.
 
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
 -ifdef(test).
+
 all_test() ->
     S0 = new(),
     {ok, Downstream} = downstream({assign, a}, S0),
