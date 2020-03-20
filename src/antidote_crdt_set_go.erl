@@ -62,12 +62,12 @@ value(Set) ->
 
 -spec downstream(antidote_crdt_set_go_op(), antidote_crdt_set_go()) -> {ok, antidote_crdt_set_go_effect()}.
 downstream({add, Elem}, _State) ->
-  {ok, ordsets:from_list([Elem])};
+    {ok, ordsets:from_list([Elem])};
 downstream({add_all, Elems}, _State) ->
-  {ok, ordsets:from_list(Elems)}.
+    {ok, ordsets:from_list(Elems)}.
 
 update(Effect, State) ->
-  {ok, ordsets:union(State, Effect)}.
+    {ok, ordsets:union(State, Effect)}.
 
 require_state_downstream(_Operation) -> false.
 
@@ -82,9 +82,13 @@ to_binary(CRDT) ->
     erlang:term_to_binary(CRDT).
 
 from_binary(Bin) ->
-  {ok, erlang:binary_to_term(Bin)}.
+    {ok, erlang:binary_to_term(Bin)}.
 
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
 -ifdef(test).
+
 all_test() ->
     S0 = new(),
     {ok, Downstream} = downstream({add, a}, S0),
