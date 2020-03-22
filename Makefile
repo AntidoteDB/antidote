@@ -1,4 +1,4 @@
-REBAR = rebar3
+REBAR = $(shell pwd)/rebar3
 
 .PHONY: test
 
