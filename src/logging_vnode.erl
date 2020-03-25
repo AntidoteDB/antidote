@@ -31,6 +31,7 @@
 -behaviour(riak_core_vnode).
 
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -54,8 +55,8 @@
          append_commit/3,
          append_group/4,
          asyn_append_group/4,
-         asyn_read_from/3,
-         read_from/3,
+         asyn_read_from_to/4,
+         read_from_to/4,
          get_up_to_time/5,
          get_from_time/5,
            get_range/6,
@@ -93,7 +94,7 @@
                                             %% is sent to the interdc dependency module, so it knows up to
                                         %% what time updates from other DCs have been received (after crash and restart)
         senders_awaiting_ack :: dict:dict(log_id(), sender()),
-        last_read :: term()}).
+        last_read_map ::  dict:dict(log_id(), {log_opid(), disk_log:continuation()})}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -104,18 +105,18 @@ start_vnode(I) ->
 %%      `Preflist' From is the operation id form which the caller wants to
 %%      retrieve the operations.  The operations are retrieved in inserted
 %%      order and the From operation is also included.
--spec asyn_read_from(preflist(), key(), op_id()) -> ok.
-asyn_read_from(Preflist, Log, From) ->
+-spec asyn_read_from_to(preflist(), key(), log_opid(), log_opid()) -> ok.
+asyn_read_from_to(Preflist, Log, From, To) ->
     riak_core_vnode_master:command(Preflist,
-                                   {read_from, Log, From},
+                                   {read_from_to, Log, From, To},
                                    {fsm, undefined, self()},
                                    ?LOGGING_MASTER).
 
-%% @doc synchronous read_from operation
--spec read_from({partition(), node()}, log_id(), op_id()) -> {ok, [term()]} | {error, term()}.
-read_from(Node, LogId, From) ->
+%% @doc synchronous read_from_to operation
+-spec read_from_to({partition(), node()}, log_id(), log_opid(), log_opid()) -> {ok, [term()]} | {error, term()}.
+read_from_to(Node, LogId, From, To) ->
     riak_core_vnode_master:sync_command(Node,
-                                        {read_from, LogId, From},
+                                        {read_from_to, LogId, From, To},
                                         ?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
@@ -283,7 +284,7 @@ init([Partition]) ->
                         recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
                         enable_log_to_disk=EnableLoggingToDisk,
-                        last_read=start}}
+                        last_read_map =dict:new()}}
     end.
 
 %% Used to check if the vnode is up
@@ -358,24 +359,24 @@ handle_command({read, LogId}, _Sender,
 %%              LogId: Identifies the log to be read
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
-handle_command({read_from, LogId, _From}, _Sender,
-               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
-    ?STATS(log_read_from),
+handle_command({read_from_to, LogId, From, To}, _Sender, #state{partition = Partition, logs_map = Map, last_read_map = LastReadMap} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-            %% TODO should continue reading with the continuation??
-            {Continuation, Ops} =
-                case disk_log:chunk(Log, Lastread) of
-                    {error, Reason} -> {error, Reason};
-                    {C, O} -> {C, O};
-                    {C, O, _} -> {C, O};
-                    eof -> {eof, []}
+            {Continuation, LastOpId} =
+                case get_log_from_map(LastReadMap, Partition, LogId) of
+                    {error, _} -> {start, 0};
+                    {ok, {LOpId, LastContinuation}} ->
+                        if
+                            LOpId =< From -> {LastContinuation, LOpId};
+                            true -> {start, 0}
+                        end
                 end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
+            case read_from_to_internal(Log, Continuation, LastOpId, [], To) of
+                {error, Reason} ->
+                    {reply, {error, Reason}, State};
+                {NewContinuation, NewLastOpId, Ops} -> FilteredOps = filter_operations(Ops, From, To),
+                    {reply, {ok, FilteredOps}, State#state{last_read_map = dict:store(LogId, {NewLastOpId, NewContinuation}, LastReadMap)}}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -575,7 +576,7 @@ handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 -spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(), clocksi_payload()}]) ->
-               {error | eof, [{non_neg_integer(), clocksi_payload()}]}.
+    {error | eof, [{non_neg_integer(), clocksi_payload()}]}.
 read_internal(_Log, error, Ops) ->
     {error, Ops};
 read_internal(_Log, eof, Ops) ->
@@ -589,6 +590,37 @@ read_internal(Log, Continuation, Ops) ->
             eof -> {eof, []}
         end,
     read_internal(Log, NewContinuation, Ops ++ NewOps).
+
+-spec read_from_to_internal(log_id(), disk_log:continuation() | start, log_opid(), [{non_neg_integer(), log_record()}], log_opid()) ->
+    {error, disklog:chunk_error_rsn()} |{disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
+read_from_to_internal(Log, Continuation, LastOpId, Ops, To) ->
+    ?STATS(log_read_from),
+    case disk_log:chunk(Log, Continuation) of
+        {error, Reason} -> {error, Reason};
+        {NewContinuation, NewOps} -> read_from_to_internal2(Log, NewContinuation, Continuation, NewOps, Ops, To);
+        {NewContinuation, NewOps, _} -> read_from_to_internal2(Log, NewContinuation, Continuation, NewOps, Ops, To);
+        eof -> {Continuation, LastOpId, Ops}
+    end.
+
+-spec read_from_to_internal2(log_id(), disk_log:continuation(), disk_log:continuation(), [{non_neg_integer(), log_record()}], [{non_neg_integer(), log_record()}], log_opid()) ->
+    {error, disklog:chunk_error_rsn()} |{disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
+read_from_to_internal2(Log, NewContinuation, LastContinuation, NewOps, Ops, To) ->
+    [{_, FirstLogRecord} | _] = NewOps,
+    FirstLOpId = FirstLogRecord#log_record.op_number#op_number.local,
+    {_, LastLogRecord} = lists:last(NewOps),
+    LastLOpId = LastLogRecord#log_record.op_number#op_number.local,
+    if
+        LastLOpId < To -> read_from_to_internal(Log, NewContinuation, LastLOpId + 1, Ops ++ NewOps, To);
+        true -> {LastContinuation, FirstLOpId, Ops ++ NewOps}
+    end.
+
+-spec filter_operations([{non_neg_integer(), log_record()}], log_opid(), log_opid()) -> [{non_neg_integer(), log_record()}].
+filter_operations(Ops, Min, Max) ->
+    F = fun({_, Op}) ->
+        Num = Op#log_record.op_number#op_number.local,
+        (Num >= Min) and (Max >= Num)
+        end,
+    lists:filter(F, Ops).
 
 -spec reverse_and_add_op_id([clocksi_payload()], non_neg_integer(), [{non_neg_integer(), clocksi_payload()}]) ->
                    [{non_neg_integer(), clocksi_payload()}].

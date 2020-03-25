@@ -64,6 +64,7 @@
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,
   queue :: queue:queue(),
-  logging_enabled :: boolean()
+  logging_enabled :: boolean(),
+  log_reader_timeout :: integer()
 }).
 -type inter_dc_sub_buf() :: #inter_dc_sub_buf{}.

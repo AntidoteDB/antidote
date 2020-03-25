@@ -53,7 +53,8 @@ new_state(PDCID) ->
     pdcid = PDCID,
     last_observed_opid = init,
     queue = queue:new(),
-    logging_enabled = EnableLogging
+    logging_enabled = EnableLogging,
+    log_reader_timeout = 0
   }.
 
 -spec process({txn, interdc_txn()} | {log_reader_resp, [interdc_txn()]}, inter_dc_sub_buf()) -> inter_dc_sub_buf().
@@ -77,23 +78,21 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
         State
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
-  ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
-  push(Txn, State);
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering, log_reader_timeout = Timeout}) ->
+    ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
+    Time = erlang:system_time(millisecond),
+    if
+        Timeout < Time ->
+            ?LOG_WARNING("Got timeout for log_reader_resp in ~p", [State#inter_dc_sub_buf.pdcid]),
+            process_queue(push(Txn, State#inter_dc_sub_buf{state_name = normal}));
+        true ->
+            push(Txn, State)
+    end;
 
-process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
-  ok = lists:foreach(fun deliver/1, Txns),
-  NewLast = case queue:peek(Queue) of
-    empty -> State#inter_dc_sub_buf.last_observed_opid;
-    {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
-  end,
-  NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
-  process_queue(NewState);
-
-process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
-  %% This case must not happen
-  ?LOG_CRITICAL("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
-  State.
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue}) ->
+    NewQueue = queue:join(queue:from_list(Txns), Queue),
+    NewState = State#inter_dc_sub_buf{queue = NewQueue},
+    process_queue(NewState).
 
 
 %%%% Methods ----------------------------------------------------------------+
@@ -119,7 +118,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
             try
               case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
                 ok ->
-                  State#inter_dc_sub_buf{state_name = buffering};
+                  State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT};
                 _  ->
                   ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
                   State#inter_dc_sub_buf{state_name = normal}
@@ -138,7 +137,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction has an old value, drop it.
         lt ->
-            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [(TxnLast + 1), Last]),
             process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
