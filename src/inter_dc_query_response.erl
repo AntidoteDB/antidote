@@ -109,6 +109,7 @@ get_entries_internal(Partition, From, To) ->
     Logs = log_read_range(Partition, Node, From, To),
     Asm = log_txn_assembler:new_state(),
     {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
+    %% Transforming operation lists to transactions and set PrevLogOpId
     ProcessedOps = lists:map(fun(Ops) -> [FirstOp|_] = Ops, {Ops, #op_number{local = FirstOp#log_record.op_number#op_number.local - 1}} end, OpLists),
     Txns = lists:map(fun({TxnOps, PrevLogOpId}) -> inter_dc_txn:from_ops(TxnOps, Partition, PrevLogOpId) end, ProcessedOps),
     %% This is done in order to ensure that we only send the transactions we committed.
