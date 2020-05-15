@@ -45,6 +45,7 @@
     partition_cluster/2,
     heal_cluster/2,
     set_up_clusters_common/1,
+    set_up_multi_node_dc/2,
     unpack/1
 ]).
 
@@ -331,6 +332,25 @@ set_up_clusters_common(Config) ->
     ct:log("Clusters joined and data centers connected connected: ~p", [ClusterAndDcConfiguration]),
     [unpack(DC) || DC <- Clusters].
 
+
+%% Build a data center with multiple nodes
+set_up_multi_node_dc(Config, NodesList) ->
+    StartDC = fun(Nodes) ->
+        %% start each node
+        Cl = pmap(fun(N) -> start_node(N, Config) end, Nodes),
+        [{Status, Claimant} | OtherNodes] = Cl,
+        %% check if node was reused or not
+        case Status of
+            ready -> ok;
+            connect ->
+                ct:pal("Creating a ring for claimant ~p and other nodes ~p", [Claimant, unpack(OtherNodes)]),
+                ok = rpc:call(Claimant, antidote_dc_manager, add_nodes_to_dc, [unpack(Cl)])
+        end,
+        Cl
+    end,
+	ResultCl = StartDC(NodesList),
+	NodeIds = lists:map(fun({_Status2, Claimant2}) -> Claimant2 end, ResultCl),
+	NodeIds.
 
 bucket(BucketBaseAtom) ->
     BucketRandomSuffix = [rand:uniform(127)],

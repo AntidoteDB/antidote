@@ -54,7 +54,7 @@
 get_logid_from_key(Key) ->
     %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PreflistAnn = get_preflist_from_key(Key),
-    remove_node_from_preflist(PreflistAnn).
+    [hd(remove_node_from_preflist(PreflistAnn))].
 
 %% @doc get_key_partition returns the most probable node where a given
 %%      key's logfile will be located.
@@ -68,7 +68,8 @@ get_key_partition(Key) ->
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
     ConvertedKey = convert_key(Key),
-    get_primaries_preflist(ConvertedKey).
+    [{Partition, _}] = get_primaries_preflist(ConvertedKey),
+    intra_dc_leader_elector:get_preflist(Partition).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
 %%      vnodes. No matter they are up or down.
@@ -85,8 +86,8 @@ get_primaries_preflist(Key)->
 
 -spec get_my_node(partition_id()) -> node().
 get_my_node(Partition) ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    riak_core_ring:index_owner(Ring, Partition).
+    {_, Node} = hd(intra_dc_leader_elector:get_preflist(Partition)),
+    Node.
 
 %% @doc remove_node_from_preflist: From each element of the input
 %%      preflist, the node identifier is removed

@@ -55,6 +55,9 @@ handle_event({ring_update, _}, State) ->
 
 %% ring status
     update_status(),
+    
+%% intradc update state    
+    intra_dc_leader_elector:ring_changed(),
     {ok, State}.
 
 handle_call(_Event, State) ->

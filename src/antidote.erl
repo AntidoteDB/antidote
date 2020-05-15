@@ -78,7 +78,8 @@ get_log_operations_internal([{{Key, Type, Bucket}, Clock}|Rest], Acc) ->
     case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
     ok ->
         LogId = log_utilities:get_logid_from_key({Key, Bucket}),
-        [Node] = log_utilities:get_preflist_from_key({Key, Bucket}),
+        PrefList = log_utilities:get_preflist_from_key({Key, Bucket}),
+        Node = hd(PrefList),
         case logging_vnode:get_from_time(Node, LogId, Clock, Type, {Key, Bucket}) of
         #snapshot_get_response{ops_list = Ops} ->
             get_log_operations_internal(Rest, [lists:reverse(Ops)|Acc]);

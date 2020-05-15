@@ -86,6 +86,8 @@ init(_Args) ->
     InterDcLogReaderRMaster = ?CHILD(inter_dc_query_receive_socket, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    IntraDcLeaderElector = ?CHILD(intra_dc_leader_elector, worker, []),
+	IntraDcReplVnode = ?VNODE(intra_dc_log_replication_vnode_master, intra_dc_log_replication_vnode),
 
     MetaDataManagerSup = {meta_data_manager_sup,
                           {meta_data_manager_sup, start_link, [stable_time_functions]},
@@ -133,5 +135,7 @@ init(_Args) ->
        BCounterManager,
        LogResponseReaderSup,
        PbSup,
-       AntidoteStats
+       AntidoteStats,
+       IntraDcLeaderElector,
+       IntraDcReplVnode
        ]}}.

@@ -100,5 +100,11 @@
     %%        false -> read servers will not start automatically. It should be set to false when many Antidote instances will be run in a cluster.
     %%                 In this case, a inter_dc_manager:start_bg_processes(stable) needs to be issued per antidote instance after joining the cluster.
     %{auto_start_read_servers, true}
+    
+    %% %% intra_dc_replicas:
+    %%        shard replication factor or the number of replicas for each shard within a data center
+    %%        if this number equals 1 or is less than the number of physical nodes within a data center, replication is disabled.
+    %{intra_dc_replicas, 1}
+    
   ]}
 ].

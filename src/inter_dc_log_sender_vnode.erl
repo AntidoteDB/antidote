@@ -41,6 +41,7 @@
 %% API
 -export([
      send/2,
+     get_buffer/2,
      update_last_log_id/2,
      start_timer/1,
      send_stable_time/2]).
@@ -81,6 +82,9 @@
 -spec send(partition_id(), log_record()) -> ok.
 send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
 
+%% Obtains the DC buffer for intra-dc replication
+get_buffer(Partition, TxId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {get_buffer, TxId}).
+
 %% Start the heartbeat timer
 -spec start_timer(partition_id()) -> ok.
 start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {start_timer}).
@@ -114,6 +118,11 @@ handle_command({start_timer}, _Sender, State) ->
 handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
     ?LOG_DEBUG("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
     {reply, ok, State#state{last_log_id = OpId}};
+
+%% Handle get buffer for intra-dc replication
+handle_command({get_buffer, TxId}, _Sender, State) ->
+    Log = log_txn_assembler:find_or_default(TxId, [], State#state.buffer),
+    {reply, Log, State};
 
 %% Handle the new operation
 %% -spec handle_command({log_event, log_record()}, pid(), state()) -> {noreply, state()}.

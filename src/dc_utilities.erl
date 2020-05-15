@@ -73,9 +73,7 @@ get_my_dc_nodes() ->
 %% Returns the IndexNode tuple used by riak_core_vnode_master:command functions.
 -spec partition_to_indexnode(partition_id()) -> {partition_id(), any()}.
 partition_to_indexnode(Partition) ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    Node = riak_core_ring:index_owner(Ring, Partition),
-    {Partition, Node}.
+    hd(intra_dc_leader_elector:get_preflist(Partition)).
 
 %% Returns a list of all partition indices in the cluster.
 %% The partitions indices are 160-bit numbers that equally division the keyspace.

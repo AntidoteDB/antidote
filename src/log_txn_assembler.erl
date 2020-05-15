@@ -36,7 +36,8 @@
 -export([
   new_state/0,
   process/2,
-  process_all/2]).
+  process_all/2,
+  find_or_default/3]).
 
 %% State
 -record(state, {
@@ -52,7 +53,7 @@ new_state() -> #state{op_buffer = dict:new()}.
 process(LogRecord, State) ->
   Payload = LogRecord#log_record.log_operation,
   TxId = Payload#log_operation.tx_id,
-  NewTxnBuf = find_or_default(TxId, [], State#state.op_buffer) ++ [LogRecord],
+  NewTxnBuf = find_or_default(TxId, [], State) ++ [LogRecord],
   case Payload#log_operation.op_type of
     commit -> {{ok, NewTxnBuf}, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};
     abort -> {none, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};
@@ -75,7 +76,7 @@ process_all([H|T], Acc, State) ->
 %%%% Methods ----------------------------------------------------------------+
 
 -spec find_or_default(txid(), any(), dict:dict()) -> any().
-find_or_default(Key, Default, Dict) ->
+find_or_default(Key, Default, #state{op_buffer = Dict}) ->
   case dict:find(Key, Dict) of
     {ok, Val} -> Val;
     _ -> Default
