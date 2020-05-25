@@ -55,7 +55,10 @@ init_per_suite(Config) ->
 	Suite = ?MODULE,
     ct:pal("[~p]", [Suite]),
     test_utils:at_init_testsuite(),
-	Nodes = test_utils:set_up_multi_node_dc(Config, [dev1, dev2, dev3]),
+    %% Avoiding the use of dev1 as a node name because it is used in other test cases.
+    %% Using dev1 can cause unexpected behaviour regarding node failure and recovery,
+    %% hence below we use dev2, dev3, dev4.
+	Nodes = test_utils:set_up_multi_node_dc(Config, [dev2, dev3, dev4]),
     [{clusters, Nodes} | Config].
 
 end_per_suite(Config) ->
