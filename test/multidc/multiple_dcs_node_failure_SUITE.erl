@@ -35,6 +35,7 @@
 
 %% common_test callbacks
 -export([
+         suite/0,
          init_per_suite/1,
          end_per_suite/1,
          init_per_testcase/2,
@@ -50,6 +51,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(BUCKET, test_utils:bucket(multiple_dcs_node_failure_bucket)).
+
+suite() -> [{timetrap, {seconds, 120}}].
 
 init_per_suite(InitialConfig) ->
     Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
