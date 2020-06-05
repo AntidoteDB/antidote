@@ -178,7 +178,7 @@ process_init() ->
     Txn = make_txn(0),
     NewState = process({txn, Txn}, State),
     ?assertEqual(normal, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(1,1,1,0).
+    check_meck_calls(1, 1, 1, 0).
 
 process_old() ->
     meck_reset(),
@@ -186,7 +186,7 @@ process_old() ->
     Txn = make_txn(-1),
     NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
     ?assertEqual(normal, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0,0,0,0).
+    check_meck_calls(0, 0, 0, 0).
 
 process_missing_txn() ->
     meck_reset(),
@@ -195,7 +195,7 @@ process_missing_txn() ->
     NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
     ?assertEqual(1, meck:num_calls(inter_dc_query, perform_request, '_')),
     ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0,0,0,1).
+    check_meck_calls(0, 0, 0, 1).
 
 process_buffering() ->
     meck_reset(),
@@ -203,10 +203,10 @@ process_buffering() ->
     Txn = make_txn(1),
     NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + 3000, last_observed_opid=0}),
     ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0,0,0,0),
+    check_meck_calls(0, 0, 0, 0),
     NewState2 = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) - 1000, last_observed_opid=0}),
     ?assertEqual(buffering, NewState2#inter_dc_sub_buf.state_name),
-    check_meck_calls(0,0,0,1).
+    check_meck_calls(0, 0, 0, 1).
 
 process_resp() ->
     meck_reset(),
@@ -219,7 +219,7 @@ process_resp() ->
     NormalState = process({log_reader_resp, [Txn2]}, BufState),
     ?assertEqual(normal, NormalState#inter_dc_sub_buf.state_name),
     ?assertEqual(0, queue:len(NormalState#inter_dc_sub_buf.queue)),
-    check_meck_calls(0,0,2,1).
+    check_meck_calls(0, 0, 2, 1).
 
 make_txn(Last) ->
     #interdc_txn{
