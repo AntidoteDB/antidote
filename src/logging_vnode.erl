@@ -55,7 +55,6 @@
          append_commit/3,
          append_group/4,
          asyn_append_group/4,
-         asyn_read_from_to/4,
          read_from_to/4,
          get_up_to_time/5,
          get_from_time/5,
@@ -101,19 +100,10 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-%% @doc Sends a `threshold read' asynchronous command to the Logs in
-%%      `Preflist' From is the operation id form which the caller wants to
-%%      retrieve the operations.  The operations are retrieved in inserted
-%%      order and the From operation is also included.
--spec asyn_read_from_to(preflist(), key(), log_opid(), log_opid()) -> ok.
-asyn_read_from_to(Preflist, Log, From, To) ->
-    riak_core_vnode_master:command(Preflist,
-                                   {read_from_to, Log, From, To},
-                                   {fsm, undefined, self()},
-                                   ?LOGGING_MASTER).
 
 %% @doc synchronous read_from_to operation
--spec read_from_to({partition(), node()}, log_id(), log_opid(), log_opid()) -> {ok, [term()]} | {error, term()}.
+%% Returns all log entries from the given node with local log number N, such that From <= N <= To
+-spec read_from_to({partition(), node()}, log_id(), log_opid(), log_opid()) -> {ok, [{non_neg_integer(), log_record()}]} | {error, term()}.
 read_from_to(Node, LogId, From, To) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read_from_to, LogId, From, To},
@@ -373,10 +363,12 @@ handle_command({read_from_to, LogId, From, To}, _Sender, #state{partition = Part
                             true -> {start, 0}
                         end
                 end,
-            case read_from_to_internal(Log, Continuation, LastOpId, [], To) of
+            Node = {node(), dc_utilities:get_my_dc_id()},
+            case read_from_to_internal(Log, Node, Continuation, LastOpId, [], To) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
-                {NewContinuation, NewLastOpId, Ops} -> FilteredOps = filter_operations(Ops, From, To),
+                {NewContinuation, NewLastOpId, Ops} ->
+                    FilteredOps = filter_operations(Ops, From, To),
                     {reply, {ok, FilteredOps}, State#state{last_read_map = dict:store(LogId, {NewLastOpId, NewContinuation}, LastReadMap)}}
             end;
         {error, Reason} ->
@@ -592,31 +584,60 @@ read_internal(Log, Continuation, Ops) ->
         end,
     read_internal(Log, NewContinuation, Ops ++ NewOps).
 
--spec read_from_to_internal(log_id(), disk_log:continuation() | start, log_opid(), [{non_neg_integer(), log_record()}], log_opid()) ->
+%% Reads from the disk-log
+%% Log: the log to read from
+%% Node: the current node
+%% Continuation: A continuation of the disk log
+%% LastOpId: All entries in the continuation must be >= this local op id
+%% Ops: Accumulator of the operations read so far
+%% To: The maximum local op id to include
+%% Returns: 3-tuple
+%% 1. A continuation with 2. the maximum op id read before the continuation
+%% 3. the log records from node that are <= To
+%% The returned continuation is <= To + 1, so that it can be used for continuing to read after To.
+-spec read_from_to_internal(log_id(), {node(), dcid()}, disk_log:continuation() | start, log_opid(), [{non_neg_integer(), log_record()}], log_opid()) ->
     {error, disklog:chunk_error_rsn()} |{disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
-read_from_to_internal(Log, Continuation, LastOpId, Ops, To) ->
+read_from_to_internal(Log, Node, Continuation, LastOpId, Ops, To) ->
+    ?LOG_INFO("read_from_to_internal ~n Cont = ~p~n LastOpId = ~p~n To = ~p", [Continuation, LastOpId, To]),
     ?STATS(log_read_from),
     %% Read log chunk wise
-    case disk_log:chunk(Log, Continuation) of
+    Chunk = disk_log:chunk(Log, Continuation),
+    case Chunk of
         {error, Reason} -> {error, Reason};
-        {NewContinuation, NewOps} -> read_from_to_internal2(Log, NewContinuation, Continuation, NewOps, Ops, To);
-        {NewContinuation, NewOps, _} -> read_from_to_internal2(Log, NewContinuation, Continuation, NewOps, Ops, To);
+        {NewContinuation, NewOps} -> read_from_to_internal2(Log, Node, NewContinuation, Continuation, NewOps, LastOpId, Ops, To);
+        {NewContinuation, NewOps, _} -> read_from_to_internal2(Log, Node, NewContinuation, Continuation, NewOps, LastOpId, Ops, To);
         eof -> {Continuation, LastOpId, Ops}
     end.
 
--spec read_from_to_internal2(log_id(), disk_log:continuation(), disk_log:continuation(), [{non_neg_integer(), log_record()}], [{non_neg_integer(), log_record()}], log_opid()) ->
+-spec read_from_to_internal2(log_id(), {node(), dcid()}, disk_log:continuation(), disk_log:continuation(), [{non_neg_integer(), log_record()}], log_opid(), [{non_neg_integer(), log_record()}], log_opid()) ->
     {error, disklog:chunk_error_rsn()} |{disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
-read_from_to_internal2(Log, NewContinuation, LastContinuation, NewOps, Ops, To) ->
+read_from_to_internal2(Log, Node, NewContinuation, LastContinuation, NewOps1, LastLOpId, Ops, To) ->
+    NewOps = filter_local_node(Node, NewOps1),
     %% Continue reading log until To-OpId is reached
-    [{_, FirstLogRecord} | _] = NewOps,
-    FirstLOpId = FirstLogRecord#log_record.op_number#op_number.local,
-    {_, LastLogRecord} = lists:last(NewOps),
-    LastLOpId = LastLogRecord#log_record.op_number#op_number.local,
-    if
-        LastLOpId < To -> read_from_to_internal(Log, NewContinuation, LastLOpId + 1, Ops ++ NewOps, To);
-        true -> {LastContinuation, FirstLOpId, Ops ++ NewOps}
+    case NewOps of
+        [] ->
+            read_from_to_internal(Log, Node, NewContinuation, LastLOpId, Ops, To);
+        [{_, FirstLogRecord} | _] ->
+            FirstLOpId = FirstLogRecord#log_record.op_number#op_number.local,
+            {_, LastLogRecord} = lists:last(NewOps),
+            NewLastLOpId = LastLogRecord#log_record.op_number#op_number.local,
+            % this could be optimized, since we know that operations are ordered
+            OpsInRange = filter_operations(NewOps, LastLOpId, To),
+            if
+                NewLastLOpId < To ->
+                    read_from_to_internal(Log, Node, NewContinuation, NewLastLOpId + 1, Ops ++ OpsInRange, To);
+                true ->
+                    {LastContinuation, FirstLOpId, Ops ++ OpsInRange}
+            end
     end.
 
+%% Only return those operations that originate from the given node
+-spec filter_local_node({node(), dcid()}, [{non_neg_integer(), log_record()}]) -> [{non_neg_integer(), log_record()}].
+filter_local_node(Node, Ops) ->
+    [{N, Rec} || {N, Rec} <- Ops,  (Rec#log_record.op_number)#op_number.node == Node].
+
+
+%% Only return those operations where the local operation id is in the interval [Min, Max]
 -spec filter_operations([{non_neg_integer(), log_record()}], log_opid(), log_opid()) -> [{non_neg_integer(), log_record()}].
 filter_operations(Ops, Min, Max) ->
     F = fun({_, Op}) ->
@@ -684,7 +705,7 @@ get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
     true = update_ets_op_id({LogId, DCID}, NewOp, ClockTable),
     get_max_op_numbers(Rest, ClockTable, NewMaxVector).
 
-%% After appeded an operation to the log, increment the op id
+%% After appending an operation to the log, increment the op id
 -spec update_ets_op_id({log_id(), dcid()} | {log_id(), bucket(), dcid()}, op_number(), cache_id()) -> true.
 update_ets_op_id(Key, NewOp, ClockTable) ->
     #op_number{local = Num, global = GlobalNum} = NewOp,
@@ -886,7 +907,7 @@ delete(State = #state{logs_map = _Map, partition = Partition}) ->
     %% not only the primary log
     %% the format of the primary log is primary_preflist--primary_preflist.LOG
     LogId = integer_to_list(Partition) ++ "--" ++ integer_to_list(Partition),
-    {ok, DataDir} = application:get_env(antidote, data_dir),
+    DataDir = data_dir(),
     LogPath = filename:join(DataDir, LogId),
     %% best effort delete
     _ = file:delete(LogPath ++ ".LOG"),
@@ -971,7 +992,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
     LogId = LogFile ++ "--" ++ PreflistString,
-    {ok, DataDir} = application:get_env(antidote, data_dir),
+    DataDir = data_dir(),
     LogPath = filename:join(DataDir, LogId),
     ?STATS({log_append, LogPath, filelib:file_size(LogPath ++ ".LOG")}),
     case disk_log:open([{name, LogPath}]) of
@@ -1109,6 +1130,12 @@ get_op_numbers(ClockTable) ->
 insert_op_number(ClockTable, Key, NewOp) ->
     ets:insert(ClockTable, {Key, NewOp}).
 
+data_dir() ->
+    case application:get_env(antidote, data_dir) of
+        {ok, DataDir} -> DataDir;
+        undefined -> "data"
+    end.
+
 
 -ifdef(TEST).
 
@@ -1151,10 +1178,16 @@ get_continuation_from_map_test() ->
         undefined, [antidote5, c])).
 
 init_log(LogId, Partition) ->
-    {ok, DataDir} = application:get_env(antidote, data_dir),
-    ok = file:make_dir(DataDir),
+    DataDir = data_dir(),
+    file:make_dir(DataDir),
     LogFile = integer_to_list(Partition),
     OpIdTable = create_op_id_table(),
+    File = filename:join(DataDir, integer_to_list(Partition) ++ "--0.LOG"),
+    case filelib:is_regular(File) of
+        true ->
+            ok = file:delete(File);
+        false -> ok
+    end,
     {Map, MaxVector} = open_logs(LogFile, [[{LogId, node}]], dict:new(), OpIdTable, vectorclock:new()),
     #state{partition = Partition,
         logs_map = Map,
@@ -1166,34 +1199,28 @@ init_log(LogId, Partition) ->
 
 log_cleanup(State) ->
     Partition = State#state.partition,
-    {ok, DataDir} = application:get_env(antidote, data_dir),
+    DataDir = data_dir(),
     ets:delete(State#state.op_id_table),
     File = integer_to_list(Partition) ++ "--0.LOG",
-    ok = file:delete(filename:join(DataDir, File)),
-    ok = file:del_dir(DataDir).
+    file:delete(filename:join(DataDir, File)),
+    file:del_dir(DataDir).
 
-append_log_record(_, 0, State) ->
+append_log_record(_, _, _, 0, State) ->
     {[], State};
-append_log_record(LogId, Entries, #state{logs_map = Map,
+append_log_record(LogId, Node, LocalLogId, Entries, #state{logs_map = Map,
     op_id_table = OpIdTable,
     partition = Partition,
     enable_log_to_disk = EnableLog} = State) ->
-    MyDCID = undefined,
-    Time = erlang:system_time(),
+    MyDCID = Node,
     LogOperation = #log_operation{
-        tx_id = #tx_id{
-            local_start_time = Time,
-            server_pid = 1
-        },
+        tx_id = #tx_id{local_start_time = 1, server_pid = 1},
         op_type = commit,
-        log_payload = #commit_log_payload{
-            commit_time = {undefined, Time},
-            snapshot_time = 'undefined'
-        }
+        log_payload = #commit_log_payload{commit_time = {MyDCID, 1}, snapshot_time = 'undefined'}
     },
     OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-    #op_number{local = Local, global = Global} = OpId,
-    NewOpId = OpId#op_number{local = Local + 1, global = Global + 1},
+    #op_number{global = Global} = OpId,
+    % TODO only increment local for same nodes
+    NewOpId = #op_number{node = Node, local = LocalLogId, global = Global + 1},
     true = update_ets_op_id({LogId, MyDCID}, NewOpId, OpIdTable),
     {ok, Log} = get_log_from_map(Map, Partition, LogId),
     LogRecord = #log_record{
@@ -1202,7 +1229,7 @@ append_log_record(LogId, Entries, #state{logs_map = Map,
         bucket_op_number = NewOpId,
         log_operation = LogOperation},
     {ok, _} = insert_log_record(Log, LogId, LogRecord, EnableLog),
-    {Records, NewState} = append_log_record(LogId, Entries - 1, State),
+    {Records, NewState} = append_log_record(LogId, Node, LocalLogId + 1, Entries - 1, State),
     {[{LogId, LogRecord}] ++ Records, NewState}.
 
 read_all_records(LogId, #state{logs_map = Map, partition = Partition}) ->
@@ -1210,51 +1237,73 @@ read_all_records(LogId, #state{logs_map = Map, partition = Partition}) ->
     ok = disk_log:sync(Log),
     read_internal(Log, start, []).
 
-read_internal_test(State) ->
-    LogId = [0],
-    {Ops, NewState} = append_log_record(LogId, 20, State),
-    {eof, ReadOps} = read_all_records(LogId, NewState),
-    ?_assertEqual(Ops, ReadOps).
+node1() -> {node1, node1}.
+node2() -> {node2, node2}.
+node3() -> {node3, node3}.
 
-read_from_to_internal_test(State) ->
-    LogId = [0],
-    {_, NewState} = append_log_record(LogId, 2000, State),
-    {Ops, NewState2} = append_log_record(LogId, 2000, NewState),
-    {_, NewState3} = append_log_record(LogId, 2000, NewState2),
-    #state{logs_map = Map, partition = Partition} = NewState3,
-    {ok, Log} = get_log_from_map(Map, Partition, LogId),
-    ok = disk_log:sync(Log),
-    {_, _, ReadOps} = read_from_to_internal(Log, start, 0, [], 4000),
-    ?_assertEqual(Ops, filter_operations(ReadOps, 2001, 4000)).
+read_internal_test() ->
+    test_with_log(0, fun(State) ->
+        LogId = [0],
+        {Ops, NewState} = append_log_record(LogId, node1(), 1, 20, State),
+        {eof, ReadOps} = read_all_records(LogId, NewState),
+        ?assertEqual(Ops, ReadOps)
+    end).
 
-read_from_to_internal_2_test(State) ->
-    LogId = [0],
-    {_, NewState} = append_log_record(LogId, 2000, State),
-    {Ops, NewState2} = append_log_record(LogId, 2000, NewState),
-    {_, NewState3} = append_log_record(LogId, 2000, NewState2),
-    #state{logs_map = Map, partition = Partition} = NewState3,
-    {ok, Log} = get_log_from_map(Map, Partition, LogId),
-    ok = disk_log:sync(Log),
-    {Continuation, LastOpId, _} = read_from_to_internal(Log, start, 0, [], 2000),
-    {_, _, ReadOps} = read_from_to_internal(Log, Continuation, LastOpId, [], 4000),
-    ?_assertEqual(Ops, filter_operations(ReadOps, 2001, 4000)).
+read_from_to_internal_test() ->
+    test_with_log(1, fun(State) ->
+        LogId = [0],
+        {_, NewState} = append_log_record(LogId, node1(), 0, 2000, State),
+        {Ops, NewState2} = append_log_record(LogId, node2(), 0, 2000, NewState),
+        {_, NewState3} = append_log_record(LogId, node3(), 0, 2000, NewState2),
+        #state{logs_map = Map, partition = Partition} = NewState3,
+        {ok, Log} = get_log_from_map(Map, Partition, LogId),
+        ok = disk_log:sync(Log),
+        {_, _, ReadOps} = read_from_to_internal(Log, node2(), start, 0, [], 4000),
+        ?assertEqual(Ops, ReadOps)
+    end).
 
-read_internal_test_() -> {
-    setup,
-    fun() -> init_log(0, 0) end,
-    fun log_cleanup/1,
-    fun read_internal_test/1}.
+read_from_to_internal_2_test() ->
+    test_with_log(2, fun(State) ->
+        LogId = [0],
+        {_, NewState} = append_log_record(LogId, node1(), 1, 2000, State),
+        {Ops, NewState2} = append_log_record(LogId, node2(), 1, 4000, NewState),
+        {_, NewState3} = append_log_record(LogId, node3(), 1, 2000, NewState2),
+        #state{logs_map = Map, partition = Partition} = NewState3,
+        {ok, Log} = get_log_from_map(Map, Partition, LogId),
+        ok = disk_log:sync(Log),
+        {Continuation, LastOpId, ReadOps1} = read_from_to_internal(Log, node2(), start, 0, [], 2000),
+        ?assertEqual(filter_operations(Ops, 1, 1), [hd(ReadOps1)]),
+        ?assertEqual(filter_operations(Ops, 2000, 2000), [lists:last(ReadOps1)]),
+        ?assertEqual(filter_operations(Ops, 1, 2000), ReadOps1),
+        {_, _, ReadOps2} = read_from_to_internal(Log, node2(), Continuation, LastOpId, [], 4000),
+        ?assertEqual(filter_operations(Ops, 2001, 4000), filter_operations(ReadOps2, 2001, 4000))
+    end).
 
-read_from_to_internal_test_() -> {
-    setup,
-    fun() -> init_log(0, 1) end,
-    fun log_cleanup/1,
-    fun read_from_to_internal_test/1}.
+read_from_to_internal_3_test() ->
+    test_with_log(3, fun(State) ->
+        LogId = [0],
+        {_, NewState} = append_log_record(LogId, node1(), 1, 2, State),
+        {Ops, NewState2} = append_log_record(LogId, node2(), 1, 10, NewState),
+        {_, NewState3} = append_log_record(LogId, node3(), 1, 2, NewState2),
+        #state{logs_map = Map, partition = Partition} = NewState3,
+        {ok, Log} = get_log_from_map(Map, Partition, LogId),
+        ok = disk_log:sync(Log),
+        {_, _, ReadOps1} = read_from_to_internal(Log, node2(), start, 1, [], 3),
+        ?assertEqual(filter_operations(Ops, 1, 3), ReadOps1),
+        {_, _, ReadOps2} = read_from_to_internal(Log, node2(), start, 6, [], 8),
+        ?assertEqual(filter_operations(Ops, 6, 8), ReadOps2)
+    end).
 
-read_from_to_internal_2_test_() -> {
-    setup,
-    fun() -> init_log(0, 2) end,
-    fun log_cleanup/1,
-    fun read_from_to_internal_2_test/1}.
+
+% runs a test with setup and cleanup for the test
+test_with_log(N, F) ->
+    State = init_log(0, N),
+    try
+        F(State)
+    after
+        log_cleanup(State)
+    end.
+
+
 
 -endif.
