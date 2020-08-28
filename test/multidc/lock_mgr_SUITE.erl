@@ -60,11 +60,20 @@
 
 
 
-init_per_suite(Config) ->
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    %Nodes = hd(Clusters),
-    [{nodes, Clusters}|Config].
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+    Nodes = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+
+    %Ensure that the clocksi protocol is used
+    test_utils:pmap(fun(Node) ->
+        rpc:call(Node, application, set_env,
+        [antidote, txn_prot, clocksi]) end, Nodes),
+
+    %Check that indeed clocksi is running
+    {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
+
+    Config.
 
 end_per_suite(Config) ->
     Config.
@@ -96,7 +105,7 @@ all() -> [
 %% Checks if a transaction on the leading(may create new locks) node can aquire never used
 %% locks, do some updates and then releases them when the transaction is committed
 simple_transaction_tests_with_locks(Config) ->
-    Node = hd(hd(proplists:get_value(nodes, Config))),
+    [Node | _Nodes] = proplists:get_value(nodes, Config),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Keys = [lock1, lock2, lock3, lock4],
@@ -123,7 +132,7 @@ simple_transaction_tests_with_locks(Config) ->
 
 %% test if after a transaction released some lock another transaction on the same node can aquire them
 locks_in_sequence_check(Config) ->
-    Node = hd(hd(proplists:get_value(nodes, Config))),
+    [Node | _Nodes] = proplists:get_value(nodes, Config),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     % {error,{error,[{_TxId,Missing_Keys}]}} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
@@ -151,41 +160,36 @@ locks_in_sequence_check(Config) ->
 %% Tests if lock acquisition in multiple dcs of the same locks can propperly acquire
 %% them and the lock_mgr manages the lock data as intendet.
 lock_acquisition_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
+    [Node | _Nodes] = proplists:get_value(nodes, Config),
     Keys = [lock21, lock22, lock23, lock24],
 
-    {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, _Clock1} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    {ok, TxId2} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, _Clock2} = rpc:call(Node1, antidote, commit_transaction, [TxId2]),
-    {ok, TxId3} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
-    {ok, _Clock3} = rpc:call(Node1, antidote, commit_transaction, [TxId3]),
+    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    {ok, _Clock1} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    {ok, _Clock2} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    {ok, TxId3} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    {ok, _Clock3} = rpc:call(Node, antidote, commit_transaction, [TxId3]),
     ok.
 
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_1(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node3 = hd(hd(tl(Nodes))),
-    Node4 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Keys = [lock31, lock32, lock33, lock34],
 
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
     {ok, _Clock1} = rpc:call(Node1, antidote, commit_transaction, [TxId1]),
-    {ok, TxId2} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,[lock31]}]]),
-    {ok, _Clock2} = rpc:call(Node3, antidote, commit_transaction, [TxId2]),
-    {ok, TxId3} = rpc:call(Node4, antidote, start_transaction, [ignore, [{exclusive_locks,[lock32,lock33,lock34]}]]),
-    {ok, _Clock3} = rpc:call(Node4, antidote, commit_transaction, [TxId3]),
+    {ok, TxId2} = rpc:call(Node2, antidote, start_transaction, [ignore, [{exclusive_locks,[lock31]}]]),
+    {ok, _Clock2} = rpc:call(Node2, antidote, commit_transaction, [TxId2]),
+    {ok, TxId3} = rpc:call(Node3, antidote, start_transaction, [ignore, [{exclusive_locks,[lock32,lock33,lock34]}]]),
+    {ok, _Clock3} = rpc:call(Node3, antidote, commit_transaction, [TxId3]),
     ok.
 %% Test if sequential lock acquisition works as intendet
 get_lock_owned_by_other_dc_2(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node3 = hd(hd(tl(Nodes))),
-    Node4 = hd(hd(tl(tl(Nodes)))),
-    Keys = [lock41, lock42, lock43, lock44],
-    Lock_request_order = [Node3,Node1,Node1,Node3,Node4,Node3,Node4,Node1],
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+     Keys = [lock41, lock42, lock43, lock44],
+    Lock_request_order = [Node3, Node1, Node1, Node2, Node3, Node2, Node3, Node1],
     helper_do_lock_requests(Lock_request_order, Keys).
 %% Helper function for get_lock_owned_by_other_dc_2
 helper_do_lock_requests([],_)-> ok;
@@ -199,22 +203,21 @@ helper_do_lock_requests([Current_Node | Remaining_Nodes],Keys)->
     end.
 %% Tests if a multi value register allways has the correct value when it is updated on multiple dcs using locks
 multi_value_register_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node3 = hd(hd(tl(Nodes))),
-    Node4 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+
     Key = multi_value_register,
     Bound_object = {Key, antidote_crdt_register_mv, antidote_bucket},
     Updates_List=[{[[]],Node1,<<"n1">>},
-        {<<"n1">>,Node3,<<"x2">>},
-        {<<"x2">>,Node3,<<"x3">>},
-        {<<"x3">>,Node4,<<"y4">>},
+        {<<"n1">>,Node2,<<"x2">>},
+        {<<"x2">>,Node2,<<"x3">>},
+        {<<"x3">>,Node3,<<"y4">>},
         {<<"y4">>,Node1,<<"n5">>},
         {<<"n5">>,Node1,<<"n6">>},
-        {<<"n6">>,Node4,<<"y7">>},
+        {<<"n6">>,Node3,<<"y7">>},
         {<<"y7">>,Node1,<<"n8">>},
-        {<<"n8">>,Node3,<<"x9">>},
-        {<<"x9">>,Node4,<<"y10">>}],
+        {<<"n8">>,Node2,<<"x9">>},
+        {<<"x9">>,Node3,<<"y10">>}],
     helper_multi_value_register_test(Updates_List,[Key],Bound_object).
 %% helper functin for multi_value_register_test
 helper_multi_value_register_test([],_,_)-> ok;
@@ -242,10 +245,8 @@ helper_multi_value_register_test([{Value1,Current_Node,Value2} | Remaining_Nodes
 %% 30 ms delay between increments
 asynchronous_test_1(Config) ->
     N = 100,
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Keys = [asynchronous_test_key_1],
     Object = {asynchronous_test_key_1, antidote_crdt_counter_pn, antidote_bucket},
     spawn_link(lock_mgr_SUITE,asynchronous_test_helper,[Node1,Keys,Object,N,[],self(),30,1]),
@@ -289,10 +290,8 @@ asynchronous_test_1(Config) ->
 %% Let 3 processes asynchronously increment the same counter 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_2(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Keys = [asynchronous_test_key_2],
     Object = {asynchronous_test_key_2, antidote_crdt_counter_pn, antidote_bucket},
     spawn_link(lock_mgr_SUITE,asynchronous_test_helper,[Node1,Keys,Object,100,[],self(),0,1]),
@@ -348,10 +347,8 @@ asynchronous_test_helper(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 30 ms delay between increments
 asynchronous_test_3(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Keys = [asynchronous_test_key_3],
     Object = {asynchronous_test_key_3, antidote_crdt_register_mv, antidote_bucket},
     spawn_link(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys,Object,100,[],self(),30,1]),
@@ -393,10 +390,8 @@ asynchronous_test_3(Config) ->
 %% Let 3 processes asynchronously increment the same multy value register 100times while using a lock to restrict the access.
 %% 0 ms delay between increments
 asynchronous_test_4(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Keys = [asynchronous_test_key_4],
     Object = {asynchronous_test_key_4, antidote_crdt_register_mv, antidote_bucket},
     spawn_link(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys,Object,100,[],self(),0,1]),
@@ -462,11 +457,8 @@ asynchronous_test_helper2(Node,Keys,Object,Increments,Clocks,Caller,Delay,Id)->
 
 %% Runs asynchronous_test_1-4 in parallel
 asynchronous_test_5(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
-    % asynchronous_test_4
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],   % asynchronous_test_4
     Keys1 = [asynchronous_test_key_5],
     Object1 = {asynchronous_test_key_5, antidote_crdt_register_mv, antidote_bucket},
     spawn_link(lock_mgr_SUITE,asynchronous_test_helper2,[Node1,Keys1,Object1,100,[],self(),0,1]),
@@ -554,10 +546,8 @@ helper_check_result2(Node,Keys,Object,Value) ->
 
 %% Asynchronously starts transactions on all DCs that require the same 100 locks each.
 a_lot_of_locks_per_transaction_1(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     % asynchronous_test_4
     Keys1 = generate_lock_helper(50,"erwwqd"),
     Object1 = {a_lot_of_locks_per_transaction_1_key, antidote_crdt_register_mv, antidote_bucket},
@@ -571,10 +561,8 @@ a_lot_of_locks_per_transaction_1(Config) ->
 
 %% Asynchronously starts transactions on all DCs that require the same 500 locks each. Remark the higher the value the likelier the gen server call timouts.
 a_lot_of_locks_per_transaction_2(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     % asynchronous_test_4
     Keys1 = generate_lock_helper(100,"asdf"),
     Object1 = {a_lot_of_locks_per_transaction_2_key, antidote_crdt_register_mv, antidote_bucket},
@@ -600,10 +588,8 @@ generate_lock_helper(Amount,String,List) ->
 %% Starts a transaction that acquires a lock on one node. Then this node is killed and restarted.
 %% Then another transaction is started on another Node using the same lock.
 cluster_failure_test_1(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;
@@ -626,10 +612,8 @@ cluster_failure_test_1(Config) ->
 %% Then another transaction is started on Node2 trying to acquire the same lock.
 %% Then node3 is restarted and a transaction acquiring the lock on node2 is started again.
 cluster_failure_test_2(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    Node1 = hd(hd(Nodes)),
-    Node2 = hd(hd(tl(Nodes))),
-    Node3 = hd(hd(tl(tl(Nodes)))),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;

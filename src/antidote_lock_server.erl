@@ -204,7 +204,7 @@ on_interdc_request(Request) ->
 init([]) ->
     % we want to be notified if a transaction holding locks crashes
     process_flag(trap_exit, true),
-    MyDcId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDcId = dc_utilities:get_my_dc_id(),
     AllDcs = dc_meta_data_utilities:get_dcs(),
     Self = self(),
     S = antidote_lock_server_state:initial(MyDcId, AllDcs, ?MIN_EXCLUSIVE_LOCK_DURATION, ?MAX_LOCK_HOLD_DURATION, ?INTER_DC_LOCK_REQUEST_DELAY),

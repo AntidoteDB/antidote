@@ -1043,13 +1043,14 @@ lock_level(LockValue, MyDcId, AllDcIds) ->
             end
     end.
 
-debug_log(Term) ->
-    Log = case disk_log:open([{name, antidote_lock_server}]) of
-        {ok, L} -> L;
-        {repaired, L, _, _} -> L
-    end,
-    ok = disk_log:log(Log, {erlang:system_time(millisecond), Term}),
-    ok = disk_log:close(Log).
+debug_log(_Term) ->
+    ok.
+    % Log = case disk_log:open([{name, antidote_lock_server}]) of
+    %     {ok, L} -> L;
+    %     {repaired, L, _, _} -> L
+    % end,
+    % ok = disk_log:log(Log, {erlang:system_time(millisecond), Term}),
+    % ok = disk_log:close(Log).
 
 debug_result({Actions, State}) ->
     debug_log({actions, print_actions(Actions)}),

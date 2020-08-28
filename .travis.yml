@@ -1,6 +1,7 @@
 language: erlang
 otp_release:
-  - 21.2
+  - 21.3
+  - 22.1
 install:
   - make
   - ./rebar3 update
@@ -9,6 +10,7 @@ script:
   - make reltest
   - make systests
   - make propertytests
+  - make coverage
   - rebar3 as test coveralls send
   - make dialyzer
   - make lint

@@ -1,0 +1,104 @@
+[
+  "network.config",
+
+  %% logger config
+  {kernel, [
+    {logger, [
+
+      {handler, default, logger_std_h,
+        #{level => info,
+          formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
+          config => #{type => standard_io}}},
+
+      {handler, debug, logger_std_h,
+        #{level => info,
+          formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+          config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/info.log"}}}},
+
+      {handler, errors, logger_std_h,
+        #{level => error,
+          formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
+          config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/errors.log"}}}}
+    ]},
+    {logger_level, info}
+  ]},
+
+
+  {riak_core, [
+    %% riak directories
+    {ring_state_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_riak_core"},
+    {platform_data_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_riak_core"},
+
+    %% determines how many vnodes will be used
+    %% also determines the number of files the log is sliced into
+    %% has to be an exponent of 2
+    %% low number will decrease file accesses (good for testing) and boot time
+    %% high number enables scaling and generates smaller log files
+    {ring_creation_size, 64}
+  ]},
+
+
+  {setup, [
+    %% stops setup from creating strange folders (data@node() and log@node())
+    {verify_directories, false}
+  ]},
+
+
+  {antidote, [
+    %% antidote data directory
+    {data_dir, "${ROOT_DIR_PREFIX}${DATA_DIR_PREFIX}data_antidote"}
+
+    %% stats:
+    %% Enables or disables metrics collection for this node. Can be disabled on slow nodes to improve performance.
+    %%        true -> enables collecting statistics via the antidote_stats module
+    %%        false -> disables all statistics collection
+    %{stats, true},
+
+    %% extended_stats:
+    %% Expensive metric collection for all erlang processes.
+    %%        true -> process queues and reductions are monitored for busy processes
+    %%        false -> single process monitoring disables
+    %{extended_stats, true},
+
+    %% txn_cert:
+    %%        true -> write operations are certified during commit, aborting the transaction if a write conflict is detected (i.e. snapshot isolation
+    %%                is ensured for the updates within a single DC, updates across DCs are not checked)
+    %%        false -> transactions perform no certification and always commit (outside of crashes/errors)
+    %{txn_cert, true},
+
+    %% txn_prot:
+    %%        clocksi -> uses "Cure" protocol to define snapshots and causal dependencies (https://pages.lip6.fr/Marc.Shapiro/papers/Cure-final-ICDCS16.pdf)
+    %%        gr -> uses "Gentle-rain like" protocol to define snapshots and causal dependencies (https://infoscience.epfl.ch/record/202079)
+    %{txn_prot, clocksi},
+
+    %% recover_from_log:
+    %%        true -> on node start will load any operations stored on the disk log to the in memory cache of the key-value store
+    %%        false -> on node start the state of the key-value store will be empty
+    %{recover_from_log, true},
+
+    %% recover_meta_data_on_start:
+    %%        true -> meta-data state will be loaded from disk on restart including connection state between other DCs and node names and configurations,
+    %%                nodes will automatically reconnect to other dcs on restart
+    %%        false -> meta-data concerning node names and connections to other dcs will not be loaded on restart
+    %{recover_meta_data_on_start, true},
+
+    %% sync_log:
+    %%        true -> local transactions will be stored on log synchronously, i.e. when the reply is sent the updates are guaranteed to be
+    %%                stored to disk (this is very slow in the current logging setup)
+    %%        false -> all updates are sent to the operating system to be stored to disk (eventually), but are not guaranteed to be stored durably on disk
+    %%                 when the reply is sent
+    %{sync_log, false},
+
+    %% %% enable_logging:
+    %%        true -> writes to disk done by the logging_vnode are enabled
+    %%        false -> writes to disk are disabled, this improves performance when benchmarking.
+    %%        WARNING: disabling logging makes updates non-recoverable after shutting down antidote or under failures.
+    %{enable_logging, true},
+
+    %% %% auto_start_read_servers:
+    %%        true -> read servers will start automatically. It should be set to true when Antidote will be run in a single node/machine.
+    %%        false -> read servers will not start automatically. It should be set to false when many Antidote instances will be run in a cluster.
+    %%                 In this case, a inter_dc_manager:start_bg_processes(stable) needs to be issued per antidote instance after joining the cluster.
+    %{auto_start_read_servers, true}
+  ]}
+].

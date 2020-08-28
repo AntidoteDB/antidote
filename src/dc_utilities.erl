@@ -52,19 +52,13 @@
   check_staleness/0,
   check_registered/1,
   get_scalar_stable_time/0,
-  get_partition_snapshot/1,
   get_stable_snapshot/0,
   check_registered_global/1,
   now_microsec/0,
   now_millisec/0]).
 
+
 %% Returns the ID of the current DC.
-%% This should not be called manually (it is only used the very
-%% first time the DC is started), instead if you need to know
-%% the id of the DC use the following:
-%% dc_meta_data_utilites:get_my_dc_id
-%% The reason is that the dcid can change on fail and restart, but
-%% the original name is stored on disk in the meta_data_utilities
 -spec get_my_dc_id() -> dcid().
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -269,22 +263,11 @@ get_stable_snapshot() ->
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            DCs = dc_meta_data_utilities:get_dc_ids(true),
-                            GST = vectorclock:min_clock(StableSnapshot, DCs),
+                            MembersInDc = dc_utilities:get_my_dc_nodes(),
+                            GST = vectorclock:min_clock(StableSnapshot, MembersInDc),
                             {ok, vectorclock:set_all(GST, StableSnapshot)}
                     end
             end
-    end.
-
--spec get_partition_snapshot(partition_id()) -> vectorclock:vectorclock().
-get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta(stable_time_functions, Partition, vectorclock:new()) of
-        undefined ->
-            %% The partition isn't ready yet, wait for startup
-            timer:sleep(10),
-            get_partition_snapshot(Partition);
-        SS ->
-            SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
@@ -301,8 +284,8 @@ get_scalar_stable_time() ->
             Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
             {ok, Now, StableSnapshot};
         _ ->
-            DCs = dc_meta_data_utilities:get_dc_ids(true),
-            GST = vectorclock:min_clock(StableSnapshot, DCs),
+            MembersInDc = dc_utilities:get_my_dc_nodes(),
+            GST = vectorclock:min_clock(StableSnapshot, MembersInDc),
             {ok, GST, vectorclock:set_all(GST, StableSnapshot)}
     end.
 

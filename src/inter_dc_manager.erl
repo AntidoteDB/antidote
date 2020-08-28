@@ -56,7 +56,7 @@ get_descriptor() ->
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
   {ok, #descriptor{
-    dcid = dc_meta_data_utilities:get_my_dc_id(),
+    dcid = dc_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
     publishers = Publishers,
     logreaders = LogReaders
@@ -127,9 +127,8 @@ start_bg_processes(MetaDataName) ->
                       ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
                       ok = rpc:call(Node, meta_data_sender, start, [MetaDataName])
                   end, Nodes),
+
     %% Load the internal meta-data
-    _MyDCId = dc_meta_data_utilities:reset_my_dc_id(),
-    ok = dc_meta_data_utilities:load_partition_meta_data(),
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
     ?LOG_INFO("Starting heartbeat sender timers"),
@@ -138,12 +137,6 @@ start_bg_processes(MetaDataName) ->
     ok = lists:foreach(fun({_, ok}) ->
                            ok
                        end, Responses),
-    ?LOG_INFO("Starting read servers"),
-    Responses2 = dc_utilities:bcast_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
-    %% Be sure they all started ok, crash otherwise
-    ok = lists:foreach(fun({_, true}) ->
-                           ok
-                       end, Responses2),
     ok.
 
 %% This should be called once the DC is up and running successfully
@@ -186,12 +179,6 @@ check_node_restart() ->
             ok = lists:foreach(fun({_, ok}) ->
                                    ok
                                end, Responses),
-            ?LOG_INFO("Starting read servers"),
-            Responses2 = dc_utilities:bcast_my_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
-            %% Be sure they all started ok, crash otherwise
-            ok = lists:foreach(fun({_, true}) ->
-                                   ok
-                               end, Responses2),
             %% Reconnect this node to other DCs
             OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
             Responses3 = reconnect_dcs_after_restart(OtherDCs, MyNode),
@@ -219,6 +206,7 @@ observe_dcs_sync(Descriptors, Nodes) ->
     DCs = lists:map(fun(DC) ->
                         {observe_dc(DC, Nodes), DC}
                     end, Descriptors),
+
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
                       case Res of
                           ok ->
@@ -233,10 +221,10 @@ observe_dcs_sync(Descriptors, Nodes) ->
 
 -spec forget_dc(descriptor(), [node()]) -> ok.
 forget_dc(#descriptor{dcid = DCID}, Nodes) ->
-  case DCID == dc_meta_data_utilities:get_my_dc_id() of
+  case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      ?LOG_INFO("Forgetting DC ~p", [DCID]),
+      ?LOG_NOTICE("Forgetting DC ~p", [DCID]),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
@@ -265,7 +253,7 @@ drop_ping(DropPing) ->
 %% Utils
 
 wait_for_stable_snapshot(DCID, MinValue) ->
-  case DCID == dc_meta_data_utilities:get_my_dc_id() of
+  case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       {ok, SS} = dc_utilities:get_stable_snapshot(),

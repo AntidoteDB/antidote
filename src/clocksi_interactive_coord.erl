@@ -48,19 +48,15 @@
 -define(CLOCKSI_VNODE, mock_partition).
 -define(CLOCKSI_DOWNSTREAM, mock_partition).
 -define(LOGGING_VNODE, mock_partition).
--define(PROMETHEUS_GAUGE, mock_partition).
--define(PROMETHEUS_COUNTER, mock_partition).
 
 -else.
--define(DC_META_UTIL, dc_meta_data_utilities).
+-define(DC_META_UTIL, dc_utilities).
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(CLOCKSI_VNODE, clocksi_vnode).
 -define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
 -define(LOGGING_VNODE, logging_vnode).
--define(PROMETHEUS_GAUGE, prometheus_gauge).
--define(PROMETHEUS_COUNTER, prometheus_counter).
 -endif.
 
 
@@ -115,14 +111,14 @@ stop(Pid) -> gen_statem:stop(Pid).
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
 %%      It either returns the object value or the object state.
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem:read_property_list()) ->
     {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Clock, Key, Type, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
+    case clocksi_readitem:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
@@ -532,9 +528,9 @@ start_tx_internal(ClientClock, Properties, State = #state{is_static = false}) ->
             {error, Reason};
         {ok, ClientClock2} ->
             TransactionRecord = create_transaction_record(ClientClock2, false, Properties),
-    % a new transaction was started, increment metrics
-    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
-            {ok, State#state{transaction = TransactionRecord, num_to_read = 0, properties = Properties, locks = Locks}}
+            % a new transaction was started, increment metrics
+            ?STATS(open_transaction),
+            {ok, State#state{transaction = TransactionRecord, num_to_read = 0, properties = Properties}}
     end.
 
 
@@ -589,7 +585,7 @@ execute_command(read, {Key, Type}, Sender, State = #state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
-        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
+        ?STATS(operation_read_async),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
@@ -680,7 +676,7 @@ reply_to_client(State = #state{
                             end;
 
                         aborted ->
-                            ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
+                            ?STATS(transaction_aborted),
                             case ReturnAcc of
                                 {error, Reason} ->
                                     {error, Reason};
@@ -701,7 +697,8 @@ reply_to_client(State = #state{
     end,
 
     % transaction is finished, decrement count
-    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
+    ?STATS(transaction_finished),
+
 
     {stop, normal, State}.
 
@@ -769,7 +766,7 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
 
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
-    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
+    ?STATS(operation_read),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -793,7 +790,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
-    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
+    ?STATS(operation_update),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 

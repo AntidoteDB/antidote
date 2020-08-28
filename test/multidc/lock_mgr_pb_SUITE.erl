@@ -19,8 +19,6 @@
 %% -------------------------------------------------------------------
 -module(lock_mgr_pb_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([%% suite/0,
     init_per_suite/1,
@@ -110,14 +108,20 @@
 -define(BUCKET, pb_client_bucket).
 -define(BUCKET_BIN, <<"pb_client_bucket">>).
 
-init_per_suite(Config) ->
-    ct:print("Starting test suite ~p with pb client at ~s:~p", [?MODULE, ?ADDRESS, ?PORT1]),
-    test_utils:at_init_testsuite(),
-    Clusters = test_utils:set_up_clusters_common(Config),
-    Node1 = hd(hd(Clusters)),
-    Node2 = hd(hd(tl(Clusters))),
-    Node3 = hd(hd(tl(tl(Clusters)))),
-    [{nodes, [Node1,Node2,Node3]}|Config].
+init_per_suite(InitialConfig) ->
+    Config = test_utils:init_multi_dc(?MODULE, InitialConfig),
+    Nodes = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+
+    %Ensure that the clocksi protocol is used
+    test_utils:pmap(fun(Node) ->
+        rpc:call(Node, application, set_env,
+        [antidote, txn_prot, clocksi]) end, Nodes),
+
+    %Check that indeed clocksi is running
+    {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
+
+    Config.
 
 end_per_suite(Config) ->
     Config.
@@ -188,7 +192,7 @@ all() -> [
 
 
 kram(Config)->
-    [Node1, Node2, Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, Node2, Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Result1 = rpc:call(Node1, dc_utilities, get_stable_snapshot, []),
     ct:print("Snapshot Node1: ~p", [Result1]),
     Result2 = rpc:call(Node2, dc_utilities, get_stable_snapshot, []),
@@ -395,84 +399,84 @@ lock_pb_not_leader_dc_test3(_Config) ->
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_speed_test1(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test1_key1">>],
     get_locks_helper2(Node1, Locks, []).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_speed_test2(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test2_key1">>],
     get_locks_helper2(Node1, [], Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_speed_test3(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test3_key1">>],
     get_locks_helper2(Node1, Locks, Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_speed_test4(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test4_key1">>,<<"transaction_lock_speed_test4_key2">>,<<"transaction_lock_speed_test4_key3">>,<<"transaction_lock_speed_test4_key4">>],
     get_locks_helper2(Node1, Locks, []).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_speed_test5(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test5_key1">>,<<"transaction_lock_speed_test5_key2">>,<<"transaction_lock_speed_test5_key3">>,<<"transaction_lock_speed_test5_key4">>],
     get_locks_helper2(Node1, [], Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_speed_test6(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test6_key1">>,<<"transaction_lock_speed_test6_key2">>,<<"transaction_lock_speed_test6_key3">>,<<"transaction_lock_speed_test6_key4">>],
     get_locks_helper2(Node1, Locks, Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_speed_test7(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test7_key1">>],
     multiple_get_locks_helper2(Node1, Locks, [], 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_speed_test8(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test8_key1">>],
     multiple_get_locks_helper2(Node1, [], Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_speed_test9(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test9_key1">>],
     multiple_get_locks_helper2(Node1, Locks, Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple lock multiple times
 transaction_locks_speed_test10(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test10_key1">>,<<"transaction_lock_speed_test10_key2">>,<<"transaction_lock_speed_test10_key3">>,<<"transaction_lock_speed_test10_key4">>],
     multiple_get_locks_helper2(Node1, Locks, [], 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the pb_buffer interface
 % While acquiring multiple lock multiple times
 transaction_locks_speed_test11(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test11_key1">>,<<"transaction_lock_speed_test11_key2">>,<<"transaction_lock_speed_test11_key3">>,<<"transaction_lock_speed_test11_key4">>],
     multiple_get_locks_helper2(Node1, [], Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the pb_buffer interface
 % While acquiring multiple lock multiple times
 transaction_locks_speed_test12(Config)->
-    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [Node1, _Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_lock_speed_test12_key1">>,<<"transaction_lock_speed_test12_key2">>,<<"transaction_lock_speed_test12_key3">>,<<"transaction_lock_speed_test12_key4">>],
     multiple_get_locks_helper2(Node1, Locks, Locks, 99).
 
@@ -623,84 +627,84 @@ multiple_get_locks_helper3(Pid,Shared_Locks,Exclusive_Locks,Repetitions) ->
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_other_node_speed_test1(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test1_key1">>],
     get_locks_helper2(Node2, Locks, []).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_other_node_speed_test2(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test2_key1">>],
     get_locks_helper2(Node2, [], Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock
 transaction_locks_other_node_speed_test3(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test3_key1">>],
     get_locks_helper2(Node2, Locks, Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_other_node_speed_test4(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test4_key1">>,<<"transaction_locks_other_node_speed_test4_key2">>,<<"transaction_locks_other_node_speed_test4_key3">>,<<"transaction_locks_other_node_speed_test4_key4">>],
     get_locks_helper2(Node2, Locks, []).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_other_node_speed_test5(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test5_key1">>,<<"transaction_locks_other_node_speed_test5_key2">>,<<"transaction_locks_other_node_speed_test5_key3">>,<<"transaction_locks_other_node_speed_test5_key4">>],
     get_locks_helper2(Node2, [], Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple locks
 transaction_locks_other_node_speed_test6(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test6_key1">>,<<"transaction_locks_other_node_speed_test6_key2">>,<<"transaction_locks_other_node_speed_test6_key3">>,<<"transaction_locks_other_node_speed_test6_key4">>],
     get_locks_helper2(Node2, Locks, Locks).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_other_node_speed_test7(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test7_key1">>],
     multiple_get_locks_helper2(Node2, Locks, [], 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_other_node_speed_test8(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test8_key1">>],
     multiple_get_locks_helper2(Node2, [], Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring a single lock multiple times
 transaction_locks_other_node_speed_test9(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test9_key1">>],
     multiple_get_locks_helper2(Node2, Locks, Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the antidote interface
 % While acquiring multiple lock multiple times
 transaction_locks_other_node_speed_test10(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test10_key1">>,<<"transaction_locks_other_node_speed_test10_key2">>,<<"transaction_locks_other_node_speed_test10_key3">>,<<"transaction_locks_other_node_speed_test10_key4">>],
     multiple_get_locks_helper2(Node2, Locks, [], 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the pb_buffer interface
 % While acquiring multiple lock multiple times
 transaction_locks_other_node_speed_test11(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test11_key1">>,<<"transaction_locks_other_node_speed_test11_key2">>,<<"transaction_locks_other_node_speed_test11_key3">>,<<"transaction_locks_other_node_speed_test11_key4">>],
     multiple_get_locks_helper2(Node2, [], Locks, 99).
 
 % Tests the speed of the lock_mgr_es function get_locks() when using the pb_buffer interface
 % While acquiring multiple lock multiple times
 transaction_locks_other_node_speed_test12(Config)->
-    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(nodes, Config),
+    [_Node1, Node2,_Node3 | _Nodes] = proplists:get_value(clusters, Config),
     Locks = [<<"transaction_locks_other_node_speed_test12_key1">>,<<"transaction_locks_other_node_speed_test12_key2">>,<<"transaction_locks_other_node_speed_test12_key3">>,<<"transaction_locks_other_node_speed_test12_key4">>],
     multiple_get_locks_helper2(Node2, Locks, Locks, 99).
 

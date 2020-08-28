@@ -146,9 +146,12 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       {ok, _} = logging_vnode:append_group({Partition, node()},
                                            [Partition], Ops, false),
 
-      %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
+      ?STATS({dc_ops_received, length(ClockSiOps)}),
+      ?STATS({dc_ops_received_size, byte_size(term_to_binary(ClockSiOps))}),
+
+      %% Update the materializer (send only the update operations)
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
@@ -157,6 +160,7 @@ handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
 
 handle_command({txn, Txn}, _Sender, State) ->
+
     NewState = process_all_queues(push_txn(State, Txn)),
     {reply, ok, NewState};
 
@@ -235,7 +239,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
 -spec get_partition_clock(state()) -> vectorclock().
 get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
-  vectorclock:set(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
+  vectorclock:set(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(interdc_txn()) -> list(clocksi_payload()).
