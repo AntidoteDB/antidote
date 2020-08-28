@@ -30,20 +30,20 @@
 
 %% common_test callbacks
 -export([init_per_suite/1,
-         end_per_suite/1,
-         init_per_testcase/2,
-         end_per_testcase/2,
-         all/0]).
+    end_per_suite/1,
+    init_per_testcase/2,
+    end_per_testcase/2,
+    all/0]).
 
 %% tests
--export([new_bcounter_test/1]).
+-export([new_bcounter_test/1,
+    update_bcounter_test/1,
+    invalid_bcounter_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(TYPE, antidote_crdt_counter_b).
--define(BUCKET, test_utils:bucket(bcountermgr_bucket)).
--define(RETRY_COUNT, 10).
+-define(BUCKET, test_utils:bucket(bcountermgr_bucket)). %%TODO Why?
 
 
 init_per_suite(InitialConfig) ->
@@ -61,44 +61,40 @@ init_per_suite(InitialConfig) ->
 
     Config.
 
-
 end_per_suite(Config) ->
     Config.
 
-
 init_per_testcase(_Case, Config) ->
     Config.
-
 
 end_per_testcase(Name, _) ->
     ct:print("[ OK ] ~p", [Name]),
     ok.
 
-
 all() -> [
-         new_bcounter_test
-        ].
+    new_bcounter_test,
+    update_bcounter_test,
+    invalid_bcounter_test
+].
 
-
-%% Test creating a new `bcounter()'.
 new_bcounter_test(Config) ->
     Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = bcounter1_mgr,
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0).
 
-    % FIXME why is this not working?
-    %{Value, _}  = antidote_utils:read_b_counter(Node, Key, Bucket),
-    %?assertEqual(0, Value).
-    check_read(Node, Key, 0, Bucket).
+update_bcounter_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter2_mgr,
+    {_, CommitTime1} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {ok, CommitTime2} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, antidote_utils:bcounter_get_increment_op(Node, 5)),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime2, 5).
 
-read_si(Node, Key, CommitTime, Bucket) ->
-    ct:log("Read si ~p", [Key]),
-    rpc:call(Node, antidote, read_objects, [CommitTime, [], [{Key, ?TYPE, Bucket}]]).
-
-
-check_read(Node, Key, Expected, CommitTime, Bucket) ->
-    {ok, [Obj], _CT} = read_si(Node, Key, CommitTime, Bucket),
-    ?assertEqual(Expected, ?TYPE:permissions(Obj)).
-
-check_read(Node, Key, Expected, Bucket) ->
-  check_read(Node, Key, Expected, ignore, Bucket).
+invalid_bcounter_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter2_mgr,
+    {_, CommitTime1} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {error, no_permissions} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, antidote_utils:bcounter_get_decrement_op(Node, 5)),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime1, 0).

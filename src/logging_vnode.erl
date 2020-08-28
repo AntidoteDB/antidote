@@ -668,10 +668,10 @@ update_ets_op_id(Key, NewOp, ClockTable) ->
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
 -spec get_ops_from_log(log_id(),
-               key(),
+               key() | undefined,
                disk_log:continuation() | start,
-               snapshot_time(),
-               snapshot_time(),
+               snapshot_time() | undefined,
+               snapshot_time() | undefined,
                 Ops :: dict:dict(txid(), [any_log_payload()]),
                CommittedOpsDict :: dict:dict(key(), [clocksi_payload()]),
                load_all | load_per_chunk) ->
@@ -718,7 +718,7 @@ finish_op_load(CommittedOpsDict) ->
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the committed operations for that key which have a smaller commit time than MinSnapshotTime.
--spec filter_terms_for_key([{non_neg_integer(), log_record()}], key(), snapshot_time(), snapshot_time(),
+-spec filter_terms_for_key([{non_neg_integer(), log_record()}], key() | undefined, snapshot_time() | undefined, snapshot_time() | undefined,
                 dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
                    {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, _MaxSnapshotTime, Ops, CommittedOpsDict) ->
@@ -735,8 +735,8 @@ filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, 
             filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
--spec handle_update(txid(), update_log_payload(), [{non_neg_integer(), log_record()}], key(), snapshot_time() | undefined,
-             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
+-spec handle_update(txid(), update_log_payload(), [{non_neg_integer(), log_record()}], key() | undefined, snapshot_time() | undefined,
+             snapshot_time() | undefined, dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
                 {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
@@ -748,8 +748,8 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, C
             filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
--spec handle_commit(txid(), commit_log_payload(), [{non_neg_integer(), log_record()}], key(), snapshot_time() | undefined,
-             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
+-spec handle_commit(txid(), commit_log_payload(), [{non_neg_integer(), log_record()}], key() | undefined, snapshot_time() | undefined,
+             snapshot_time() | undefined, dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
                 {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
@@ -779,11 +779,13 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, Co
         filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
-check_min_time(SnapshotTime, MinSnapshotTime) ->
-    ((MinSnapshotTime == undefined) orelse (vectorclock:ge(SnapshotTime, MinSnapshotTime))).
+-spec check_min_time(snapshot_time(), snapshot_time() | undefined) -> boolean().
+check_min_time(_SnapshotTime, undefined) -> true;
+check_min_time(SnapshotTime, MinSnapshotTime) -> vectorclock:ge(SnapshotTime, MinSnapshotTime).
 
-check_max_time(SnapshotTime, MaxSnapshotTime) ->
-    ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
+-spec check_max_time(snapshot_time(), snapshot_time() | undefined) -> boolean().
+check_max_time(_SnapshotTime, undefined) -> true;
+check_max_time(SnapshotTime, MaxSnapshotTime) -> vectorclock:le(SnapshotTime, MaxSnapshotTime).
 
 handle_handoff_command(?FOLD_REQ{foldfun = FoldFun, acc0 = OldHandoffState}, _Sender,
                        #state{logs_map = Map, partition = Partition} = State) ->
@@ -944,7 +946,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
             ?LOG_DEBUG("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, get_op_numbers(ClockTable), vectorclock:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
+            open_logs(LogFile, Rest, Map2, ClockTable, MaxVector); %%TODO Why MaxVector here? Maybe NewMaxVector
         {repaired, Log, _, _} ->
             {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
             ?LOG_DEBUG("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, get_op_numbers(ClockTable), vectorclock:to_list(NewMaxVector)]),

@@ -83,13 +83,6 @@
 %% The remaining elements are update operations
 -define(FIRST_OP, 4).
 
--record(payload, {
-    key :: key(),
-    type :: type(),
-    op_param,
-    actor :: actor()
-}).
-
 -record(commit_log_payload, {
     commit_time :: dc_and_commit_time(),
     snapshot_time :: snapshot_time()
@@ -182,10 +175,11 @@
 -type op() :: {op_name(), op_param()}.
 -type effect() :: term().
 
+-type microsecond() :: non_neg_integer().
 
 %% DC Id is the riak_core ring cluster name
--type dcid() :: undefined | riak_core_ring:riak_core_ring().
--type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
+-type dcid() :: undefined | {term(), term()}.
+-type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
 
@@ -214,7 +208,7 @@
 
 -type crdt() :: term().
 -type val() :: term().
--type reason() :: atom().
+-type reason() :: term().
 -type index_node() :: {partition_id(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().

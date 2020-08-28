@@ -88,7 +88,7 @@ get_smaller_internal(Vector, [{FirstClock, FirstVal}|Rest], IsFirst) ->
 
 %% @doc Get the first element from the dict where the clock for some Id is smaller than or equal to Time.
 -spec get_smaller_from_id(term(), clock_time(), vector_orddict()) -> undefined | {vectorclock(), term()}.
-get_smaller_from_id(_Id, _Time, {_List, Size}) when Size == 0 ->
+get_smaller_from_id(_Id, _Time, {_List, 0}) ->
   undefined;
 get_smaller_from_id(Id, Time, {List, _Size}) ->
   get_smaller_from_id_internal(Id, Time, List).

@@ -27,6 +27,7 @@
 %% -------------------------------------------------------------------
 
 -module(antidote_utils).
+-include("include/antidote.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -38,8 +39,18 @@
     increment_pn_counter/3,
 
     read_pn_counter/3,
-    read_b_counter/3,
-    read_b_counter_commit/4,
+    bcounter_read_single/3,
+    bcounter_read_single/4,
+    bcounter_check_permissions/2,
+    bcounter_check_read_value/4,
+    bcounter_check_read_value/5,
+    bcounter_get_decrement_op/2,
+    bcounter_get_increment_op/2,
+    bcounter_get_transfer_op/3,
+    bcounter_update_single/4,
+    bcounter_update_single/5,
+    bcounter_update_single_retry/5,
+    bcounter_update_single_retry/6,
 
     %% clocksi
     check_read/5,
@@ -71,21 +82,61 @@ read_pn_counter(Node, Key, Bucket) ->
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [ignore, [], [Obj]]),
     {Value, CommitTime}.
 
+-spec bcounter_read_single(node(), key(), bucket()) -> {antidote_crdt_counter_b:antidote_crdt_counter_b(), snapshot_time()}.
+bcounter_read_single(Node, Key, Bucket) ->
+    bcounter_read_single(Node, Key, Bucket, ignore).
 
-read_b_counter(Node, Key, Bucket) ->
-    read_b_counter_commit(Node, Key, Bucket, ignore).
+-spec bcounter_read_single(node(), key(), bucket(), snapshot_time()) -> {antidote_crdt_counter_b:antidote_crdt_counter_b(), snapshot_time()}.
+bcounter_read_single(Node, Key, Bucket, SnapshotTime) ->
+    {ok, [BCounter], CommitTime} = rpc:call(Node, antidote, read_objects, [SnapshotTime, [], [{Key, antidote_crdt_counter_b, Bucket}]]),
+    {BCounter, CommitTime}.
 
-read_b_counter_commit(Node, Key, Bucket, CommitTime) ->
-    Obj = {Key, ?TYPE_B, Bucket},
-    {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [CommitTime, [], [Obj]]),
-    {?TYPE_B:permissions(Value), CommitTime}.
+-spec bcounter_check_permissions(antidote_crdt_counter_b:antidote_crdt_counter_b(), non_neg_integer()) -> ok | no_return().
+bcounter_check_permissions(BCounter, Expected) ->
+    ?assertEqual(Expected, antidote_crdt_counter_b:permissions(BCounter)).
 
+-spec bcounter_check_read_value(node(), key(), bucket(), non_neg_integer()) -> {antidote_crdt_counter_b:antidote_crdt_counter_b(), snapshot_time()} | no_return().
+bcounter_check_read_value(Node, Key, Bucket, Expected) ->
+    bcounter_check_read_value(Node, Key, Bucket, ignore, Expected).
 
+-spec bcounter_check_read_value(node(), key(), bucket(), snapshot_time(), non_neg_integer()) -> {antidote_crdt_counter_b:antidote_crdt_counter_b(), snapshot_time()} | no_return().
+bcounter_check_read_value(Node, Key, Bucket, SnapshotTime, Expected) ->
+    Result = {BCounter, _} = bcounter_read_single(Node, Key, Bucket, SnapshotTime),
+    bcounter_check_permissions(BCounter, Expected),
+    Result.
 
+-spec bcounter_update_single(node(), key(), bucket(), {increment | decrement, {pos_integer(), dcid()}} | {transfer, {pos_integer(), dcid(), dcid()}}) -> {ok, snapshot_time()} | {error, no_permissions}.
+bcounter_update_single(Node, Key, Bucket, Update) ->
+    bcounter_update_single(Node, Key, Bucket, ignore, Update).
 
+-spec bcounter_update_single(node(), key(), bucket(), snapshot_time(), {increment | decrement, {pos_integer(), dcid()}} | {transfer, {pos_integer(), dcid(), dcid()}}) -> {ok, snapshot_time()} | {error, no_permissions}.
+bcounter_update_single(Node, Key, Bucket, SnapshotTime, {UpdateOp, UpdateParam}) ->
+    rpc:call(Node, antidote, update_objects, [SnapshotTime, [], [{{Key, antidote_crdt_counter_b, Bucket}, UpdateOp, UpdateParam}]]).
 
+-spec bcounter_update_single_retry(node(), key(), bucket(), {increment | decrement, {pos_integer(), dcid()}} | {transfer, {pos_integer(), dcid(), dcid()}}, non_neg_integer()) -> {ok, snapshot_time()} | {error, no_permissions}.
+bcounter_update_single_retry(Node, Key, Bucket, Update, Retries) ->
+    bcounter_update_single_retry(Node, Key, Bucket, ignore, Update, Retries).
 
+-spec bcounter_update_single_retry(node(), key(), bucket(), snapshot_time(), {increment | decrement, {pos_integer(), dcid()}} | {transfer, {pos_integer(), dcid(), dcid()}}, non_neg_integer()) -> {ok, snapshot_time()} | {error, no_permissions}.
+bcounter_update_single_retry(Node, Key, Bucket, SnapshotTime, {UpdateOp, UpdateParam}, Retries) ->
+    Result = rpc:call(Node, antidote, update_objects, [SnapshotTime, [], [{{Key, antidote_crdt_counter_b, Bucket}, UpdateOp, UpdateParam}]]),
+    case Result of
+        {ok, CommitTime} -> {ok, CommitTime};
+        Error when Retries == 0 -> Error;
+        _ ->
+            timer:sleep(1000),
+            bcounter_update_single_retry(Node, Key, Bucket, SnapshotTime, {UpdateOp, UpdateParam}, Retries - 1)
+    end.
 
+-spec bcounter_get_increment_op(node(), pos_integer()) -> {increment, {pos_integer(), dcid()}}.
+bcounter_get_increment_op(Node, Amount) -> {increment, {Amount, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
+
+-spec bcounter_get_decrement_op(node(), pos_integer()) -> {decrement, {pos_integer(), dcid()}}.
+bcounter_get_decrement_op(Node, Amount) -> {decrement, {Amount, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
+
+-spec bcounter_get_transfer_op(node(), pos_integer(), dcid()) -> {transfer, {pos_integer(), dcid(), dcid()}}.
+bcounter_get_transfer_op(Node, Amount, ToDCID) ->
+    {transfer, {Amount, ToDCID, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
 
 
 %% ------------------
@@ -135,7 +186,7 @@ update_counters(Node, Keys, IncValues, Clock, TxId, Bucket, ProtocolModule) ->
         static ->
             {ok, CT} = rpc:call(Node, ProtocolModule, update_objects, [Clock, [], Updates]),
             {ok, CT};
-        _->
+        _ ->
             ok = rpc:call(Node, ProtocolModule, update_objects, [Updates, TxId]),
             ok
     end.
@@ -184,9 +235,8 @@ find_key_same_node(FirstNode, IndexNode, Num) ->
         true ->
             NewKey;
         false ->
-            find_key_same_node(FirstNode, IndexNode, Num+1)
+            find_key_same_node(FirstNode, IndexNode, Num + 1)
     end.
-
 
 
 %% inter dc utils
