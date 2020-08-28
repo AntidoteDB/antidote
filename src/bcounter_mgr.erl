@@ -62,8 +62,8 @@
     last_transfers = orddict:new() :: last_transfers(),
     transfer_timer :: reference()
 }).
--type antidote_crdt_counter_b_downstream_op() :: {{increment, pos_integer()} | {decrement, pos_integer()} | {transfer, pos_integer(), dcid()}, dcid()}. %%TODO maybe to specific here
--type antidote_crdt_counter_b_downstream_op_or_error() :: antidote_crdt_counter_b_downstream_op() | {error, no_permission}. %%TODO maybe to specific here
+-type antidote_crdt_counter_b_downstream_op_result() :: {ok, {{increment, pos_integer()} | {decrement, pos_integer()} | {transfer, pos_integer(), dcid()}, dcid()}}. %%TODO maybe to specific here
+-type antidote_crdt_counter_b_downstream_op_result_or_error() :: antidote_crdt_counter_b_downstream_op_result() | {error, no_permission}. %%TODO maybe to specific here
 
 %% ===================================================================
 %% Public API
@@ -73,7 +73,7 @@
 %% If the operation is unsafe (i.e. the value of the counter can go
 %% below 0), operation fails, otherwise a downstream for the decrement
 %% is generated.
--spec generate_downstream(key() | {key(), bucket()}, antidote_crdt_counter_b:antidote_crdt_counter_b_anon_op(), antidote_crdt_counter_b:antidote_crdt_counter_b()) -> antidote_crdt_counter_b_downstream_op() | {error, no_permissions}.
+-spec generate_downstream(key() | {key(), bucket()}, antidote_crdt_counter_b:antidote_crdt_counter_b_anon_op(), antidote_crdt_counter_b:antidote_crdt_counter_b()) -> antidote_crdt_counter_b_downstream_op_result_or_error().
 generate_downstream(Key, {decrement, {Amount, _}}, BCounter) when Amount > 0 ->
     MyDCID = dc_utilities:get_my_dc_id(),
     gen_server:call(?MODULE, {consume, {Key, {decrement, {Amount, MyDCID}}, BCounter}});
@@ -115,7 +115,7 @@ handle_call({consume, Request}, _From, State = #state{request_queue = RequestQue
 
 handle_cast({transfer, Request}, State = #state{last_transfers = LastTransfers}) ->
     NewLastTransfers = transfer(Request, LastTransfers),
-    {no_reply, State#state{last_transfers = NewLastTransfers}}.
+    {noreply, State#state{last_transfers = NewLastTransfers}}.
 
 handle_info(transfer_periodic, State = #state{request_queue = RequestQueue, transfer_timer = OldTimer}) ->
     _ = erlang:cancel_timer(OldTimer),
@@ -152,7 +152,7 @@ transfer({Key, Amount, RequesterDCID}, State) ->
     transfer({{Key, ?BUCKET}, Amount, RequesterDCID}, State).
 
 %%TODO this will not work correctly if the key is a tuple
--spec consume({key() | {key() | bucket()}, {decrement, {pos_integer(), dcid()}}, antidote_crdt_counter_b:antidote_crdt_counter_b()}, request_queue()) -> {antidote_crdt_counter_b_downstream_op_or_error(), request_queue()}.
+-spec consume({key() | {key() | bucket()}, {decrement, {pos_integer(), dcid()}}, antidote_crdt_counter_b:antidote_crdt_counter_b()}, request_queue()) -> {antidote_crdt_counter_b_downstream_op_result_or_error(), request_queue()}.
 consume({KeyBucketTuple = {_Key, _Bucket}, {Op, {Amount, _}}, BCounter}, RequestQueue) ->
     MyDCID = dc_utilities:get_my_dc_id(),
     case antidote_crdt_counter_b:generate_downstream_check({Op, Amount}, MyDCID, BCounter, Amount) of
