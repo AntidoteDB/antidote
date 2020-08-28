@@ -86,9 +86,9 @@ propertytests: compile-utils rel
 	rm -f test/propertytests/*.beam
 	mkdir -p logs
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/propertytests/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
+	ct_run -pa ./_build/test/lib/*/ebin test/utils/ -logdir logs -suite test/propertytests/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
 else
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/propertytests -cover test/antidote.coverspec -erl_args -hidden
+	ct_run -pa ./_build/test/lib/*/ebin test/utils/ -logdir logs -dir test/propertytests -cover test/antidote.coverspec -erl_args -hidden
 endif
 
 systests: singledc multidc
