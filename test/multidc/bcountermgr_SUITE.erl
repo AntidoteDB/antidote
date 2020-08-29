@@ -40,7 +40,9 @@
     test_dec_fail/1,
     test_dec_multi_success0/1,
     test_dec_multi_success1/1,
-    conditional_write_test_run/1]).
+    conditional_write_test_run/1,
+    parallel_increment_decrement/1,
+    two_nodes_want_everything/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -78,7 +80,9 @@ all() -> [
     test_dec_fail,
     test_dec_multi_success0,
     test_dec_multi_success1,
-    conditional_write_test_run
+    conditional_write_test_run,
+    parallel_increment_decrement,
+    two_nodes_want_everything
 ].
 
 test_dec_success(Config) ->
@@ -153,3 +157,63 @@ conditional_write_test_run(Config) ->
     ?assertMatch({error, aborted}, CommitResult),
     %% Test that the failed transaction didn't affect the `bcounter()'.
     antidote_utils:bcounter_check_read_value(Node1, Key, Bucket, AfterTxn2, 7).
+
+parallel_increment_decrement(Config) ->
+    Bucket = ?BUCKET,
+    Clusters = proplists:get_value(clusters, Config),
+    Nodes = lists:flatten(Clusters),
+    FirstNode = hd(Nodes),
+    LastNode = lists:last(Nodes),
+    Key = bcounter7_mgr,
+    [_, CommitTime] =
+        test_utils:pmap(
+        fun
+            (Node) when Node == FirstNode ->
+                Decrement = antidote_utils:bcounter_get_increment_op(Node, 5),
+                _ = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT);
+            (Node) when Node == LastNode ->
+                Decrement = antidote_utils:bcounter_get_decrement_op(Node, 4),
+                {ok, FoundCommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                FoundCommitTime
+        end, [FirstNode, LastNode]),
+    lists:foreach(
+        fun(Node) ->
+            {BCounter, _} = antidote_utils:bcounter_read_single(Node, Key, Bucket, CommitTime),
+            ?assertEqual(1, antidote_crdt_counter_b:permissions(BCounter))
+        end, Nodes).
+
+
+%%Total credits (All Nodes * 10)
+%% First wants half - 1 credits
+%% LastNode wants half + 1 credits
+%% Should be difficult
+two_nodes_want_everything(Config) ->
+    Bucket = ?BUCKET,
+    Clusters = proplists:get_value(clusters, Config),
+    Nodes = lists:flatten(Clusters),
+    FirstNode = hd(Nodes),
+    LastNode = lists:last(Nodes),
+    NumberOfNodes = length(Nodes),
+    HalfCredits = NumberOfNodes * 5,
+    Key = bcounter7_mgr,
+    lists:foreach(
+        fun(Node) ->
+            Increment = antidote_utils:bcounter_get_increment_op(Node, 10),
+            antidote_utils:bcounter_update_single(Node, Key, Bucket, Increment)
+        end, Nodes),
+    Commits = test_utils:pmap(
+        fun
+            (Node) when Node == FirstNode ->
+                    Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits - 1),
+                    {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                    CommitTime;
+            (Node) when Node == LastNode ->
+                    Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits + 1),
+                    {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                CommitTime
+        end, [FirstNode, LastNode]),
+    lists:foreach(
+        fun(Node) ->
+            {BCounter, _} = antidote_utils:bcounter_read_single(Node, Key, Bucket, vectorclock:max(Commits)),
+            ?assertEqual(0, antidote_crdt_counter_b:permissions(BCounter))
+        end, Nodes).
