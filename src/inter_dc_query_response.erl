@@ -26,8 +26,8 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
-%% @doc Starts a GenServer process and exposes a general API and 
-%%      a special API for the bounded counter manager 
+%% @doc Starts a GenServer process and exposes a general API and
+%%      a special API for the bounded counter manager
 %%      to get missing log entries
 
 -module(inter_dc_query_response).
