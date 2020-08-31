@@ -32,7 +32,6 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(TYPE_PNC, antidote_crdt_counter_pn).
--define(TYPE_B, antidote_crdt_counter_b).
 
 %% API
 -export([
@@ -51,6 +50,7 @@
     bcounter_update_single/5,
     bcounter_update_single_retry/5,
     bcounter_update_single_retry/6,
+    get_dcid/1,
 
     %% clocksi
     check_read/5,
@@ -129,15 +129,18 @@ bcounter_update_single_retry(Node, Key, Bucket, SnapshotTime, {UpdateOp, UpdateP
     end.
 
 -spec bcounter_get_increment_op(node(), pos_integer()) -> {increment, {pos_integer(), dcid()}}.
-bcounter_get_increment_op(Node, Amount) -> {increment, {Amount, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
+bcounter_get_increment_op(Node, Amount) -> {increment, {Amount, get_dcid(Node)}}.
 
 -spec bcounter_get_decrement_op(node(), pos_integer()) -> {decrement, {pos_integer(), dcid()}}.
-bcounter_get_decrement_op(Node, Amount) -> {decrement, {Amount, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
+bcounter_get_decrement_op(Node, Amount) -> {decrement, {Amount, get_dcid(Node)}}.
 
 -spec bcounter_get_transfer_op(node(), pos_integer(), dcid()) -> {transfer, {pos_integer(), dcid(), dcid()}}.
 bcounter_get_transfer_op(Node, Amount, ToDCID) ->
-    {transfer, {Amount, ToDCID, rpc:call(Node, dc_utilities, get_my_dc_id, [])}}.
+    {transfer, {Amount, ToDCID, get_dcid(Node)}}.
 
+-spec get_dcid(node()) -> dcid().
+get_dcid(Node) ->
+    rpc:call(Node, dc_utilities, get_my_dc_id, []).
 
 %% ------------------
 %% From clocksi_SUITE

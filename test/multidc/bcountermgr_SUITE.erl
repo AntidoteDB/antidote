@@ -90,9 +90,9 @@ test_dec_success(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
     Actor = dc,
-    Key = bcounter2_mgr,
+    Key = bcounter1_mgr_multi,
 
-    {ok, _} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, Actor}}, ?RETRY_COUNT),
+    {ok, _} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
     {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {decrement, {4, Actor}}, ?RETRY_COUNT),
 
     antidote_utils:bcounter_check_read_value(Node2, Key, Bucket, CommitTime, 6).
@@ -102,9 +102,9 @@ test_dec_fail(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
     Actor = dc,
-    Key = bcounter3_mgr,
+    Key = bcounter2_mgr_multi,
 
-    {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, Actor}}, ?RETRY_COUNT),
+    {ok, CommitTime} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
     _ForcePropagation = antidote_utils:bcounter_read_single(Node2, Key, Bucket, CommitTime),
     Result0 = antidote_utils:bcounter_update_single(Node2, Key, Bucket, {decrement, {5, Actor}}),
     ?assertEqual({error, no_permissions}, Result0).
@@ -114,8 +114,8 @@ test_dec_multi_success0(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
     Actor = dc,
-    Key = bcounter4_mgr,
-    {ok, _} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, Actor}}, ?RETRY_COUNT),
+    Key = bcounter3_mgr_multi,
+    {ok, _} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
     {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node2, Key, Bucket, {decrement, {5, Actor}}, ?RETRY_COUNT),
     antidote_utils:bcounter_check_read_value(Node1, Key, Bucket, CommitTime, 5).
 
@@ -124,7 +124,7 @@ test_dec_multi_success1(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
     Actor = dc,
-    Key = bcounter5_mgr,
+    Key = bcounter4_mgr_multi,
     {ok, _} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, Actor}}, ?RETRY_COUNT),
     {ok, _} = antidote_utils:bcounter_update_single_retry(Node2, Key, Bucket, {decrement, {5, Actor}}, ?RETRY_COUNT),
     {error, no_permissions} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {decrement, {6, Actor}}, ?RETRY_COUNT),
@@ -135,7 +135,7 @@ conditional_write_test_run(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     [Node1, Node2 | _OtherNodes] = Nodes,
     Type = antidote_crdt_counter_b,
-    Key = bcounter6_mgr,
+    Key = bcounter5_mgr_multi,
     BObj = {Key, Type, Bucket},
     {ok, AfterIncrement} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, rc1}}, ?RETRY_COUNT),
 
@@ -164,18 +164,18 @@ parallel_increment_decrement(Config) ->
     Nodes = lists:flatten(Clusters),
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),
-    Key = bcounter7_mgr,
+    Key = bcounter6_mgr_multi,
     [_, CommitTime] =
         test_utils:pmap(
-        fun
-            (Node) when Node == FirstNode ->
-                Decrement = antidote_utils:bcounter_get_increment_op(Node, 5),
-                _ = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT);
-            (Node) when Node == LastNode ->
-                Decrement = antidote_utils:bcounter_get_decrement_op(Node, 4),
-                {ok, FoundCommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
-                FoundCommitTime
-        end, [FirstNode, LastNode]),
+            fun
+                (Node) when Node == FirstNode ->
+                    Decrement = antidote_utils:bcounter_get_increment_op(Node, 5),
+                    _ = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT);
+                (Node) when Node == LastNode ->
+                    Decrement = antidote_utils:bcounter_get_decrement_op(Node, 4),
+                    {ok, FoundCommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                    FoundCommitTime
+            end, [FirstNode, LastNode]),
     lists:foreach(
         fun(Node) ->
             {BCounter, _} = antidote_utils:bcounter_read_single(Node, Key, Bucket, CommitTime),
@@ -195,7 +195,7 @@ two_nodes_want_everything(Config) ->
     LastNode = lists:last(Nodes),
     NumberOfNodes = length(Nodes),
     HalfCredits = NumberOfNodes * 5,
-    Key = bcounter7_mgr,
+    Key = bcounter7_mgr_multi,
     lists:foreach(
         fun(Node) ->
             Increment = antidote_utils:bcounter_get_increment_op(Node, 10),
@@ -204,12 +204,12 @@ two_nodes_want_everything(Config) ->
     Commits = test_utils:pmap(
         fun
             (Node) when Node == FirstNode ->
-                    Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits - 1),
-                    {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
-                    CommitTime;
+                Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits - 1),
+                {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                CommitTime;
             (Node) when Node == LastNode ->
-                    Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits + 1),
-                    {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
+                Decrement = antidote_utils:bcounter_get_decrement_op(Node, HalfCredits + 1),
+                {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node, Key, Bucket, Decrement, ?RETRY_COUNT),
                 CommitTime
         end, [FirstNode, LastNode]),
     lists:foreach(

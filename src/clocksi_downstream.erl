@@ -35,8 +35,8 @@
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
-  Type :: type(), Update :: op_param(), list()) ->
+-spec generate_downstream_op(tx(), index_node(), {key(), bucket()},
+    type(), op_param(), list()) ->
     {ok, effect()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
     %% TODO: Check if read can be omitted for some types as registers
