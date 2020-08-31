@@ -64,6 +64,10 @@
 -define(SAFE_TIME, true).
 %% Version of log records being used
 -define(LOG_RECORD_VERSION, 0).
+%% Max number of entries per log get_entries request.
+-define(LOG_REQUEST_MAX_ENTRIES, 1000).
+%% Log request timeout in milliseconds.
+-define(LOG_REQUEST_TIMEOUT, 60000).
 %% Bounded counter manager parameters.
 %% Period during which transfer requests from the same DC to the same key are ignored.
 -define(GRACE_PERIOD, 1000000). % in Microseconds
