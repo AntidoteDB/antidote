@@ -6,16 +6,16 @@
         kernel,
         stdlib,
         riak_core,
-        erlzmq,
         runtime_tools,
         tools,
-        antidote_stats
+        antidote_stats,
+        ranch
     ]},
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
         antidote_crdt,
-        ranch
+        antidote_channels
     ]},
 
     {mod, {antidote_app, []}},

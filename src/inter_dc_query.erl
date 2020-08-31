@@ -40,6 +40,7 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("antidote_channels/include/antidote_channel.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 %% API
@@ -60,7 +61,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()), % DCID -> socket
+  channels :: dict:dict(dcid(), channel()), % DCID -> socket
   req_id :: non_neg_integer(),
   unanswered_queries :: ets:tid() % PDCID -> query
 }).
@@ -90,7 +91,7 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = create_queries_table()}}.
+init([]) -> {ok, #state{channels = dict:new(), req_id = 1, unanswered_queries = create_queries_table()}}.
 
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
@@ -102,9 +103,9 @@ handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
     {Result, NewState} =
     lists:foldl(fun({PartitionList, AddressList}, {ResultAcc, AccState}) ->
                     case connect_to_node(AddressList) of
-                        {ok, Socket} ->
+                        {ok, Channel} ->
                             DCPartitionDict =
-                            case dict:find(DCID, AccState#state.sockets) of
+                            case dict:find(DCID, AccState#state.channels) of
                                 {ok, Val} ->
                                     Val;
                                 error ->
@@ -112,13 +113,14 @@ handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
                             end,
                             NewDCPartitionDict =
                             lists:foldl(fun(Partition, Acc) ->
-                                            dict:store(Partition, Socket, Acc)
+                                            dict:store(Partition, Channel, Acc)
                                         end, DCPartitionDict, PartitionList),
-                            NewAccState = AccState#state{sockets = dict:store(DCID, NewDCPartitionDict, AccState#state.sockets)},
+                            NewAccState = AccState#state{channels = dict:store(DCID, NewDCPartitionDict, AccState#state.channels)},
                             F = fun({_ReqId, #request_cache_entry{binary_req=Request, pdcid={QDCID, Partition}}}, _Acc) ->
                                     %% if there are unanswered queries that were sent to the DC we just connected with, resend them
                                     case ((QDCID == DCID) and lists:member(Partition, PartitionList)) of
-                                        true -> erlzmq:send(Socket, Request);
+                                        true ->
+                                            antidote_channel:send(Channel, #rpc_msg{request_payload = Request});
                                         false -> ok
                                     end
                                 end,
@@ -138,11 +140,11 @@ handle_call({del_dc, DCID}, _From, State) ->
 %% Handle an instruction to ask a remote DC.
 handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
     {DCID, Partition} = PDCID,
-    case dict:find(DCID, State#state.sockets) of
+    case dict:find(DCID, State#state.channels) of
     %% If socket found
     %% Find the socket that is responsible for this partition
     {ok, DCPartitionDict} ->
-        {SendPartition, Socket} = case dict:find(Partition, DCPartitionDict) of
+        {SendPartition, Channel} = case dict:find(Partition, DCPartitionDict) of
                                       {ok, Soc} ->
                                           {Partition, Soc};
                                       error ->
@@ -155,7 +157,7 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State
         VersionBinary = ?MESSAGE_VERSION,
         ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
         FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-        ok = erlzmq:send(Socket, FullRequest),
+        antidote_channel:send(Channel, #rpc_msg{request_payload = FullRequest}),
         RequestEntry = #request_cache_entry{request_type=RequestType, req_id_binary=ReqIdBinary,
                                             func=Func, pdcid={DCID, SendPartition}, binary_req=FullRequest},
         {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
@@ -171,7 +173,16 @@ close_dc_sockets(DCPartitionDict) ->
 
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
-handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=Table}) ->
+handle_cast({chan_started, _}, State) ->
+    {noreply, State};
+
+handle_cast({chan_closed, _}, State) ->
+    {noreply, State};
+
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+handle_info(#rpc_msg{reply_payload = BinaryMsg}, State=#state{unanswered_queries=Table}) ->
     <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>>
     = binary_utilities:check_message_version(BinaryMsg),
     %% Be sure this is a request from this socket
@@ -188,22 +199,23 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
         not_found ->
             ?LOG_ERROR("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
-    {noreply, State}.
+    {noreply, State};
+
+handle_info(_Request, State) -> {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 terminate(_Reason, State) ->
     F = fun({_, DCPartitionDict}) ->
-            close_dc_sockets(DCPartitionDict) end,
-    lists:foreach(F, dict:to_list(State#state.sockets)),
+        close_dc_sockets(DCPartitionDict) end,
+    lists:foreach(F, dict:to_list(State#state.channels)),
     ok.
 
-handle_cast(_Request, State) -> {noreply, State}.
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
-
 del_dc(DCID, State) ->
-    case dict:find(DCID, State#state.sockets) of
+    case dict:find(DCID, State#state.channels) of
         {ok, DCPartitionDict} ->
             ok = close_dc_sockets(DCPartitionDict),
-            {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+            {ok, State#state{channels = dict:erase(DCID, State#state.channels)}};
         error ->
             {ok, State}
     end.
@@ -218,30 +230,55 @@ req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_i
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC log reader"),
     connection_error;
-connect_to_node([Address| Rest]) ->
-    %% Test the connection
-    Socket1 = zmq_utils:create_connect_socket(req, false, Address),
-    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
-    BinaryVersion = ?MESSAGE_VERSION,
-    %% Always use 0 as the id of the check up message
-    ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
-    ok = erlzmq:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
-    Res = erlzmq:recv(Socket1),
-    ok = zmq_utils:close_socket(Socket1),
-    case Res of
-        {ok, Binary} ->
-            %% erlzmq:recv returns binary, its spec says iolist, but dialyzer compains that it is not a binary
-            %% so I added this conversion, even though the result of recv is a binary anyway...
-            ResBinary = iolist_to_binary(Binary),
-            %% check that an ok msg was received
-            {_, <<?OK_MSG>>} = binary_utilities:check_version_and_req_id(ResBinary),
-            %% Create a subscriber socket for the specified DC
-            Socket = zmq_utils:create_connect_socket(req, true, Address),
-            %% For each partition in the current node:
-            {ok, Socket};
+
+% TODO: Message being encoded multiple times. Must create parameter in antidote_channel to accept binary messages.
+connect_to_node([{Host, Port} | Rest]) ->
+    case antidote_channel:is_alive(channel_zeromq, #rpc_channel_zmq_params{host = Host, port = Port}) of
+        true ->
+            case check_protocol_version(Host, Port) of
+                true ->
+                    Config = #{
+                        module => channel_zeromq,
+                        pattern => rpc,
+                        async => true,
+                        handler => self(),
+                        network_params => #{
+                            remote_host => Host,
+                            remote_port => Port
+                        }
+                    },
+                    %% Create a subscriber socket for the specified DC
+                    %% For each partition in the current node:
+                    antidote_channel:start_link(Config);
+                _ -> connect_to_node(Rest)
+            end;
         _ ->
             connect_to_node(Rest)
     end.
+
+check_protocol_version(Host, Port) ->
+    Config = #{
+        module => channel_zeromq,
+        pattern => rpc,
+        async => false,
+        network_params => #{
+            remote_host => Host,
+            remote_port => Port
+        }
+    },
+    {ok, Channel} = antidote_channel:start_link(Config),
+
+    BinaryVersion = ?MESSAGE_VERSION,
+    ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
+    Msg = <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>,
+    Reply = antidote_channel:send(Channel, #rpc_msg{request_payload = Msg}),
+    antidote_channel:stop(Channel),
+    case binary_utilities:check_version_and_req_id(Reply) of
+        {_, <<?OK_MSG>>} -> true;
+        _ -> false
+    end.
+
+
 
 %%%===================================================================
 %%%  Ets tables

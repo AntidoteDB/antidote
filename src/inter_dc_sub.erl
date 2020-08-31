@@ -35,29 +35,30 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("antidote_channels/include/antidote_channel.hrl").
 -include_lib("kernel/include/logger.hrl").
 
 
 %% API
 -export([
-  add_dc/2,
-  del_dc/1
+    add_dc/2,
+    del_dc/1
 ]).
 
 %% Server methods
 -export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3
-  ]).
+    init/1,
+    start_link/0,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 %% State
 -record(state, {
-  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()) % DCID -> socket
+    channels :: dict:dict(dcid(), pid()) % DCID -> socket
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -72,16 +73,16 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new()}}.
+init([]) -> {ok, #state{channels = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
     %% First delete the DC if it is alread connected
     {_, State} = del_dc(DCID, OldState),
     case connect_to_nodes(Publishers, []) of
-        {ok, Sockets} ->
+        {ok, Channels} ->
             %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
             %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
-            {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+            {reply, ok, State#state{channels = dict:store(DCID, Channels, State#state.channels)}};
         connection_error ->
             {reply, error, State}
     end;
@@ -90,60 +91,63 @@ handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
     {reply, Resp, NewState}.
 
-%% handle an incoming interDC transaction from a remote node.
-handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  %% decode the message
-  Msg = inter_dc_txn:from_bin(BinaryMsg),
-  %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg),
-  {noreply, State}.
+handle_info(#pub_sub_msg{payload = #interdc_txn{} = Msg}, State) ->
+    inter_dc_sub_vnode:deliver_txn(Msg),
+    {noreply, State};
 
-handle_cast(_Request, State) -> {noreply, State}.
+handle_info(_Request, State) -> {noreply, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
-  F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
-  lists:foreach(F, dict:to_list(State#state.sockets)).
+    F = fun({_, Channels}) -> lists:foreach(fun antidote_channel:stop/1, Channels) end,
+    lists:foreach(F, dict:to_list(State#state.channels)).
 
 del_dc(DCID, State) ->
-    case dict:find(DCID, State#state.sockets) of
-        {ok, Sockets} ->
-            lists:foreach(fun zmq_utils:close_socket/1, Sockets),
-            {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+    case dict:find(DCID, State#state.channels) of
+        {ok, Channels} ->
+            lists:foreach(fun antidote_channel:stop/1, Channels),
+            {ok, State#state{channels = dict:erase(DCID, State#state.channels)}};
         error ->
             {ok, State}
     end.
 
 connect_to_nodes([], Acc) ->
     {ok, Acc};
-connect_to_nodes([Node|Rest], Acc) ->
+connect_to_nodes([Node | Rest], Acc) ->
     case connect_to_node(Node) of
-        {ok, Socket} ->
-            connect_to_nodes(Rest, [Socket|Acc]);
+        {ok, Channel} ->
+            connect_to_nodes(Rest, [Channel | Acc]);
         connection_error ->
-            lists:foreach(fun zmq_utils:close_socket/1, Acc),
+            lists:foreach(fun antidote_channel:stop/1, Acc),
             connection_error
     end.
 
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
-connect_to_node([Address|Rest]) ->
-    %% Test the connection
-    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
-    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
-    ok = zmq_utils:sub_filter(Socket1, <<>>),
-    Res = erlzmq:recv(Socket1),
-    ok = zmq_utils:close_socket(Socket1),
-    case Res of
-        {ok, _} ->
-            %% Create a subscriber socket for the specified DC
-            Socket = zmq_utils:create_connect_socket(sub, true, Address),
-            %% For each partition in the current node:
-            lists:foreach(fun(P) ->
-                              %% Make the socket subscribe to messages prefixed with the given partition number
-                              ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
-                          end, dc_utilities:get_my_partitions()),
-            {ok, Socket};
-        _ ->
+connect_to_node([{Host, Port} = Address | Rest]) ->
+    case antidote_channel:is_alive(channel_zeromq, #pub_sub_zmq_params{host = Host, port = Port}) of
+        true ->
+            PartBin = lists:map(
+                fun(P) ->
+                    inter_dc_txn:partition_to_bin(P)
+                end, dc_utilities:get_my_partitions()),
+
+            Config = #{
+                module => channel_zeromq,
+                pattern => pub_sub,
+                handler => self(),
+                topics => PartBin,
+                namespace => <<>>,
+                network_params => #{
+                    publishersAddresses => [Address]
+                }
+            },
+            antidote_channel:start_link(Config);
+
+        false ->
             connect_to_node(Rest)
     end.

@@ -35,43 +35,46 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+
+-include_lib("antidote_channels/include/antidote_channel.hrl").
 -include_lib("kernel/include/logger.hrl").
+
 %% API
 -export([
-  broadcast/1,
-  get_address/0,
-  get_address_list/0]).
+    broadcast/1,
+    get_address/0,
+    get_address_list/0]).
 
 %% Server methods
 -export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3]).
+    init/1,
+    start_link/0,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3]).
 
 %% State
--record(state, {socket}). %% socket :: erlzmq_socket()
+-record(state, {channel :: channel()}).
 
 %%%% API --------------------------------------------------------------------+
 
 -spec get_address() -> socket_address().
 get_address() ->
-  %% first try resolving our hostname according to the node name
-  [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-  Ip = case inet:getaddr(Hostname, inet) of
-    {ok, HostIp} -> HostIp;
-    {error, _} ->
-      %% cannot resolve hostname locally, fall back to interface ip
-      %% TODO check if we do not return a link-local address
-      {ok, List} = inet:getif(),
-      {IIp, _, _} = hd(List),
-      IIp
-  end,
-  Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-  {Ip, Port}.
+    %% first try resolving our hostname according to the node name
+    [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
+    Ip = case inet:getaddr(Hostname, inet) of
+             {ok, HostIp} -> HostIp;
+             {error, _} ->
+                 %% cannot resolve hostname locally, fall back to interface ip
+                 %% TODO check if we do not return a link-local address
+                 {ok, List} = inet:getif(),
+                 {IIp, _, _} = hd(List),
+                 IIp
+         end,
+    Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
+    {Ip, Port}.
 
 -spec get_address_list() -> [socket_address()].
 get_address_list() ->
@@ -80,32 +83,46 @@ get_address_list() ->
     %% get host name from node name
     [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
     IpList = case inet:getaddr(Hostname, inet) of
-      {ok, HostIp} -> [HostIp|List1];
-      {error, _} -> List1
-    end,
+                 {ok, HostIp} -> [HostIp | List1];
+                 {error, _} -> List1
+             end,
     Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
 
 -spec broadcast(interdc_txn()) -> ok.
-broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
-    Normal -> Normal
-  end.
+broadcast(#interdc_txn{partition = P} = Txn) ->
+    case catch gen_server:call(?MODULE, {publish, inter_dc_txn:partition_to_bin(P), Txn}) of
+        {'EXIT', _Reason} ->
+            ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+        Normal -> Normal
+    end.
 
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  ?LOG_INFO("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+    {_, Port} = get_address(),
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+    Config = #{
+        module => channel_zeromq,
+        pattern => pub_sub,
+        namespace => <<>>,
+        network_params => #{
+            host => {0, 0, 0, 0},
+            port => Port
+        }
+    },
 
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+    {ok, Channel} = antidote_channel:start_link(Config),
+    {ok, #state{channel = Channel}}.
+
+handle_call({publish, Partition, Message}, _From, State) ->
+    ok = antidote_channel:send(State#state.channel, #pub_sub_msg{topic = Partition, payload = Message}),
+    {reply, ok, State}.
+
+
+terminate(_Reason, State) -> antidote_channel:stop(State#state.channel).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
