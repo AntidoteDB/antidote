@@ -841,7 +841,7 @@ check_min_time(SnapshotTime, MinSnapshotTime) ->
 check_max_time(SnapshotTime, MaxSnapshotTime) ->
     ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
 
-handle_handoff_command(?FOLD_REQ{foldfun = FoldFun, acc0 = OldHandoffState}, _Sender,
+handle_handoff_command(#riak_core_fold_req_v2{foldfun = FoldFun, acc0 = OldHandoffState}, _Sender,
                        #state{logs_map = Map, partition = Partition} = State) ->
     ?LOG_DEBUG("Fold request for partition ~p", [Partition]),
 

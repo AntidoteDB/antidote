@@ -218,7 +218,7 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
+handle_handoff_command(#riak_core_fold_req_v2{foldfun=Fun, acc0=Acc0},
                        _Sender,
                        State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
