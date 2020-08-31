@@ -26,6 +26,14 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides an API to interact with DC nodes. Interactions include:
+%%      - Getting descriptors.
+%%      - Connecting Nodes to a DC.
+%%      - Check the DC start status.
+%%      - Check node restart status.
+%%      - Tell nodes to drop ping messages.
+
+
 -module(inter_dc_manager).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").

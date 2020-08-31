@@ -26,6 +26,9 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utilities for creating/closing zeromq sockets which are used
+%%      by interdc processes.
+
 -module(zmq_utils).
 
 -export([create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).
