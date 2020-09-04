@@ -77,8 +77,8 @@ init(_Args) ->
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
 
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
-    InterDcPub = ?CHILD(inter_dc_pub, worker, []),
-    InterDcSub = ?CHILD(inter_dc_sub, worker, []),
+
+
     StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
@@ -86,9 +86,13 @@ init(_Args) ->
     InterDcLogReaderRMaster = ?CHILD(inter_dc_query_receive_socket, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    InterDcSup = {inter_dc_sup,
+        {inter_dc_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [inter_dc_sup]},
 
     MetaDataManagerSup = {meta_data_manager_sup,
-                          {meta_data_manager_sup, start_link, [stable_time_functions]},
+        {meta_data_manager_sup, start_link, [stable_time_functions]},
                           permanent, 5000, supervisor,
                           [meta_data_manager_sup]},
 
@@ -120,8 +124,7 @@ init(_Args) ->
        ClockSIiTxCoordSup,
        MaterializerMaster,
        ZMQContextManager,
-       InterDcPub,
-       InterDcSub,
+       InterDcSup,
        InterDcSubVnode,
        InterDcDepVnode,
        InterDcLogReaderQMaster,

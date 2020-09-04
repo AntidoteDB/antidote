@@ -88,7 +88,12 @@ get_address_list() ->
 
 -spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
+    % this is used in the to_bin function
+    PartitionBin = inter_dc_txn:partition_to_bin(Txn#interdc_txn.partition),
+    logger:warning("~p broadcasting from partition ~p", [node(), PartitionBin]),
+
+    BinTxn = inter_dc_txn:to_bin(Txn),
+  case catch gen_server:call(?MODULE, {publish, << <<"P">>/binary, BinTxn/binary >> }) of
     {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
     Normal -> Normal
   end.
@@ -98,14 +103,18 @@ broadcast(Txn) ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  ?LOG_INFO("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+    {_, Port} = get_address(),
+    %%  Socket = zmq_utils:create_bind_socket(pub, false, Port),
+    {ok, Socket} = chumak:socket(pub),
+    % bind on all addresses
+    {ok, _Pid} = chumak:bind(Socket, tcp, "0.0.0.0", Port),
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+    ?LOG_INFO("Publisher started on port ~p", [Port]),
+    {ok, #state{socket = Socket}}.
 
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+handle_call({publish, Message}, _From, State) -> {reply, chumak:send(State#state.socket, Message), State}.
+
+terminate(_Reason, State) -> exit(State#state.socket, normal).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

@@ -91,23 +91,31 @@ handle_call({del_dc, DCID}, _From, State) ->
     {reply, Resp, NewState}.
 
 %% handle an incoming interDC transaction from a remote node.
-handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
+handle_info({zmq, BinaryMsg}, State) ->
   %% decode the message
   Msg = inter_dc_txn:from_bin(BinaryMsg),
+
+  Partition = Msg#interdc_txn.partition,
+  logger:warning("Received subscribe message from ~p",[Partition]),
+
   %% deliver the message to an appropriate vnode
   ok = inter_dc_sub_vnode:deliver_txn(Msg),
-  {noreply, State}.
+  {noreply, State};
+
+handle_info({'EXIT', Pid, Reason}, State) ->
+    logger:warning("Socket ~p shutdown: ~p", [Pid, Reason]),
+    {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
-  F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
+  F = fun({_, Sockets}) -> lists:foreach(fun(E) -> exit(E, normal) end, Sockets) end,
   lists:foreach(F, dict:to_list(State#state.sockets)).
 
 del_dc(DCID, State) ->
     case dict:find(DCID, State#state.sockets) of
         {ok, Sockets} ->
-            lists:foreach(fun zmq_utils:close_socket/1, Sockets),
+            lists:foreach(fun(E) -> exit(E, normal) end, Sockets),
             {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
         error ->
             {ok, State}
@@ -120,30 +128,52 @@ connect_to_nodes([Node|Rest], Acc) ->
         {ok, Socket} ->
             connect_to_nodes(Rest, [Socket|Acc]);
         connection_error ->
-            lists:foreach(fun zmq_utils:close_socket/1, Acc),
+            lists:foreach(fun(E) -> exit(E, normal) end, Acc),
             connection_error
     end.
 
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
-connect_to_node([Address|Rest]) ->
+connect_to_node([_Address = {Ip, Port} |Rest]) ->
     %% Test the connection
-    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
-    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
-    ok = zmq_utils:sub_filter(Socket1, <<>>),
-    Res = erlzmq:recv(Socket1),
-    ok = zmq_utils:close_socket(Socket1),
+%%    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
+    {ok, Socket1} = chumak:socket(sub),
+    {ok, _Pid1} = chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port),
+    %% chumak timeout by default
+%%    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    ok = chumak:subscribe(Socket1, <<>>),
+    Res = chumak:recv(Socket1),
+    exit(Socket1, normal),
     case Res of
         {ok, _} ->
             %% Create a subscriber socket for the specified DC
-            Socket = zmq_utils:create_connect_socket(sub, true, Address),
+%%            Socket = zmq_utils:create_connect_socket(sub, true, Address),
+            {ok, Socket} = chumak:socket(sub),
+
             %% For each partition in the current node:
             lists:foreach(fun(P) ->
-                              %% Make the socket subscribe to messages prefixed with the given partition number
-                              ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
+                %% Make the socket subscribe to messages prefixed with the given partition number
+                PartitionBin = inter_dc_txn:partition_to_bin(P),
+                logger:warning("Subscribing to ~p of ~p:~p", [PartitionBin, Ip, Port]),
+                ok = chumak:subscribe(Socket, << <<"P">>/binary, PartitionBin/binary>>)
                           end, dc_utilities:get_my_partitions()),
+
+
+            {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
+            %% spawn receive sub worker and trap exit
+            process_flag(trap_exit, true),
+            Self = self(),
+            spawn_link(fun() -> logger:warning("spawned worker ~p", [self()]), loop(Self, Socket) end),
+
             {ok, Socket};
         _ ->
             connect_to_node(Rest)
     end.
+
+
+loop(Parent, Socket) ->
+    {ok, << P:1/binary, Data/binary >> } = chumak:recv(Socket),
+    <<"P">> = P, % first byte should be partition delimiter
+    Parent ! {zmq, Data},
+    loop(Parent, Socket).
