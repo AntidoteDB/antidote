@@ -127,13 +127,13 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
                 ok ->
                   %% Enter buffering state while waiting for response and set timeout
                   State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT};
-                _  ->
-                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
+                Reason  ->
+                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message, reason: ~p", [Reason]),
                   State#inter_dc_sub_buf{state_name = normal}
               end
             catch
-              _:_ ->
-                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
+              S:T ->
+                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message: ~p~n~p",[S,T]),
                   State#inter_dc_sub_buf{state_name = normal}
             end;
           false -> %% we deliver the transaction as we can't ask anything to the remote log

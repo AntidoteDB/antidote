@@ -60,7 +60,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()), % DCID -> socket
+  sockets :: dict:dict({dcid(), term()} , zmq_socket()), % {DCID, partition} -> Socket
   req_id :: non_neg_integer(),
   unanswered_queries :: ets:tid() % PDCID -> query
 }).
@@ -72,8 +72,8 @@
 %%     Func is a function that will be called when the reply is received
 %%          It should take two arguments the first is the binary response,
 %%          the second is a #request_cache_entry{} record
-%%          Note that the function should not perform anywork, instead just send
-%%%         the work to another thread, otherwise it will block other messages
+%%          Note that the function should not perform any work, instead just send
+%%%         the work to another process, otherwise it will block other messages
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(), request_cache_entry()) -> ok))
              -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
@@ -93,81 +93,67 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = create_queries_table()}}.
 
 %% Handle the instruction to add a new DC.
-handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
-    %% Create a socket and store it
-    %% The DC will contain a list of ip/ports each with a list of partition ids loacated at each node
-    %% This will connect to each node and store in the cache the list of partitions located at each node
-    %% so that a request goes directly to the node where the needed partition is located
-    {_, State} = del_dc(DCID, OldState),
-    {Result, NewState} =
-    lists:foldl(fun({PartitionList, AddressList}, {ResultAcc, AccState}) ->
-                    case connect_to_node(AddressList) of
-                        {ok, Socket} ->
-                            DCPartitionDict =
-                            case dict:find(DCID, AccState#state.sockets) of
-                                {ok, Val} ->
-                                    Val;
-                                error ->
-                                    dict:new()
-                            end,
-                            NewDCPartitionDict =
-                            lists:foldl(fun(Partition, Acc) ->
-                                            dict:store(Partition, Socket, Acc)
-                                        end, DCPartitionDict, PartitionList),
-                            NewAccState = AccState#state{sockets = dict:store(DCID, NewDCPartitionDict, AccState#state.sockets)},
-                            F = fun({_ReqId, #request_cache_entry{binary_req=Request, pdcid={QDCID, Partition}}}, _Acc) ->
-                                    %% if there are unanswered queries that were sent to the DC we just connected with, resend them
-                                    case ((QDCID == DCID) and lists:member(Partition, PartitionList)) of
-                                        true -> erlzmq:send(Socket, Request);
-                                        false -> ok
-                                    end
-                                end,
-                            fold_queries_table(F, NewAccState#state.unanswered_queries),
-                            {ResultAcc, NewAccState};
-                        connection_error ->
-                            {error, AccState}
-                    end
-                end, {ok, State}, LogReaders),
-    {reply, Result, NewState};
+handle_call({add_dc, DCID, LogReaders}, _From, State = #state{
+    unanswered_queries = _UnansweredQueries ,
+    sockets = OldDcPartitionDict
+}) ->
+    %% delete the dc if already added
+    InitialDcPartitionDict = del_dc(DCID, OldDcPartitionDict),
+
+    %% add every DC-Partition pair to dict
+    AddPartitionsToDict = fun(Partition, {CurrentDict, Socket}) ->
+            Key = {DCID, Partition},
+            %% assert that DC was really deleted
+            error = dict:find(Key, CurrentDict),
+            NewDict = dict:store(Key, Socket, CurrentDict),
+            {NewDict, Socket}
+        end,
+
+    %% for each log reader add every {DCID, Partition} tuple to the dict
+    AddLogReaders = fun({Partitions, AddressList}, CurrentDict) ->
+            {ok, Socket} = connect_to_node(AddressList),
+            {ResultDict, Socket} = lists:foldl(AddPartitionsToDict, {CurrentDict, Socket}, Partitions),
+            ResultDict
+        end,
+
+%%                F = fun({_ReqId, #request_cache_entry{binary_req=Request, pdcid={QDCID, Partition}}}, _Acc) ->
+%%                    %% if there are unanswered queries that were sent to the DC we just connected with, resend them
+%%                    case ((QDCID == DCID) and lists:member(Partition, PartitionList)) of
+%%                        true -> erlzmq:send(Socket, Request);
+%%                        false -> ok
+%%                    end
+%%                    end,
+%%                fold_queries_table(F, UnansweredQueries),
+
+    ResultDcPartitionDict = lists:foldl(AddLogReaders, InitialDcPartitionDict, LogReaders),
+    {reply, ok, State#state{sockets = ResultDcPartitionDict}};
 
 %% Remove a DC. Unanswered queries are left untouched.
-handle_call({del_dc, DCID}, _From, State) ->
-    {_, NewState} = del_dc(DCID, State),
-    {reply, ok, NewState};
+handle_call({del_dc, DCID}, _From, State = #state{ sockets = Dict}) ->
+    NewDict = del_dc(DCID, Dict),
+    {reply, ok, State#state{sockets = NewDict}};
 
 %% Handle an instruction to ask a remote DC.
-handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
-    {DCID, Partition} = PDCID,
-    case dict:find(DCID, State#state.sockets) of
-    %% If socket found
-    %% Find the socket that is responsible for this partition
-    {ok, DCPartitionDict} ->
-        {SendPartition, Socket} = case dict:find(Partition, DCPartitionDict) of
-                                      {ok, Soc} ->
-                                          {Partition, Soc};
-                                      error ->
-                                          %% If you don't see this parition at the DC, just take the first
-                                          %% socket from this DC
-                                          %% Maybe should use random??
-                                          hd(dict:to_list(DCPartitionDict))
-                                  end,
-        %% Build the binary request
-        VersionBinary = ?MESSAGE_VERSION,
-        ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-        FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-        ok = erlzmq:send(Socket, FullRequest),
-        RequestEntry = #request_cache_entry{request_type=RequestType, req_id_binary=ReqIdBinary,
-                                            func=Func, pdcid={DCID, SendPartition}, binary_req=FullRequest},
-        {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
-    %% If socket not found
-    _ -> {reply, unknown_dc, State}
-    end.
+handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
+    case dict:find({DCID, Partition}, State#state.sockets) of
+        {ok, Socket} ->
+            VersionBinary = ?MESSAGE_VERSION,
+            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
+            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+            ok = erlzmq:send(Socket, FullRequest),
+            RequestEntry = #request_cache_entry{
+                request_type = RequestType,
+                req_id_binary = ReqIdBinary,
+                func = Func,
+                pdcid = {DCID, Partition},
+                binary_req = FullRequest
+            },
 
-close_dc_sockets(DCPartitionDict) ->
-    F = fun({_, Socket}) ->
-            (catch zmq_utils:close_socket(Socket)) end,
-    lists:foreach(F, dict:to_list(DCPartitionDict)),
-    ok.
+            {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
+        _ ->
+            ?LOG_WARNING("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
+            {reply, unknown_dc, State}
+    end.
 
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
@@ -191,22 +177,30 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
     {noreply, State}.
 
 terminate(_Reason, State) ->
-    F = fun({_, DCPartitionDict}) ->
-            close_dc_sockets(DCPartitionDict) end,
+    F = fun({{_DCID, _Partition}, Socket}) -> zmq_utils:close_socket(Socket) end,
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-del_dc(DCID, State) ->
-    case dict:find(DCID, State#state.sockets) of
-        {ok, DCPartitionDict} ->
-            ok = close_dc_sockets(DCPartitionDict),
-            {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
-        error ->
-            {ok, State}
-    end.
+del_dc(DCID, Dict) ->
+    %% filter all DCID-Partition pairs to remove them
+    MatchingDCID = fun({DictDCID, _DictPartition}, _Value) -> DictDCID == DCID end,
+    ToRemoveDict = dict:filter(MatchingDCID, Dict),
+
+    %% close sockets and erase entry of input dict
+    RemoveDCIDPartitionEntry =
+        fun({Key, Socket}, AccDict) ->
+            %% the sockets are the same, but close all of them anyway (close socket is idempotent)
+            %% FIXME
+%%            inter_dc_utils:close_socket(Socket),
+            zmq_utils:close_socket(Socket),
+            dict:erase(Key, AccDict)
+        end,
+
+    lists:foldl(RemoveDCIDPartitionEntry, Dict, dict:to_list(ToRemoveDict)).
+
 
 %% Saves the request in the state, so it can be resent if the DC was disconnected.
 req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_id=OldReq}) ->
