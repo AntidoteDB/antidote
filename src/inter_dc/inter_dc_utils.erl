@@ -33,7 +33,9 @@
 
 -export([
     get_address/0,
-    get_address_list/1
+    get_address_list/1,
+    close_socket/1,
+    get_my_partitions/0
 ]).
 
 -spec get_address() -> inet:ip_address().
@@ -66,3 +68,14 @@ get_address_list(Port) ->
                 List1
         end,
     [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
+
+-spec close_socket(zmq_socket()) -> ok.
+close_socket(Socket) ->
+    exit(Socket, normal),
+    ok.
+
+%% Returns the partition indices hosted by the local (caller) node.
+-spec get_my_partitions() -> [partition_id()].
+get_my_partitions() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:my_indices(Ring).
