@@ -35,44 +35,37 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+
 -include_lib("kernel/include/logger.hrl").
 
-
 %% API
--export([
-  add_dc/2,
-  del_dc/1
-]).
-
+-export([add_dc/2, del_dc/1]).
 %% Server methods
--export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3
-  ]).
+-export([init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+         code_change/3]).
 
 %% State
--record(state, {
-  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()) % DCID -> socket
-}).
+-record(state,
+        {sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket())}). % DCID -> socket
 
 %%%% API --------------------------------------------------------------------+
 
 %% TODO: persist added DCs in case of a node failure, reconnect on node restart.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}, ?COMM_TIMEOUT).
+add_dc(DCID, Publishers) ->
+    gen_server:call(?MODULE, {add_dc, DCID, Publishers}, ?COMM_TIMEOUT).
 
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
+del_dc(DCID) ->
+    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new()}}.
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+init([]) ->
+    {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
     %% First delete the DC if it is alread connected
@@ -85,37 +78,48 @@ handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
         connection_error ->
             {reply, error, State}
     end;
-
 handle_call({del_dc, DCID}, _From, State) ->
     {Resp, NewState} = del_dc(DCID, State),
     {reply, Resp, NewState}.
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, BinaryMsg}, State) ->
-  %% decode the message
-  Msg = inter_dc_txn:from_bin(BinaryMsg),
+    %% decode the message
+    Msg = inter_dc_txn:from_bin(BinaryMsg),
 
-  Partition = Msg#interdc_txn.partition,
-  logger:warning("Received subscribe message from ~p",[Partition]),
+    Partition = Msg#interdc_txn.partition,
+    logger:warning("Received subscribe message from ~p", [Partition]),
 
-  %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg),
-  {noreply, State};
-
+    %% deliver the message to an appropriate vnode
+    ok = inter_dc_sub_vnode:deliver_txn(Msg),
+    {noreply, State};
 handle_info({'EXIT', Pid, Reason}, State) ->
     logger:warning("Socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State}.
 
-handle_cast(_Request, State) -> {noreply, State}.
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
 terminate(_Reason, State) ->
-  F = fun({_, Sockets}) -> lists:foreach(fun(E) -> exit(E, normal) end, Sockets) end,
-  lists:foreach(F, dict:to_list(State#state.sockets)).
+    F =
+        fun ({_, Sockets}) ->
+                lists:foreach(fun (E) ->
+                                      exit(E, normal)
+                              end,
+                              Sockets)
+        end,
+    lists:foreach(F, dict:to_list(State#state.sockets)).
 
 del_dc(DCID, State) ->
     case dict:find(DCID, State#state.sockets) of
         {ok, Sockets} ->
-            lists:foreach(fun(E) -> exit(E, normal) end, Sockets),
+            lists:foreach(fun (E) ->
+                                  exit(E, normal)
+                          end,
+                          Sockets),
             {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
         error ->
             {ok, State}
@@ -123,57 +127,65 @@ del_dc(DCID, State) ->
 
 connect_to_nodes([], Acc) ->
     {ok, Acc};
-connect_to_nodes([Node|Rest], Acc) ->
+connect_to_nodes([Node | Rest], Acc) ->
     case connect_to_node(Node) of
         {ok, Socket} ->
-            connect_to_nodes(Rest, [Socket|Acc]);
+            connect_to_nodes(Rest, [Socket | Acc]);
         connection_error ->
-            lists:foreach(fun(E) -> exit(E, normal) end, Acc),
+            lists:foreach(fun (E) ->
+                                  exit(E, normal)
+                          end,
+                          Acc),
             connection_error
     end.
 
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
-connect_to_node([_Address = {Ip, Port} |Rest]) ->
+connect_to_node([_Address = {Ip, Port} | Rest]) ->
     %% Test the connection
-%%    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
+    %%    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
     {ok, Socket1} = chumak:socket(sub),
     {ok, _Pid1} = chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port),
     %% chumak timeout by default
-%%    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    %%    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
     ok = chumak:subscribe(Socket1, <<>>),
     Res = chumak:recv(Socket1),
     exit(Socket1, normal),
     case Res of
         {ok, _} ->
             %% Create a subscriber socket for the specified DC
-%%            Socket = zmq_utils:create_connect_socket(sub, true, Address),
+            %%            Socket = zmq_utils:create_connect_socket(sub, true, Address),
             {ok, Socket} = chumak:socket(sub),
 
             %% For each partition in the current node:
-            lists:foreach(fun(P) ->
-                %% Make the socket subscribe to messages prefixed with the given partition number
-                PartitionBin = inter_dc_txn:partition_to_bin(P),
-                logger:warning("Subscribing to ~p of ~p:~p", [PartitionBin, Ip, Port]),
-                ok = chumak:subscribe(Socket, << <<"P">>/binary, PartitionBin/binary>>)
-                          end, dc_utilities:get_my_partitions()),
-
+            lists:foreach(fun (P) ->
+                                  %% Make the socket subscribe to messages prefixed with the given partition number
+                                  PartitionBin = inter_dc_txn:partition_to_bin(P),
+                                  logger:warning("Subscribing to ~p of ~p:~p",
+                                                 [PartitionBin, Ip, Port]),
+                                  ok =
+                                      chumak:subscribe(Socket,
+                                                       <<<<"P">>/binary, PartitionBin/binary>>)
+                          end,
+                          dc_utilities:get_my_partitions()),
 
             {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
             %% spawn receive sub worker and trap exit
             process_flag(trap_exit, true),
             Self = self(),
-            spawn_link(fun() -> logger:warning("spawned worker ~p", [self()]), loop(Self, Socket) end),
+            spawn_link(fun () ->
+                               logger:warning("spawned worker ~p", [self()]),
+                               loop(Self, Socket)
+                       end),
 
             {ok, Socket};
         _ ->
             connect_to_node(Rest)
     end.
 
-
 loop(Parent, Socket) ->
-    {ok, << P:1/binary, Data/binary >> } = chumak:recv(Socket),
+    {ok, <<P:1/binary, Data/binary>>} = chumak:recv(Socket),
     <<"P">> = P, % first byte should be partition delimiter
     Parent ! {zmq, Data},
     loop(Parent, Socket).
