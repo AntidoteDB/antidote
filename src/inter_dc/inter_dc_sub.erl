@@ -63,21 +63,19 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    {ok, Dir} = application:get_env(antidote, data_antidote),
-    DcsPath = filename:join(Dir, "connected_dcs.dets"),
-    logger:warning("Opening at ~p", [DcsPath]),
+    %% TODO: persist added DCs and reconnect
+    %%       this will crash inter_dc_sub if added dc is not reachable
+    %%       i.e. handle `error` reply case appropriately
+    %%  DcIdPubList = [{DCID, Publishers}]
+    %%  lists:foreach(fun({DCID, Publishers}) -> ok = gen_server:call(?MODULE, {add_dc, DCID, Publishers}) end, DcIdPubList),
 
     {ok, #state{sockets = dict:new()}}.
 
-%% TODO: persist added DCs in case of a node failure, reconnect on node restart.
 handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
     %% First delete the DC if it is already connected
     {_, State} = del_dc(DCID, OldState),
     case connect_to_nodes(Publishers, []) of
         {ok, Sockets} ->
-            %% TODO maybe intercept a situation where the vnode location changes and
-            %%      reflect it in sub socket filer rules, optimizing traffic between nodes inside a DC.
-            %%      That could save a tiny bit of bandwidth after node failure.
             {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
         connection_error ->
             {reply, error, State}
@@ -88,17 +86,12 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, BinaryMsg}, State) ->
-    %% decode the message
+    %% decode and deliver to corresponding vnode
     Msg = inter_dc_txn:from_bin(BinaryMsg),
-    %% deliver the message to an appropriate vnode
     ok = inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State};
-%% zmq connect worker shutdown
-handle_info({'EXIT', Pid, test}, State) ->
-    logger:debug("Test socket ~p shutdown", [Pid]),
-    {noreply, State};
+
 handle_info({'EXIT', Pid, Reason}, State) ->
-    %% TODO
     logger:info("Subsriber connect socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State}.
 
@@ -110,20 +103,24 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(_Reason, State) ->
     % close all sockets for all dcs
-    F = fun ({_, Sockets}) ->
-        lists:foreach(fun inter_dc_utils:close_socket/1, Sockets)
-        end,
+    F = fun ({_, Sockets}) -> lists:foreach(fun inter_dc_utils:close_socket/1, Sockets) end,
     lists:foreach(F, dict:to_list(State#state.sockets)).
 
-del_dc(DCID, State) ->
-    case dict:find(DCID, State#state.sockets) of
+
+
+%%%% Internal methods ---------------------------------------------------------+
+
+-spec del_dc(dcid(), dict:dict(dcid(), zmq_socket())) -> {ok, dict:dict(dcid(), zmq_socket())}.
+del_dc(DCID, DCIDSocketDict) ->
+    case dict:find(DCID, DCIDSocketDict) of
         {ok, Sockets} ->
             lists:foreach(fun inter_dc_utils:close_socket/1, Sockets),
-            {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+            {ok, dict:erase(DCID, DCIDSocketDict)};
         error ->
-            {ok, State}
+            {ok, DCIDSocketDict}
     end.
 
+-spec connect_to_nodes([socket_address()], [zmq_socket()]) -> [zmq_socket()] | connection_error.
 connect_to_nodes([], Acc) ->
     {ok, Acc};
 connect_to_nodes([Node | Rest], Acc) ->
@@ -135,50 +132,71 @@ connect_to_nodes([Node | Rest], Acc) ->
             connection_error
     end.
 
+-spec connect_to_node([socket_address()]) -> zmq_socket() | connection_error.
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([_Address = {Ip, Port} | Rest]) ->
     %% Test the connection
-    {ok, Socket1} = chumak:socket(sub),
-    {ok, _Pid1} = chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port),
-    % receives a ping
-    % TODO can it receive a valid publish transaction from any partition, causing message loss?
-    %%     this could only happen after a restart, if anything
-    ok = chumak:subscribe(Socket1, <<>>),
-    Res = chumak:recv(Socket1),
-    inter_dc_utils:close_socket(Socket1),
-    case Res of
-        {ok, _} ->
-            %% Create a subscriber socket for the specified DC
-            {ok, Socket} = chumak:socket(sub),
+    case sub_socket_and_connect(Ip, Port) of
+        {ok, Socket1} ->
+            %% receives a ping
+            %% TODO can it receive a valid publish transaction from any partition, causing message loss?
+            %%      this could only happen after a restart, if anything
+            ok = chumak:subscribe(Socket1, <<>>),
+            Res = chumak:recv(Socket1),
+            inter_dc_utils:close_socket(Socket1),
 
-            SubscribePartitionFun = fun(Partition) ->
-                %% Make the socket subscribe to messages prefixed with the given partition number
-                PartitionBin = inter_dc_txn:partition_to_bin(Partition),
-                ?LOG_INFO("Subscribing to ~p of ~p:~p", [PartitionBin, Ip, Port]),
-                ok = chumak:subscribe(Socket, <<<<"P">>/binary, PartitionBin/binary>>)
-                                    end,
+            case Res of
+                {ok, _} ->
+                    %% Create a subscriber socket for the specified DC
+                    {ok, Socket} = chumak:socket(sub),
 
-            %% For each partition in the current node, subscribe
-            %% this assumes that every DC has its cluster fully set up and partitions won't change anymore
-            lists:foreach(SubscribePartitionFun, inter_dc_utils:get_my_partitions()),
+                    SubscribePartitionFun = fun(Partition) ->
+                        %% Make the socket subscribe to messages prefixed with the given partition number and <<"P">>
+                        PartitionBin = inter_dc_txn:partition_to_bin(Partition),
+                        ?LOG_INFO("Subscribing to ~p of ~p:~p", [PartitionBin, Ip, Port]),
+                        ok = chumak:subscribe(Socket, <<<<"P">>/binary, PartitionBin/binary>>)
+                                            end,
 
-            %% connect the socket
-            {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
+                    %% For each partition in the current node, subscribe
+                    %% this assumes that every DC has its cluster fully set up and partitions won't change anymore
+                    lists:foreach(SubscribePartitionFun, inter_dc_utils:get_my_partitions()),
 
-            %% spawn receive subscription worker and trap exit
-            process_flag(trap_exit, true),
-            Self = self(),
-            spawn_link(fun () ->
-                ?LOG_DEBUG("Spawned sub connect worker ~p", [self()]),
-                loop(Self, Socket)
-                       end),
+                    %% connect the socket
+                    {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
 
-            {ok, Socket};
-        _ ->
-            connect_to_node(Rest)
+                    %% spawn receive subscription worker and trap exit
+                    process_flag(trap_exit, true),
+                    Self = self(),
+                    spawn_link(fun () ->
+                        ?LOG_DEBUG("Spawned sub connect worker ~p", [self()]),
+                        loop(Self, Socket)
+                               end),
+
+                    {ok, Socket};
+                _ ->
+                    connect_to_node(Rest)
+            end;
+
+        connection_error -> connect_to_node(Rest)
     end.
+
+
+sub_socket_and_connect(Ip, Port) ->
+    case chumak:socket(sub) of
+        {ok, Socket1} ->
+            case chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port) of
+                {ok, _Pid} -> Socket1;
+                {error, Reason} ->
+                    ?LOG_WARNING("Could not connect to publisher: ~p", [Reason]),
+                    connection_error
+            end;
+        {error, Reason} ->
+            ?LOG_ERROR("Could not create subscriber socket: ~p", [Reason]),
+            connection_error
+    end.
+
 
 loop(Parent, Socket) ->
     {ok, <<P:1/binary, Data/binary>>} = chumak:recv(Socket),

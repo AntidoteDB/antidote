@@ -42,7 +42,7 @@
     pub_alone/1,
     pub_alone_r/1,
     pub_two_sub/1,
-    pub_many_subs/1,
+    router_req_use/1,
     router_multiple_req/1,
     pub_one_sub_two_topics/1,
     pub_sub_stop/1,
@@ -74,7 +74,7 @@ all() -> [
 %%    pub_alone_r,
 %%    router_multiple_req
 %%    pub_two_sub,
-    pub_many_subs
+    router_req_use
 %%    publish_ping,
 %%    pub_one_sub_two_topics,
 %%    pub_sub_stop,
@@ -429,41 +429,57 @@ how_to_close_chumak_sockets(_) ->
     timer:sleep(100),
     ok.
 
-pub_many_subs(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
-    {ok, Pid} = inter_dc_pub:start_link(),
+router_req_use(_Config) ->
+    application:ensure_started(chumak),
 
-    Message = <<"01", "ping">>,
-    Message2 = <<"02", "ping">>,
-    Self = self(),
+    % start local router
+    spawn(fun() ->
+        {ok, RouterSocket} = chumak:socket(router),
+        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 14444),
 
-    % start local subscriber
-    spawn_link(fun() ->
-        {ok, SubSocket} = chumak:socket(sub),
-        chumak:subscribe(SubSocket, "01"), % empty space as first char
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
-        {ok, <<"01","ping">>} = chumak:recv(SubSocket),
-        ok = inter_dc_utils:close_socket(SubSocket),
-        Self ! finish
-               end),
-
-    % start local subscriber 2
-    spawn_link(fun() ->
-        {ok, SubSocket} = chumak:socket(sub),
-        chumak:subscribe(SubSocket, "02"), % empty space as first char
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
-        {ok, <<"02","ping">>} = chumak:recv(SubSocket),
-        ok = inter_dc_utils:close_socket(SubSocket),
-        Self ! finish
-               end),
+        ct:pal("Spawned router, waiting"),
+        CaseCheck = fun L(Counter) ->
+            {ok, [Id, <<>>, Msg]} = chumak:recv_multipart(RouterSocket),
+            ct:pal("Got Message from ~p", [Id]),
+            BinInt = integer_to_binary(Counter),
+            chumak:send_multipart(RouterSocket, [Id, <<>>, <<BinInt/binary, Msg/binary>>]),
+            L(Counter + 1)
+                    end,
+        CaseCheck(0)
+          end),
 
     timer:sleep(50),
 
-    % internal API, broadcast allows only for transactions
-    ok = gen_server:call(Pid, {publish, Message}),
-    ok = gen_server:call(Pid, {publish, Message2}),
+    WorkerLoop = fun(Socket, Parent) ->
+        spawn_link(fun() ->
+            ct:pal("Sending ping"),
+            chumak:send(Socket, list_to_binary("hello")),
+            {ok, <<"0hello">>} = chumak:recv(Socket),
 
-    receive finish -> ok after 100 -> throw(subscriber_timeout) end,
-    gen_server:stop(Pid),
+            ct:pal("Received"),
+
+
+            %% two sends in succession is very bad
+            %% the router will not receive the second request and reply to the receive with the first request
+            %% this should not happen in implementation
+            chumak:send(Socket, list_to_binary("world")),
+            chumak:send(Socket, list_to_binary("thiswillbediscarded")),
+
+            {ok, <<"1world">>} = chumak:recv(Socket),
+            ct:pal("Received"),
+
+            %% this is not allowed and will cause an efsm error
+            %% RcvPrint(Socket),
+            Parent ! finish
+                   end
+        )
+                 end,
+
+    %% request identity is strictly required by chumak
+    {ok, Socket} = chumak:socket(req, "A"),
+    {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 14444),
+    WorkerLoop(Socket, self()),
+
+    receive finish -> ok end,
+    timer:sleep(500),
     ok.
