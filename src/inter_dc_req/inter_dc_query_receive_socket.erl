@@ -57,7 +57,7 @@
   code_change/3]).
 
 %% State
--record(state, {socket, id, next}). %% socket :: erlzmq_socket()
+-record(state, {socket :: zmq_socket()}).
 
 %%%% API --------------------------------------------------------------------+
 
@@ -103,49 +103,66 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     {_, Port} = get_address(),
-    Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
-    ?LOG_INFO("Log reader started on port ~p", [Port]),
-    {ok, #state{socket = Socket, next=getid}}.
+    {ok, Socket} = chumak:socket(router),
+    %% TODO bind on config address
+    {ok, _Pid} = chumak:bind(Socket, tcp, "0.0.0.0", Port),
+    ?LOG_NOTICE("~p was bound ~p", [Socket, _Pid]),
 
-%% Handle the remote request
-%% ZMQ requests come in 3 parts
-%% 1st the Id of the sender, 2nd an empty binary, 3rd the binary msg
-handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
-    {noreply, State#state{next = blankmsg, id=Id}};
-handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
-    {noreply, State#state{next=getmsg}};
-handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) ->
-    %% Decode the message
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
+    ?LOG_NOTICE("Log reader started on port ~p", [Port]),
+
+    %% spawn receive subscription worker and trap exit
+    process_flag(trap_exit, true),
+    Self = self(),
+    spawn_link(fun () ->
+        ?LOG_NOTICE("Spawned router bind worker ~p", [self()]),
+        loop(Self, Socket)
+               end),
+
+    {ok, #state{socket = Socket}}.
+
+loop(Parent, Socket) ->
+    logger:warning("Receive multipart..."),
+    {ok, [Identity, <<>>, BinaryMsg]} = chumak:recv_multipart(Socket),
+    logger:warning("Received from ~p", [Identity]),
     {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
+
+    %% Decode the message
     %% Create a response
     QueryState =
-      fun(RequestType) ->
-        #inter_dc_query_state{
-          request_type = RequestType,
-          zmq_id = Id,
-          request_id_num_binary = ReqId,
-          local_pid = self()}
-      end,
+        fun(RequestType) ->
+            #inter_dc_query_state{
+                request_type = RequestType,
+                zmq_id = Identity,
+                request_id_num_binary = ReqId,
+                local_pid = self()}
+        end,
+
     case RestMsg of
         <<?LOG_READ_MSG, QueryBinary/binary>> ->
             ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
         <<?CHECK_UP_MSG>> ->
-            ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
+            ok = finish_send_response(<<?OK_MSG>>, Identity, ReqId, Socket);
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
         %% TODO: Handle other types of requests
         _ ->
             ErrorBinary = term_to_binary(bad_request),
-            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Id, ReqId, Socket)
+            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Identity, ReqId, Socket)
     end,
-    {noreply, State#state{next=getid}};
+
+    loop(Parent, Socket).
+
+%% zmq connect worker shutdown
+handle_info({'EXIT', Pid, Reason}, State) ->
+    logger:notice("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
+    {noreply, State};
 handle_info(Info, State) ->
     ?LOG_INFO("got weird info ~p", [Info]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+terminate(_Reason, State) -> inter_dc_utils:close_socket(State#state.socket).
 
 handle_cast({send_response, BinaryResponse,
          #inter_dc_query_state{request_type = ReqType, zmq_id = Id,
@@ -159,12 +176,12 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(<<_:8, _:_*8>>, binary(), binary(), erlzmq:erlzmq_socket()) -> ok.
+-spec finish_send_response(<<_:8, _:_*8>>, binary(), binary(), zmq_socket()) -> ok.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message
+    logger:warning("1Sending response to ~p", [Id]),
     VersionBinary = ?MESSAGE_VERSION,
     Msg = <<VersionBinary/binary, ReqId/binary, BinaryResponse/binary>>,
-    ok = erlzmq:send(Socket, Id, [sndmore]),
-    ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, Msg).
+    logger:warning("Sending response to ~p", [Id]),
+    ok = chumak:send_multipart(Socket, [Id, <<>>, Msg]).

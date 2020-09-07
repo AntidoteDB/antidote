@@ -63,6 +63,10 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
+    {ok, Dir} = application:get_env(antidote, data_antidote),
+    DcsPath = filename:join(Dir, "connected_dcs.dets"),
+    logger:warning("Opening at ~p", [DcsPath]),
+
     {ok, #state{sockets = dict:new()}}.
 
 %% TODO: persist added DCs in case of a node failure, reconnect on node restart.
@@ -90,8 +94,12 @@ handle_info({zmq, BinaryMsg}, State) ->
     ok = inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State};
 %% zmq connect worker shutdown
+handle_info({'EXIT', Pid, test}, State) ->
+    logger:debug("Test socket ~p shutdown", [Pid]),
+    {noreply, State};
 handle_info({'EXIT', Pid, Reason}, State) ->
-    logger:notice("Connect socket ~p shutdown: ~p", [Pid, Reason]),
+    %% TODO
+    logger:info("Subsriber connect socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State}.
 
 handle_cast(_Request, State) ->

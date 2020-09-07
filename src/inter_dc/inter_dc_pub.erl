@@ -70,6 +70,12 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
+    %% the chumak socket needs to be cleaned up explicitly
+    %% gen_servers that are part of a supervision tree need to trap exit signals
+    %% so that terminate/2 is called
+    %% https://erlang.org/doc/design_principles/gen_server_concepts.html
+    process_flag(trap_exit, true),
+
     % bind on all addresses TODO make configurable
     Ip = "0.0.0.0",
     Port = get_pub_port(),
@@ -86,7 +92,8 @@ handle_call({publish, Message}, _From, State) ->
     {reply, ok, State}.
 
 terminate(_Reason, State) ->
-    exit(State#state.socket, normal),
+    logger:notice("Closing publisher socket"),
+    inter_dc_utils:close_socket(State#state.socket),
     ok.
 
 handle_cast(_Request, State) ->

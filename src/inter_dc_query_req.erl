@@ -26,29 +26,41 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
--module(inter_dc_sup).
+-module(inter_dc_query_req).
+-behaviour(gen_server).
 
--behaviour(supervisor).
+-include_lib("kernel/include/logger.hrl").
 
--export([start_link/0]).
--export([init/1]).
+%% API
+-export([ send/4 ]).
 
-%% Helper macro for declaring children of supervisor
--define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
+%% Server methods
+-export([
+  start_link/0,
+  init/1,
+  handle_cast/2,
+  handle_call/3,
+  terminate/2,
+  code_change/3]).
 
-%% ===================================================================
-%% API functions
-%% ===================================================================
+%%%% API --------------------------------------------------------------------+
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+send(Socket, Request, RequestType, Func) ->
+    gen_server:cast(?MODULE, {send_and_receive, Socket, Request, RequestType, Func, self()}).
 
-%% ===================================================================
-%% Supervisor callbacks
-%% ===================================================================
+%%%% Server methods ---------------------------------------------------------+
 
-init(_Args) ->
-    InterDcPub = ?CHILD(inter_dc_pub, worker, []),
-    InterDcSub = ?CHILD(inter_dc_sub, worker, []),
-    InterDcQueryReq = ?CHILD(inter_dc_query_req, worker, []),
-    {ok, {{one_for_one, 5, 10}, [InterDcPub, InterDcSub, InterDcQueryReq]}}.
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+init([]) ->
+    {ok, nostate}.
+
+handle_cast({send_and_receive, Socket, Request, RequestType, Func, RespondTo}, State) ->
+    ok = chumak:send(Socket, Request),
+    {ok, Data} = chumak:recv(Socket),
+    RespondTo ! {zmq, Data, RequestType, Func},
+    {noreply, State}.
+
+
+handle_call(_Request, _From, State) -> {reply, ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
+terminate(_Reason, _State) -> ok.
