@@ -43,6 +43,7 @@
     pub_alone_r/1,
     pub_two_sub/1,
     router_req_use/1,
+    router_req_timeout/1,
     router_multiple_req/1,
     pub_one_sub_two_topics/1,
     pub_sub_stop/1,
@@ -74,7 +75,8 @@ all() -> [
 %%    pub_alone_r,
 %%    router_multiple_req
 %%    pub_two_sub,
-    router_req_use
+    router_req_timeout
+%%    router_req_use
 %%    publish_ping,
 %%    pub_one_sub_two_topics,
 %%    pub_sub_stop,
@@ -433,7 +435,8 @@ router_req_use(_Config) ->
     application:ensure_started(chumak),
 
     % start local router
-    spawn(fun() ->
+    spawn_link(fun() ->
+        process_flag(trap_exit, true), % socket will crash on test case exit, trap exit only for clean console
         {ok, RouterSocket} = chumak:socket(router),
         {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 14444),
 
@@ -479,6 +482,61 @@ router_req_use(_Config) ->
     {ok, Socket} = chumak:socket(req, "A"),
     {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 14444),
     WorkerLoop(Socket, self()),
+
+    receive finish -> ok end,
+    timer:sleep(500),
+    ok.
+
+
+router_req_timeout(_Config) ->
+    application:ensure_started(chumak),
+
+    % start local router
+    spawn_link(fun() ->
+        process_flag(trap_exit, true),
+        {ok, RouterSocket} = chumak:socket(router),
+        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 14444),
+
+        ct:pal("Spawned router, waiting"),
+        CaseCheck = fun L(Counter) ->
+            {ok, [Id, <<>>, Msg]} = chumak:recv_multipart(RouterSocket),
+            ct:pal("Got Message from ~p", [Id]),
+            BinInt = integer_to_binary(Counter),
+            chumak:send_multipart(RouterSocket, [Id, <<>>, <<BinInt/binary, Msg/binary>>]),
+            L(Counter + 1)
+                    end,
+        CaseCheck(0)
+          end),
+
+    timer:sleep(50),
+
+    WorkerLoop = fun(Socket, _Parent) ->
+        spawn_link(fun() ->
+            chumak:send(Socket, list_to_binary("hello"))
+                   % crash
+                   end
+        )
+                 end,
+
+    WorkerLoop2 = fun(Socket, Parent) ->
+        spawn_link(fun() ->
+            ct:pal("Sending ping"),
+            chumak:send(Socket, list_to_binary("hello2")),
+            % this test fails here, same reason as above test
+            {ok, <<"0hello2">>} = chumak:recv(Socket),
+            Parent ! finish
+                   end
+        )
+                 end,
+
+    %% request identity is strictly required by chumak
+    {ok, Socket} = chumak:socket(req, "A"),
+    {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 14444),
+    WorkerLoop(Socket, self()),
+    exit(_PeerPid, kill),
+
+    {ok, _PerPid} = chumak:connect(Socket, tcp, "localhost", 14444),
+    WorkerLoop2(Socket, self()),
 
     receive finish -> ok end,
     timer:sleep(500),
