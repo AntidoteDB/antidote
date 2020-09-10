@@ -84,10 +84,13 @@ handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     {noreply, State};
 
 handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
+    logger:warning("======> request perm", []),
     {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
     BinaryResp = BinaryRequest,
     ok = bcounter_mgr:process_transfer(Operation),
+    logger:warning("======> send response!", []),
     ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
+    logger:warning("======> no reply!", []),
     {noreply, State};
 
 handle_cast(_Info, State) ->

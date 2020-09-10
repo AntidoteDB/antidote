@@ -39,7 +39,7 @@
 -export([start_link/0,
          generate_downstream/3,
          process_transfer/1,
-         request_response/2
+         request_response/1
         ]).
 
 -export([init/1,
@@ -190,7 +190,7 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
     BinaryMsg = term_to_binary({request_permissions,
                                 {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
-                                   BinaryMsg, fun bcounter_mgr:request_response/2).
+                                   BinaryMsg, fun bcounter_mgr:request_response/1).
 
 %% Orders the reservation of each DC, from high to low.
 pref_list(Obj) ->
@@ -201,7 +201,7 @@ pref_list(Obj) ->
     lists:sort(fun({_, A}, {_, B}) -> A =< B end, OtherDCPermissions).
 
 %% Request response - do nothing.
-request_response(_BinaryRep, _RequestCacheEntry) -> ok.
+request_response(_BinaryRep) -> ok.
 
 cancel_consecutive_req(LastTransfers, Period) ->
     CurrTime = erlang:timestamp(),

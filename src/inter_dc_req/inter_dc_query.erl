@@ -73,7 +73,7 @@
 %% the second is a #request_cache_entry{} record
 %% Note that the function should not perform any work, instead just send
 %% the work to another process, otherwise it will block other messages
--spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(), request_cache_entry()) -> ok))
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary()) -> ok))
              -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
     gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
@@ -84,7 +84,9 @@ add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders},
 
 %% Disconnects from the DC.
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
+del_dc(DCID) ->
+    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT),
+    ok.
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -127,14 +129,14 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
     ?LOG_NOTICE("Trying to perform request"),
     case dict:find({DCID, Partition}, State#state.sockets) of
         {ok, Socket} ->
-            ?LOG_NOTICE("Prepare message"),
+            ?LOG_NOTICE("Prepare message (request #~p)", [ReqId]),
             VersionBinary = ?MESSAGE_VERSION,
             ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
             FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
 %%            inter_dc_query_req:send(Socket, FullRequest, RequestType, Func),
 
             %% TODO don't block
-            ?LOG_NOTICE("Send message"),
+            ?LOG_NOTICE("Send message to ~p ~p (~p)", [DCID, Partition, Socket]),
             ok = chumak:send(Socket, FullRequest),
             ?LOG_NOTICE("Receive message"),
             {ok, BinaryMsg} = chumak:recv(Socket),
@@ -147,7 +149,7 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
             end,
 
             ?LOG_NOTICE("Finish"),
-            {reply, ok, State};
+            {reply, ok, State#state{req_id = ReqId + 1}};
         _ ->
             ?LOG_WARNING("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
             {reply, unknown_dc, State}
@@ -155,14 +157,14 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     logger:notice("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
-    {noreply, State}.
+    {noreply, State};
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
-%%handle_info({zmq, BinaryMsg, RequestType, Func}, State) ->
-%%    {noreply, State}.
+handle_info(_, State) ->
+    {noreply, State}.
 
 terminate(_Reason, State) ->
-    F = fun({{_DCID, _Partition}, Socket}) -> inter_dc_utils:close_socket(Socket) end,
+    F = fun({{_DCID, _Partition}, Socket}) -> catch (inter_dc_utils:close_socket(Socket)) end,
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
@@ -191,7 +193,7 @@ connect_to_node([]) ->
     connection_error;
 connect_to_node([_Address = {Ip, Port}| Rest]) ->
     %% Test the connection
-    Socket1 = connect_req(Ip, Port),
+    Socket1 = connect_req_test(Ip, Port),
 
     %% Always use 0 as the id of the check up message
     ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
@@ -200,6 +202,9 @@ connect_to_node([_Address = {Ip, Port}| Rest]) ->
     ok = chumak:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
     Response = chumak:recv(Socket1),
 %%    ok = inter_dc_utils:close_socket(Socket1),
+    gen_server:stop(Socket1),
+
+    logger:warning("Test successful"),
 
     case Response of
         {ok, Binary} ->
@@ -210,7 +215,7 @@ connect_to_node([_Address = {Ip, Port}| Rest]) ->
 %%            {ok, Socket} = chumak:socket(req, SocketId),
 %%            {ok, _Pid} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
 
-            logger:warning("Started req socket with ~p", [Socket]),
+            logger:warning("Started req socket with ~p (~p : ~p)", [Socket, Ip, Port]),
 
             %% For each partition in the current node:
             {ok, Socket};
@@ -218,13 +223,24 @@ connect_to_node([_Address = {Ip, Port}| Rest]) ->
             connect_to_node(Rest)
     end.
 
-connect_req(Ip, Port) ->
-    Id = atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
-    logger:warning("Opening socket ID ~p", [Id]),
+connect_req_test(Ip, Port) ->
+    Id = integer_to_list(rand:uniform(1000000)),%atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
     case chumak:socket(req, Id) of
         {ok, Socket} ->
             {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
             Socket;
         {error, {already_started, Socket}} ->
+            Socket
+    end.
+
+connect_req(Ip, Port) ->
+    Id = integer_to_list(rand:uniform(1000000)),%atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
+    case chumak:socket(req, Id) of
+        {ok, Socket} ->
+            {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
+            logger:warning("Opening socket ID ~p (~p)", [Id, Socket]),
+            Socket;
+        {error, {already_started, Socket}} ->
+            logger:warning("Socket already started: ~p", [Id]),
             Socket
     end.

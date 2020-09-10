@@ -122,9 +122,9 @@ init([]) ->
     {ok, #state{socket = Socket}}.
 
 loop(Parent, Socket) ->
-    logger:warning("Receive multipart..."),
+    logger:warning("======> Receive multipart..."),
     {ok, [Identity, <<>>, BinaryMsg]} = chumak:recv_multipart(Socket),
-    logger:warning("Received from ~p", [Identity]),
+    logger:warning("======> Received from ~p", [Identity]),
     {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
 
     %% Decode the message
@@ -135,15 +135,17 @@ loop(Parent, Socket) ->
                 request_type = RequestType,
                 zmq_id = Identity,
                 request_id_num_binary = ReqId,
-                local_pid = self()}
+                local_pid = Parent}
         end,
 
+    logger:warning("======> respond to ~p of request ~p", [Identity, ReqId]),
     case RestMsg of
         <<?LOG_READ_MSG, QueryBinary/binary>> ->
             ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
         <<?CHECK_UP_MSG>> ->
             ok = finish_send_response(<<?OK_MSG>>, Identity, ReqId, Socket);
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
+            logger:warning("======> get", []),
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
         %% TODO: Handle other types of requests
         _ ->
@@ -162,7 +164,9 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.
-terminate(_Reason, State) -> inter_dc_utils:close_socket(State#state.socket).
+terminate(_Reason, State) ->
+    logger:warning("Query receive socket terminating"),
+    inter_dc_utils:close_socket(State#state.socket).
 
 handle_cast({send_response, BinaryResponse,
          #inter_dc_query_state{request_type = ReqType, zmq_id = Id,
@@ -180,8 +184,64 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message
-    logger:warning("1Sending response to ~p", [Id]),
+    logger:warning("======> Sending response to ~p (~p)", [Id, ReqId]),
     VersionBinary = ?MESSAGE_VERSION,
     Msg = <<VersionBinary/binary, ReqId/binary, BinaryResponse/binary>>,
-    logger:warning("Sending response to ~p", [Id]),
     ok = chumak:send_multipart(Socket, [Id, <<>>, Msg]).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+simple() ->
+    {ok, Req} = inter_dc_query:start_link(),
+
+    {ok, Router} = inter_dc_query_receive_socket:start_link(),
+
+    LogReaders = inter_dc_query_receive_socket:get_address_list(),
+    DcId = dc_utilities:get_my_dc_id(),
+
+    inter_dc_query:add_dc(DcId, [LogReaders]),
+
+    BinaryMsg = term_to_binary({request_permissions, {transfer, {"hello", 0, dcid}}, 0, dcid, 0}),
+    inter_dc_query:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
+
+    gen_server:stop(Req),
+    gen_server:stop(Router),
+    ok.
+
+test_init() ->
+    logger:add_handler_filter(default, ?MODULE, {fun(_, _) -> stop end, nostate}),
+
+    application:ensure_started(chumak),
+    application:set_env(antidote, logreader_port, 14444),
+    {ok, 14444} = application:get_env(antidote, logreader_port),
+
+    meck:new(dc_utilities),
+    meck:new(inter_dc_query_response),
+    meck:expect(dc_utilities, get_my_partitions, fun() -> [0] end),
+    meck:expect(dc_utilities, get_my_dc_id, fun() -> dcid end),
+    meck:expect(inter_dc_query_response, request_permissions, fun(A,B) ->
+        %% send directly
+        inter_dc_query_receive_socket:send_response(A, B)
+                                                              end),
+    ok.
+
+test_cleanup(_) ->
+    application:stop(chumak),
+    meck:unload(dc_utilities),
+    logger:remove_handler_filter(default, ?MODULE).
+
+meck_test_() -> {
+    setup,
+    fun test_init/0,
+    fun test_cleanup/1,
+    [
+        fun simple/0
+    ]}.
+
+-endif.

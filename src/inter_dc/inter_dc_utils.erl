@@ -71,15 +71,15 @@ get_address_list(Port) ->
 
 -spec close_socket(zmq_socket()) -> ok.
 close_socket(Socket) ->
-    gen_server:stop(Socket),
+    catch (gen_server:stop(Socket)),
     close_socket(Socket, true).
 
 close_socket(Socket, true) ->
-    logger:warning("Waiting until dead: ~p",[Socket]),
+%%    logger:warning("Waiting until dead: ~p",[Socket]),
     timer:sleep(50),
     close_socket(Socket, is_process_alive(Socket));
 close_socket(Socket, false) ->
-    logger:warning("Socket closed and Pid dead: ~p",[Socket]),
+%%    logger:warning("Socket closed and Pid dead: ~p",[Socket]),
     ok.
 
 
