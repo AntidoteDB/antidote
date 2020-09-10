@@ -220,7 +220,7 @@ connect_to_node([_Address = {Ip, Port}| Rest]) ->
 
 connect_req(Ip, Port) ->
     Id = atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
-    logger:warning("Socket with ~p", [Id]),
+    logger:warning("Opening socket ID ~p", [Id]),
     case chumak:socket(req, Id) of
         {ok, Socket} ->
             {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),

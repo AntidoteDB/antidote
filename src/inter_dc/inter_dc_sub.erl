@@ -55,7 +55,8 @@ add_dc(DCID, Publishers) ->
 
 -spec del_dc(dcid()) -> ok.
 del_dc(DCID) ->
-    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
+    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT),
+    ok.
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -63,26 +64,20 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    %% TODO: persist added DCs and reconnect
-    %%       this will crash inter_dc_sub if added dc is not reachable
-    %%       i.e. handle `error` reply case appropriately
-    %%  DcIdPubList = [{DCID, Publishers}]
-    %%  lists:foreach(fun({DCID, Publishers}) -> ok = gen_server:call(?MODULE, {add_dc, DCID, Publishers}) end, DcIdPubList),
-
     {ok, #state{sockets = dict:new()}}.
 
-handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
+handle_call({add_dc, DCID, Publishers}, _From, State) ->
     %% First delete the DC if it is already connected
-    {_, State} = del_dc(DCID, OldState),
+    {_, NewDict} = del_dc(DCID, State#state.sockets),
     case connect_to_nodes(Publishers, []) of
         {ok, Sockets} ->
-            {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+            {reply, ok, State#state{sockets = dict:store(DCID, Sockets, NewDict)}};
         connection_error ->
             {reply, error, State}
     end;
 handle_call({del_dc, DCID}, _From, State) ->
-    {ok, NewState} = del_dc(DCID, State),
-    {reply, ok, NewState}.
+    {ok, NewDict} = del_dc(DCID, State#state.sockets),
+    {reply, ok, State#state{sockets = NewDict}}.
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, BinaryMsg}, State) ->
@@ -139,7 +134,7 @@ connect_to_node([]) ->
 connect_to_node([_Address = {Ip, Port} | Rest]) ->
     %% Test the connection
     case sub_socket_and_connect(Ip, Port) of
-        {ok, Socket1} ->
+        Socket1 ->
             %% receives a ping
             %% TODO can it receive a valid publish transaction from any partition, causing message loss?
             %%      this could only happen after a restart, if anything

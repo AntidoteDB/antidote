@@ -76,8 +76,6 @@ init(_Args) ->
 
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
 
-    ZMQContextManager = ?CHILD(zmq_context, worker, []),
-
 
     StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
@@ -123,7 +121,6 @@ init(_Args) ->
        ClockSIMaster,
        ClockSIiTxCoordSup,
        MaterializerMaster,
-       ZMQContextManager,
        InterDcSup,
        InterDcSubVnode,
        InterDcDepVnode,
