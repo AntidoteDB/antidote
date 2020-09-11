@@ -30,7 +30,7 @@
 %% queries from other DCs, the types of messages that can be sent are found in
 %% include/antidote_message_types.hrl
 %% To handle new types, need to update the handle_info method below
-%% As well as in the sender of the query at inter_dc_query
+%% As well as in the sender of the query at inter_dc_query_req
 
 -module(inter_dc_query_receive_socket).
 
@@ -102,29 +102,25 @@ send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sende
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
+    %% trap_exit to close sockets properly via terminate/2
+    process_flag(trap_exit, true),
+
+    Ip = get_router_bind_ip(),
     {_, Port} = get_address(),
     {ok, Socket} = chumak:socket(router),
-    %% TODO bind on config address
-    {ok, _Pid} = chumak:bind(Socket, tcp, "0.0.0.0", Port),
-    ?LOG_NOTICE("~p was bound ~p", [Socket, _Pid]),
+    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
 
     _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
-    ?LOG_NOTICE("Log reader started on port ~p", [Port]),
 
     %% spawn receive subscription worker and trap exit
-    process_flag(trap_exit, true),
     Self = self(),
-    spawn_link(fun () ->
-        ?LOG_NOTICE("Spawned router bind worker ~p", [self()]),
-        loop(Self, Socket)
-               end),
+    spawn_link(fun () -> loop(Self, Socket) end),
 
+    ?LOG_NOTICE("Log reader router started on port ~p binding on IP ~s", [Port, Ip]),
     {ok, #state{socket = Socket}}.
 
 loop(Parent, Socket) ->
-    logger:warning("======> Receive multipart..."),
     {ok, [Identity, <<>>, BinaryMsg]} = chumak:recv_multipart(Socket),
-    logger:warning("======> Received from ~p", [Identity]),
     {ReqId, RestMsg} = inter_dc_utils:check_version_and_req_id(BinaryMsg),
 
     %% Decode the message
@@ -138,14 +134,12 @@ loop(Parent, Socket) ->
                 local_pid = Parent}
         end,
 
-    logger:warning("======> respond to ~p of request ~p", [Identity, ReqId]),
     case RestMsg of
         <<?LOG_READ_MSG, QueryBinary/binary>> ->
             ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
         <<?CHECK_UP_MSG>> ->
             ok = finish_send_response(<<?OK_MSG>>, Identity, ReqId, Socket);
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
-            logger:warning("======> get", []),
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
         %% TODO: Handle other types of requests
         _ ->
@@ -165,7 +159,7 @@ handle_info(Info, State) ->
 
 handle_call(_Request, _From, State) -> {noreply, State}.
 terminate(_Reason, State) ->
-    logger:warning("Query receive socket terminating"),
+    logger:notice("Query router terminating"),
     inter_dc_utils:close_socket(State#state.socket).
 
 handle_cast({send_response, BinaryResponse,
@@ -184,10 +178,14 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message
-    logger:warning("======> Sending response to ~p (~p)", [Id, ReqId]),
     VersionBinary = ?MESSAGE_VERSION,
     Msg = <<VersionBinary/binary, ReqId/binary, BinaryResponse/binary>>,
     ok = chumak:send_multipart(Socket, [Id, <<>>, Msg]).
+
+
+-spec get_router_bind_ip() -> string().
+get_router_bind_ip() ->
+    application:get_env(antidote, router_bind_ip, "0.0.0.0").
 
 
 
@@ -198,17 +196,17 @@ finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
 -include_lib("eunit/include/eunit.hrl").
 
 simple() ->
-    {ok, Req} = inter_dc_query:start_link(),
+    {ok, Req} = inter_dc_query_req:start_link(),
 
     {ok, Router} = inter_dc_query_receive_socket:start_link(),
 
     LogReaders = inter_dc_query_receive_socket:get_address_list(),
     DcId = dc_utilities:get_my_dc_id(),
 
-    inter_dc_query:add_dc(DcId, [LogReaders]),
+    inter_dc_query_req:add_dc(DcId, [LogReaders]),
 
     BinaryMsg = term_to_binary({request_permissions, {transfer, {"hello", 0, dcid}}, 0, dcid, 0}),
-    inter_dc_query:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
+    inter_dc_query_req:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
 
     gen_server:stop(Req),
     gen_server:stop(Router),
