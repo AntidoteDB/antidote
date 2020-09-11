@@ -98,17 +98,17 @@ simple_replication_test(Config) ->
     {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
 
     check_read_key(Node1, Key, Type, 3, CommitTime, static, Bucket),
-    ct:pal("Done append in Node1"),
+    ct:log("Done append in Node1"),
 
     check_read_key(Node3, Key, Type, 3, CommitTime, static, Bucket),
     check_read_key(Node2, Key, Type, 3, CommitTime, static, Bucket),
-    ct:pal("Done first round of read, I am gonna append"),
+    ct:log("Done first round of read, I am gonna append"),
 
     {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static, Bucket),
 
     {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static, Bucket),
-    ct:pal("Done append in Node3"),
-    ct:pal("Done waiting, I am gonna read"),
+    ct:log("Done append in Node3"),
+    ct:log("Done waiting, I am gonna read"),
 
     SnapshotTime = CommitTime3,
     check_read_key(Node1, Key, Type, 5, SnapshotTime, static, Bucket),
