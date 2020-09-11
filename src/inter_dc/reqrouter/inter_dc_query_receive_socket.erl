@@ -125,7 +125,7 @@ loop(Parent, Socket) ->
     logger:warning("======> Receive multipart..."),
     {ok, [Identity, <<>>, BinaryMsg]} = chumak:recv_multipart(Socket),
     logger:warning("======> Received from ~p", [Identity]),
-    {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
+    {ReqId, RestMsg} = inter_dc_utils:check_version_and_req_id(BinaryMsg),
 
     %% Decode the message
     %% Create a response

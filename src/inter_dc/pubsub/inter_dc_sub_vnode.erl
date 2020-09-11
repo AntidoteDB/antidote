@@ -113,7 +113,8 @@ handle_overload_info(_, _) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -spec call(partition_id(), {txn, interdc_txn()} | {log_reader_resp, binary()}) -> ok.
-call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
+call(Partition, Request) ->
+    dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 -spec get_buf(dcid(), state()) -> inter_dc_sub_buf().
 get_buf(DCID, State) ->

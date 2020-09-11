@@ -58,9 +58,11 @@
   terminate/2,
   code_change/3]).
 
+-type req_dict() :: dict:dict({dcid(), term()} , zmq_socket()).
+
 %% State
 -record(state, {
-  sockets :: dict:dict({dcid(), term()} , zmq_socket()), % {DCID, partition} -> Socket
+  sockets :: req_dict(), % {DCID, partition} -> Socket
   req_id :: non_neg_integer()
 }).
 
@@ -80,18 +82,19 @@ perform_request(RequestType, PDCID, BinaryRequest, Func) ->
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}, ?COMM_TIMEOUT).
+add_dc(DCID, LogReaders) ->
+    ok = gen_server:call(?MODULE, {add_dc, DCID, LogReaders}, ?COMM_TIMEOUT).
 
 %% Disconnects from the DC.
 -spec del_dc(dcid()) -> ok.
 del_dc(DCID) ->
-    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT),
-    ok.
+    ok = gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
+    %% trap_exit to close sockets properly via terminate/2
     process_flag(trap_exit, true),
     {ok, #state{sockets = dict:new(), req_id = 1}}.
 
@@ -129,26 +132,9 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
     ?LOG_NOTICE("Trying to perform request"),
     case dict:find({DCID, Partition}, State#state.sockets) of
         {ok, Socket} ->
-            ?LOG_NOTICE("Prepare message (request #~p)", [ReqId]),
-            VersionBinary = ?MESSAGE_VERSION,
-            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-%%            inter_dc_query_req:send(Socket, FullRequest, RequestType, Func),
-
-            %% TODO don't block
-            ?LOG_NOTICE("Send message to ~p ~p (~p)", [DCID, Partition, Socket]),
-            ok = chumak:send(Socket, FullRequest),
-            ?LOG_NOTICE("Receive message"),
-            {ok, BinaryMsg} = chumak:recv(Socket),
-
-            ?LOG_NOTICE("Process and Func"),
-            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = binary_utilities:check_message_version(BinaryMsg),
-            case RestMsg of
-                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
-                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
-            end,
-
-            ?LOG_NOTICE("Finish"),
+            ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
+            %% send to self as cast to allow for more async requests
+            gen_server:cast(?MODULE, {any_request, ReqId, RequestType, BinaryRequest, Func, Socket}),
             {reply, ok, State#state{req_id = ReqId + 1}};
         _ ->
             ?LOG_WARNING("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
@@ -158,19 +144,40 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
 handle_info({'EXIT', Pid, Reason}, State) ->
     logger:notice("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State};
-%% Handle a response from any of the connected sockets
-%% Possible improvement - disconnect sockets unused for a defined period of time.
 handle_info(_, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
-    F = fun({{_DCID, _Partition}, Socket}) -> catch (inter_dc_utils:close_socket(Socket)) end,
+    F = fun({_, Socket}) -> inter_dc_utils:close_socket(Socket) end,
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
+handle_cast({any_request, ReqId, RequestType, BinaryRequest, Func, Socket}, State) ->
+    %% prepare message
+    VersionBinary = ?MESSAGE_VERSION,
+    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
+    FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+
+    ?LOG_DEBUG("Send and receive"),
+    ok = chumak:send(Socket, FullRequest),
+    {ok, BinaryMsg} = chumak:recv(Socket),
+
+    ?LOG_DEBUG("Process and apply function"),
+    <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+    case RestMsg of
+        <<RequestType, RestBinary/binary>> -> Func(RestBinary);
+        Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
+    end,
+
+    {noreply, State};
 handle_cast(_Request, State) -> {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+
+%%%% Internal methods ---------------------------------------------------------+
+
+-spec del_dc(dcid(), req_dict()) -> req_dict().
 del_dc(DCID, Dict) ->
     %% filter all DCID-Partition pairs to remove them
     MatchingDCID = fun({DictDCID, _DictPartition}, _Value) -> DictDCID == DCID end,
@@ -188,59 +195,52 @@ del_dc(DCID, Dict) ->
 
 %% A node is a list of addresses because it can have multiple interfaces
 %% this just goes through the list and connects to the first interface that works
+-spec connect_to_node([socket_address()]) -> {ok, zmq_socket()} | connection_error.
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC log reader"),
     connection_error;
 connect_to_node([_Address = {Ip, Port}| Rest]) ->
     %% Test the connection
-    Socket1 = connect_req_test(Ip, Port),
+    case connect_req(Ip, Port) of
+        {ok, Socket1} ->
+            %% Always use 0 as the id of the check up message
+            ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
+            BinaryVersion = ?MESSAGE_VERSION,
 
-    %% Always use 0 as the id of the check up message
-    ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
-    BinaryVersion = ?MESSAGE_VERSION,
+            ok = chumak:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
+            Response = chumak:recv(Socket1),
+            inter_dc_utils:close_socket(Socket1),
 
-    ok = chumak:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
-    Response = chumak:recv(Socket1),
-%%    ok = inter_dc_utils:close_socket(Socket1),
-    gen_server:stop(Socket1),
-
-    logger:warning("Test successful"),
-
-    case Response of
-        {ok, Binary} ->
-            %% check that an ok msg was received
-            {_, <<?OK_MSG>>} = binary_utilities:check_version_and_req_id(Binary),
-            %% Create a subscriber socket for the specified DC
-            Socket = connect_req(Ip, Port),
-%%            {ok, Socket} = chumak:socket(req, SocketId),
-%%            {ok, _Pid} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-
-            logger:warning("Started req socket with ~p (~p : ~p)", [Socket, Ip, Port]),
-
-            %% For each partition in the current node:
-            {ok, Socket};
+            case Response of
+                {ok, Binary} ->
+                    %% check that an ok msg was received
+                    {_, <<?OK_MSG>>} = inter_dc_utils:check_version_and_req_id(Binary),
+                    %% Create a subscriber socket for the specified DC
+                    case connect_req(Ip, Port) of
+                        {ok, Socket} ->
+                            {ok, Socket};
+                        _ ->
+                            connect_to_node(Rest)
+                    end;
+                _ ->
+                    connect_to_node(Rest)
+            end;
         _ ->
             connect_to_node(Rest)
     end.
 
-connect_req_test(Ip, Port) ->
-    Id = integer_to_list(rand:uniform(1000000)),%atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
-    case chumak:socket(req, Id) of
-        {ok, Socket} ->
-            {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-            Socket;
-        {error, {already_started, Socket}} ->
-            Socket
-    end.
 
+-spec connect_req(inet:ip_address(), inet:port_number()) -> {ok, zmq_socket()} | connection_error.
 connect_req(Ip, Port) ->
-    Id = integer_to_list(rand:uniform(1000000)),%atom_to_list(node()) ++ inet:ntoa(Ip) ++ integer_to_list(Port),
+    %% current semantics of zmq is generating new unique IDs for each socket
+    %% having a fixed ID could make use of the ID mechanism of zeromq sockets if used properly
+    %% might require a redesign of inter-dc communication with zeromq
+    Id = inter_dc_utils:generate_random_id(),
     case chumak:socket(req, Id) of
         {ok, Socket} ->
             {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-            logger:warning("Opening socket ID ~p (~p)", [Id, Socket]),
-            Socket;
-        {error, {already_started, Socket}} ->
-            logger:warning("Socket already started: ~p", [Id]),
-            Socket
+            logger:info("Opening socket ID ~p (~p)", [Id, Socket]),
+            {ok, Socket};
+        {error, _Reason} ->
+            connection_error
     end.

@@ -76,15 +76,14 @@ init([]) ->
     %% https://erlang.org/doc/design_principles/gen_server_concepts.html
     process_flag(trap_exit, true),
 
-    % bind on all addresses TODO make configurable
-    Ip = "0.0.0.0",
+    % bind on ip and port
+    Ip = get_pub_bind_ip(),
     Port = get_pub_port(),
 
-    ?LOG_DEBUG("Starting InterDC Publisher on port ~p binding on IP ~s", [Port, Ip]),
     {ok, Socket} = chumak:socket(pub),
     {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
 
-    ?LOG_NOTICE("InterDC Publisher started on port ~p binding on IP ~s", [Port, Ip]),
+    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s", [Port, Ip]),
     {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) ->
@@ -92,7 +91,6 @@ handle_call({publish, Message}, _From, State) ->
     {reply, ok, State}.
 
 terminate(_Reason, State) ->
-    logger:notice("Closing publisher socket"),
     inter_dc_utils:close_socket(State#state.socket),
     ok.
 
@@ -110,3 +108,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec get_pub_port() -> inet:port_number().
 get_pub_port() ->
     application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT).
+
+-spec get_pub_bind_ip() -> string().
+get_pub_bind_ip() ->
+    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").

@@ -38,6 +38,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-type conn_err() :: connection_error.
+
 %% API
 -export([add_dc/2, del_dc/1]).
 
@@ -51,12 +53,11 @@
 
 -spec add_dc(dcid(), [socket_address()]) -> ok | error.
 add_dc(DCID, Publishers) ->
-    gen_server:call(?MODULE, {add_dc, DCID, Publishers}, ?COMM_TIMEOUT).
+    gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
 
 -spec del_dc(dcid()) -> ok.
 del_dc(DCID) ->
-    gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT),
-    ok.
+    gen_server:call(?MODULE, {del_dc, DCID}).
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -64,6 +65,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
+    process_flag(trap_exit, true),
     {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
@@ -115,7 +117,7 @@ del_dc(DCID, DCIDSocketDict) ->
             {ok, DCIDSocketDict}
     end.
 
--spec connect_to_nodes([socket_address()], [zmq_socket()]) -> [zmq_socket()] | connection_error.
+-spec connect_to_nodes([socket_address()], [zmq_socket()]) -> {ok, [zmq_socket()]} | conn_err().
 connect_to_nodes([], Acc) ->
     {ok, Acc};
 connect_to_nodes([Node | Rest], Acc) ->
@@ -127,14 +129,14 @@ connect_to_nodes([Node | Rest], Acc) ->
             connection_error
     end.
 
--spec connect_to_node([socket_address()]) -> zmq_socket() | connection_error.
+-spec connect_to_node([socket_address()]) -> {ok, zmq_socket()} | conn_err().
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC"),
     connection_error;
 connect_to_node([_Address = {Ip, Port} | Rest]) ->
     %% Test the connection
     case sub_socket_and_connect(Ip, Port) of
-        Socket1 ->
+        {ok, Socket1} ->
             %% receives a ping
             %% TODO can it receive a valid publish transaction from any partition, causing message loss?
             %%      this could only happen after a restart, if anything
@@ -162,7 +164,6 @@ connect_to_node([_Address = {Ip, Port} | Rest]) ->
                     {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
 
                     %% spawn receive subscription worker and trap exit
-                    process_flag(trap_exit, true),
                     Self = self(),
                     spawn_link(fun () ->
                         ?LOG_DEBUG("Spawned sub connect worker ~p", [self()]),
@@ -178,11 +179,13 @@ connect_to_node([_Address = {Ip, Port} | Rest]) ->
     end.
 
 
+-spec sub_socket_and_connect(inet:ip_address(), inet:port_number()) -> {ok, zmq_socket()} | conn_err().
 sub_socket_and_connect(Ip, Port) ->
     case chumak:socket(sub) of
         {ok, Socket1} ->
             case chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port) of
-                {ok, _Pid} -> Socket1;
+                {ok, _Pid} ->
+                    {ok, Socket1};
                 {error, Reason} ->
                     ?LOG_WARNING("Could not connect to publisher: ~p", [Reason]),
                     connection_error

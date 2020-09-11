@@ -35,7 +35,14 @@
     get_address/0,
     get_address_list/1,
     close_socket/1,
-    get_my_partitions/0
+    get_my_partitions/0,
+    generate_random_id/0
+]).
+
+%% Provides utility functions for binary inter_dc messages.
+-export([
+    check_message_version/1,
+    check_version_and_req_id/1
 ]).
 
 -spec get_address() -> inet:ip_address().
@@ -71,20 +78,39 @@ get_address_list(Port) ->
 
 -spec close_socket(zmq_socket()) -> ok.
 close_socket(Socket) ->
-    catch (gen_server:stop(Socket)),
-    close_socket(Socket, true).
-
-close_socket(Socket, true) ->
-%%    logger:warning("Waiting until dead: ~p",[Socket]),
-    timer:sleep(50),
-    close_socket(Socket, is_process_alive(Socket));
-close_socket(Socket, false) ->
-%%    logger:warning("Socket closed and Pid dead: ~p",[Socket]),
-    ok.
-
+    catch (gen_server:stop(Socket)).
 
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].
 get_my_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:my_indices(Ring).
+
+-spec generate_random_id() -> string().
+generate_random_id() ->
+    %% slow but not used often
+    %% only to open sockets with a unique id
+    SeedState = crypto:rand_seed_s(),
+    {N, _} = rand:uniform_s(10000000, SeedState),
+    integer_to_list(N).
+
+
+
+
+
+%% --------- binary utilities
+
+%% Check a binary message version for inter_dc messages
+%% performed by inter_dc_query
+-spec check_message_version(<<_:?VERSION_BITS, _:_*8>>) -> <<_:_*8>>.
+check_message_version(<<Version:?VERSION_BYTES/binary, Rest/binary>>) ->
+    %% Only support one version now
+    ?MESSAGE_VERSION = Version,
+    Rest.
+
+%% Check a binary message version and the message id for inter_dc messages
+%% performed by inter_dc_query
+-spec check_version_and_req_id(<<_:?MESSAGE_HEADER_BIT_LENGTH, _:_*8>>) -> {<<_:?REQUEST_ID_BIT_LENGTH>>, binary()}.
+check_version_and_req_id(Binary) ->
+    <<ReqId:?REQUEST_ID_BYTE_LENGTH/binary, Rest/binary>> = check_message_version(Binary),
+    {ReqId, Rest}.
