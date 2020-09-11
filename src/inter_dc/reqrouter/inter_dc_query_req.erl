@@ -78,7 +78,7 @@
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary()) -> ok))
              -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
-    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}, ?REQUEST_TIMEOUT).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -133,8 +133,28 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
     case dict:find({DCID, Partition}, State#state.sockets) of
         {ok, Socket} ->
             ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
-            %% send to self as cast to allow for more async requests
-            gen_server:cast(?MODULE, {any_request, ReqId, RequestType, BinaryRequest, Func, Socket}),
+
+            %% prepare message
+            VersionBinary = ?MESSAGE_VERSION,
+            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
+            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+
+            %% TODO the old variant (erlzmq) sent this request and receive pair in a different process async.
+            %%      That would pile up requests in the background, as the send and recv order is strictly
+            %%      needed for req sockets.
+            %%      It would make sense to open more sockets concurrently
+            %%      and dispatch these send/recv requests (e.g. as much as ?INTER_DC_QUERY_CONCURRENCY)
+            ?LOG_DEBUG("Send and receive"),
+            ok = chumak:send(Socket, FullRequest),
+            {ok, BinaryMsg} = chumak:recv(Socket),
+
+            ?LOG_DEBUG("Process and apply function"),
+            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+            case RestMsg of
+                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
+                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
+            end,
+
             {reply, ok, State#state{req_id = ReqId + 1}};
         _ ->
             ?LOG_WARNING("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
@@ -152,24 +172,6 @@ terminate(_Reason, State) ->
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
-handle_cast({any_request, ReqId, RequestType, BinaryRequest, Func, Socket}, State) ->
-    %% prepare message
-    VersionBinary = ?MESSAGE_VERSION,
-    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-    FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-
-    ?LOG_DEBUG("Send and receive"),
-    ok = chumak:send(Socket, FullRequest),
-    {ok, BinaryMsg} = chumak:recv(Socket),
-
-    ?LOG_DEBUG("Process and apply function"),
-    <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
-    case RestMsg of
-        <<RequestType, RestBinary/binary>> -> Func(RestBinary);
-        Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
-    end,
-
-    {noreply, State};
 handle_cast(_Request, State) -> {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
