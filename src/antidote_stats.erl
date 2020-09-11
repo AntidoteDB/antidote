@@ -31,6 +31,7 @@
 -module(antidote_stats).
 
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
 %% Interval to collect metrics
@@ -193,7 +194,7 @@ update_processes_info(Monitored) ->
                 %% if a process is not monitored and the threshold is reached, add to monitored list
                 case Messages > ?QUEUE_LENGTH_THRESHOLD of
                     true ->
-                        logger:warning("New process has a message queue and is now being monitored ~p: ~p", [Name, Messages]),
+                        ?LOG_WARNING("New process has a message queue and is now being monitored ~p: ~p", [Name, Messages]),
                         ?STATS({process_message_queue_length, Name, Messages}),
                         ?STATS({process_reductions, Name, maps:get(Name, ReductionsMap)}),
                         MonitorAcc ++ [Name];
@@ -213,9 +214,9 @@ update_processes_info(Monitored) ->
     ?STATS({process_scrape_time, TimeMs}),
     case TimeMs > ?TIME_METRIC_COLLECTION_THRESHOLD_MS of
         true ->
-            logger:alert("System metric process collection took too long (~p ms over ~p ms threshold), turning process info collection off", [TimeMs, ?TIME_METRIC_COLLECTION_THRESHOLD_MS]),
+            ?LOG_ALERT("System metric process collection took too long (~p ms over ~p ms threshold), turning process info collection off", [TimeMs, ?TIME_METRIC_COLLECTION_THRESHOLD_MS]),
             {false, NewMonitored};
         _ ->
-            logger:debug("Took ~p ms to scrape processes", [TimeMs]),
+            ?LOG_DEBUG("Took ~p ms to scrape processes", [TimeMs]),
             {true, NewMonitored}
     end .

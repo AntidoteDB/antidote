@@ -89,7 +89,7 @@ handle_info({zmq, BinaryMsg}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    logger:info("Subsriber connect socket ~p shutdown: ~p", [Pid, Reason]),
+    ?LOG_INFO("Subsriber connect socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State}.
 
 handle_cast(_Request, State) ->

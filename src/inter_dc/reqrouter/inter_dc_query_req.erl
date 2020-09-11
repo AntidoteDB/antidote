@@ -30,7 +30,7 @@
 %% queries to other DCs, the types of messages that can be sent are found in
 %% include/antidote_message_types.hrl
 %% To perform a request, call the "perform_request" function below
-%% Then need to update the code of the recipiant of the query at inter_dc_query_receive_socket
+%% Then need to update the code of the recipiant of the query at inter_dc_query_router
 
 %% The unanswered_query caching is there only for the purpose of disconnecting DCs.
 %% The reliability-related features like resending the query are handled by ZeroMQ.
@@ -142,7 +142,7 @@ handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
     end.
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    logger:notice("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
+    ?LOG_NOTICE("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State};
 handle_info(_, State) ->
     {noreply, State}.
@@ -239,7 +239,7 @@ connect_req(Ip, Port) ->
     case chumak:socket(req, Id) of
         {ok, Socket} ->
             {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-            logger:info("Opening socket ID ~p (~p)", [Id, Socket]),
+            ?LOG_INFO("Opening socket ID ~p (~p)", [Id, Socket]),
             {ok, Socket};
         {error, _Reason} ->
             connection_error

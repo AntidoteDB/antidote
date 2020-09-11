@@ -80,17 +80,14 @@ handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     BinaryResp = term_to_binary({{dc_utilities:get_my_dc_id(), Partition}, Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
-    ok = inter_dc_query_receive_socket:send_response(FullResponse, QueryState),
+    ok = inter_dc_query_router:send_response(FullResponse, QueryState),
     {noreply, State};
 
 handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
-    logger:warning("======> request perm", []),
     {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
     BinaryResp = BinaryRequest,
     ok = bcounter_mgr:process_transfer(Operation),
-    logger:warning("======> send response!", []),
-    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
-    logger:warning("======> no reply!", []),
+    ok = inter_dc_query_router:send_response(BinaryResp, QueryState),
     {noreply, State};
 
 handle_cast(_Info, State) ->

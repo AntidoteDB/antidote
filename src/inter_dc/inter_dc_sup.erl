@@ -59,7 +59,7 @@ init(_Args) ->
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
     InterDcQueryReq = ?CHILD(inter_dc_query_req, worker, []),
-    InterDcQueryReqRecv = ?CHILD(inter_dc_query_receive_socket, worker, []),
+    InterDcQueryReqRecv = ?CHILD(inter_dc_query_router, worker, []),
 
 
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),

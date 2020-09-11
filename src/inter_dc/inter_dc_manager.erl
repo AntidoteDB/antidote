@@ -62,7 +62,7 @@ get_descriptor() ->
   ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
-  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_router, get_address_list, []) end, Nodes),
   {ok, #descriptor{
     dcid = dc_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
@@ -173,7 +173,7 @@ check_node_restart() ->
             wait_init:wait_ready(MyNode),
             ok = dc_utilities:check_registered(meta_data_sender_sup),
             ok = dc_utilities:check_registered(meta_data_manager_sup),
-            ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+            ok = dc_utilities:check_registered(inter_dc_query_router),
             ok = dc_utilities:check_registered(inter_dc_sub),
             ok = dc_utilities:check_registered(inter_dc_pub),
             ok = dc_utilities:check_registered(inter_dc_query_response_sup),

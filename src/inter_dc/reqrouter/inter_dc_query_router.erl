@@ -32,7 +32,7 @@
 %% To handle new types, need to update the handle_info method below
 %% As well as in the sender of the query at inter_dc_query_req
 
--module(inter_dc_query_receive_socket).
+-module(inter_dc_query_router).
 
 -behaviour(gen_server).
 
@@ -151,7 +151,7 @@ loop(Parent, Socket) ->
 
 %% zmq connect worker shutdown
 handle_info({'EXIT', Pid, Reason}, State) ->
-    logger:notice("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
+    ?LOG_NOTICE("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
     {noreply, State};
 handle_info(Info, State) ->
     ?LOG_INFO("got weird info ~p", [Info]),
@@ -159,7 +159,7 @@ handle_info(Info, State) ->
 
 handle_call(_Request, _From, State) -> {noreply, State}.
 terminate(_Reason, State) ->
-    logger:notice("Query router terminating"),
+    ?LOG_INFO("Query router terminating"),
     inter_dc_utils:close_socket(State#state.socket).
 
 handle_cast({send_response, BinaryResponse,
@@ -198,9 +198,9 @@ get_router_bind_ip() ->
 simple() ->
     {ok, Req} = inter_dc_query_req:start_link(),
 
-    {ok, Router} = inter_dc_query_receive_socket:start_link(),
+    {ok, Router} = inter_dc_query_router:start_link(),
 
-    LogReaders = inter_dc_query_receive_socket:get_address_list(),
+    LogReaders = inter_dc_query_router:get_address_list(),
     DcId = dc_utilities:get_my_dc_id(),
 
     inter_dc_query_req:add_dc(DcId, [LogReaders]),
@@ -225,7 +225,7 @@ test_init() ->
     meck:expect(dc_utilities, get_my_dc_id, fun() -> dcid end),
     meck:expect(inter_dc_query_response, request_permissions, fun(A,B) ->
         %% send directly
-        inter_dc_query_receive_socket:send_response(A, B)
+        inter_dc_query_router:send_response(A, B)
                                                               end),
     ok.
 
