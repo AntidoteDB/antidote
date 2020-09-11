@@ -56,12 +56,15 @@
 
 
 init_per_suite(InitialConfig) ->
+    ok = application:ensure_started(chumak),
     InitialConfig.
 
 end_per_suite(Config) ->
+    application:stop(chumak),
     Config.
 
 init_per_testcase(_Case, Config) ->
+    ct:print("[ RUN ] ~p", [_Case]),
     Config.
 
 end_per_testcase(Name, _) ->
@@ -82,62 +85,62 @@ all() -> [
 ].
 
 how_to_close_chumak_sockets(_) ->
-    ok = application:ensure_started(chumak),
 
-    DontDie = spawn_link(
-        fun() ->
-            process_flag(trap_exit, true), % socket will crash on test case exit, trap exit only for clean console
-            application:set_env(antidote, pubsub_port, 14444),
-            {ok, 14444} = application:get_env(antidote, pubsub_port),
-            {ok, Pid} = inter_dc_pub:start_link(),
-
-            %% publish without interruption
-            spawn_link(fun L() ->
-                %% try catch only for test case
-                %% it does not really matter if the publish call crashes the caller,
-                %% can only happen when the application shuts down
-                try
-                    gen_server:call(Pid, {publish, <<"hello">>}),
-                    timer:sleep(50),
-                    L()
-                catch
-                    _:_:_ -> ok
-                end
-                       end),
-            receive
-                finish_test -> gen_server:stop(Pid)
-            end
-        end
-    ),
-
-
-    true = is_process_alive(DontDie),
-    %% simple socket and close
-    spawn_link(fun() ->
-        {ok, SocketPid} = chumak:socket(sub),
-        inter_dc_utils:close_socket(SocketPid),
-        false = is_process_alive(SocketPid)
-               end),
-
-    %% simple socket connect and close
-    spawn_link(fun() ->
-        {ok, SocketPid} = chumak:socket(sub),
-        {ok, _} = chumak:connect(SocketPid, tcp, "localhost", 14444),
-        inter_dc_utils:close_socket(SocketPid),
-        false = is_process_alive(SocketPid)
-               end),
-
-
-
-    true = is_process_alive(DontDie),
-    DontDie ! finish_test,
-    timer:sleep(100),
-    false = is_process_alive(DontDie),
+    %% this test case produces spam if running with other SUITEs at the same time
+%%    DontDie = spawn_link(
+%%        fun() ->
+%%            process_flag(trap_exit, true), % socket will crash on test case exit, trap exit only for clean console
+%%            application:set_env(antidote, pubsub_port, 1555),
+%%            {ok, 15555} = application:get_env(antidote, pubsub_port),
+%%            {ok, Pid} = inter_dc_pub:start_link(),
+%%
+%%            %% publish without interruption
+%%            spawn_link(fun L() ->
+%%                %% try catch only for test case
+%%                %% it does not really matter if the publish call crashes the caller,
+%%                %% can only happen when the application shuts down
+%%                try
+%%                    gen_server:call(Pid, {publish, <<"hello">>}),
+%%                    timer:sleep(50),
+%%                    L()
+%%                catch
+%%                    _:_:_ -> ok
+%%                end
+%%                       end),
+%%            receive
+%%                finish_test -> gen_server:stop(Pid)
+%%            end
+%%        end
+%%    ),
+%%
+%%
+%%    true = is_process_alive(DontDie),
+%%    %% simple socket and close
+%%    spawn_link(fun() ->
+%%        {ok, SocketPid} = chumak:socket(sub),
+%%        inter_dc_utils:close_socket(SocketPid),
+%%        false = is_process_alive(SocketPid)
+%%               end),
+%%
+%%    %% simple socket connect and close
+%%    spawn_link(fun() ->
+%%        {ok, SocketPid} = chumak:socket(sub),
+%%        {ok, _} = chumak:connect(SocketPid, tcp, "localhost", 15555),
+%%        inter_dc_utils:close_socket(SocketPid),
+%%        false = is_process_alive(SocketPid)
+%%               end),
+%%
+%%
+%%
+%%    true = is_process_alive(DontDie),
+%%    DontDie ! finish_test,
+%%    timer:sleep(100),
+%%    false = is_process_alive(DontDie),
     ok.
 
 pub_alone(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
+    application:set_env(antidote, pubsub_port, 15554),
+    {ok, 15554} = application:get_env(antidote, pubsub_port),
     {ok, Pid} = inter_dc_pub:start_link(),
 
     Topic = " ",
@@ -148,7 +151,7 @@ pub_alone(_Config) ->
     spawn_link(fun() ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, Topic),
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15554),
         {ok, Message} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
@@ -164,8 +167,8 @@ pub_alone(_Config) ->
     ok.
 
 pub_two_sub(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
+    application:set_env(antidote, pubsub_port, 15553),
+    {ok, 15553} = application:get_env(antidote, pubsub_port),
     {ok, Pid} = inter_dc_pub:start_link(),
 
     Message = <<"01", "ping">>,
@@ -176,7 +179,7 @@ pub_two_sub(_Config) ->
     spawn_link(fun() ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "01"),
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15553),
         {ok, <<"01","ping">>} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
@@ -186,7 +189,7 @@ pub_two_sub(_Config) ->
     spawn_link(fun() ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "02"),
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15553),
         {ok, <<"02","ping">>} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
@@ -203,8 +206,8 @@ pub_two_sub(_Config) ->
     ok.
 
 pub_one_sub_two_topics(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
+    application:set_env(antidote, pubsub_port, 15552),
+    {ok, 15552} = application:get_env(antidote, pubsub_port),
     {ok, Pid} = inter_dc_pub:start_link(),
 
     Message = <<"01", "msg">>,
@@ -217,7 +220,7 @@ pub_one_sub_two_topics(_Config) ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "01"),
         chumak:subscribe(SubSocket, "02"),
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15552),
         {ok, _} = chumak:recv(SubSocket),
         {ok, _} = chumak:recv(SubSocket),
 
@@ -237,8 +240,8 @@ pub_one_sub_two_topics(_Config) ->
     ok.
 
 pub_sub_stop(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
+    application:set_env(antidote, pubsub_port, 15555),
+    {ok, 15555} = application:get_env(antidote, pubsub_port),
     {ok, Pid} = inter_dc_pub:start_link(),
 
     Message = <<"01", "ping">>,
@@ -248,7 +251,7 @@ pub_sub_stop(_Config) ->
     _Loop = spawn(fun() ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "01"),
-        {ok, SubPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, SubPid} = chumak:connect(SubSocket, tcp, "localhost", 15555),
         Self ! {sock, SubSocket, SubPid},
         {ok, M} = chumak:recv(SubSocket),
         ct:pal("Received but should not receive something! ~p", [M]),
@@ -271,8 +274,8 @@ pub_sub_stop(_Config) ->
     ok.
 
 pub_one_sub_two_topics_partitions(_Config) ->
-    application:set_env(antidote, pubsub_port, 14444),
-    {ok, 14444} = application:get_env(antidote, pubsub_port),
+    application:set_env(antidote, pubsub_port, 15551),
+    {ok, 15551} = application:get_env(antidote, pubsub_port),
     {ok, Pid} = inter_dc_pub:start_link(),
 
     P1 = 0,
@@ -298,7 +301,7 @@ pub_one_sub_two_topics_partitions(_Config) ->
     spawn(fun() ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, <<>>),
-        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 14444),
+        {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15551),
         {ok, MM1} = chumak:recv(SubSocket),
         ct:log("Received test message ~p", [MM1]),
 
@@ -312,7 +315,7 @@ pub_one_sub_two_topics_partitions(_Config) ->
         ct:log("Subscribing to ~p",[P3Bin]),
         chumak:subscribe(SubSocket2, P3Bin),
 
-        {ok, _} = chumak:connect(SubSocket2, tcp, "localhost", 14444),
+        {ok, _} = chumak:connect(SubSocket2, tcp, "localhost", 15551),
         timer:sleep(50),
         Self ! more,
 
@@ -348,12 +351,10 @@ pub_one_sub_two_topics_partitions(_Config) ->
     ok.
 
 router_multiple_req(_Config) ->
-    application:ensure_started(chumak),
-
     % start local router
     _RouterPid = spawn(fun() ->
         {ok, RouterSocket} = chumak:socket(router),
-        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 14444),
+        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 15556),
 
         CaseCheck = fun() ->
             {ok, [Id, <<>>, <<"ping">>]} = chumak:recv_multipart(RouterSocket),
@@ -382,7 +383,7 @@ router_multiple_req(_Config) ->
             fun() ->
                 Id = atom_to_list(node())++pid_to_list(self()),
                 {ok, Socket} = chumak:socket(req, Id),
-                {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 14444),
+                {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 15556),
                 WorkerLoop(Socket, Id, Parent)
             end
         ) end,
@@ -396,13 +397,11 @@ router_multiple_req(_Config) ->
     ok.
 
 router_req_use(_Config) ->
-    application:ensure_started(chumak),
-
     % start local router
     RouterPid = spawn_link(fun() ->
         process_flag(trap_exit, true), % socket will crash on test case exit, trap exit only for clean console
         {ok, RouterSocket} = chumak:socket(router),
-        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 14445),
+        {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 15557),
 
         ct:pal("Spawned router, waiting"),
         CaseCheck = fun L(Counter) ->
@@ -446,7 +445,7 @@ router_req_use(_Config) ->
 
     %% request identity is strictly required by chumak
     {ok, Socket} = chumak:socket(req, "A"),
-    {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 14445),
+    {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 15557),
     WorkerLoop(Socket, self()),
 
     receive finish -> ok end,

@@ -265,12 +265,10 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
     case TxId of
         static ->
             {ok, Res, CT} = rpc:call(Node, cure, read_objects, [Clock, [], Objects]),
-            ct:pal("~p :: ~p", [Expected, Res]),
             ?assertEqual(Expected, Res),
             {ok, Res, CT};
         _ ->
             {ok, Res} = rpc:call(Node, cure, read_objects, [Objects, TxId]),
-            ct:pal("~p :: ~p", [Expected, Res]),
             ?assertEqual(Expected, Res),
             {ok, Res}
     end.
