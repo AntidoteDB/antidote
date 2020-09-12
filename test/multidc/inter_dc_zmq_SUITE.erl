@@ -254,7 +254,7 @@ pub_sub_stop(_Config) ->
         {ok, SubPid} = chumak:connect(SubSocket, tcp, "localhost", 15555),
         Self ! {sock, SubSocket, SubPid},
         {ok, M} = chumak:recv(SubSocket),
-        ct:pal("Received but should not receive something! ~p", [M]),
+        ct:log("Received but should not receive something! ~p", [M]),
         0 = M
                   end),
 
@@ -372,7 +372,7 @@ router_multiple_req(_Config) ->
         spawn_link(fun() ->
             chumak:send(Socket, <<"ping">>),
             {ok, Message} = chumak:recv(Socket),
-            ct:pal("~p Message received from router async ~p", [_Id, Message])
+            ct:log("~p Message received from router async ~p", [_Id, Message])
                    end
         )
                  end,
@@ -403,10 +403,10 @@ router_req_use(_Config) ->
         {ok, RouterSocket} = chumak:socket(router),
         {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 15557),
 
-        ct:pal("Spawned router, waiting"),
+        ct:log("Spawned router, waiting"),
         CaseCheck = fun L(Counter) ->
             {ok, [Id, <<>>, Msg]} = chumak:recv_multipart(RouterSocket),
-            ct:pal("Got Message from ~p", [Id]),
+            ct:log("Got Message from ~p", [Id]),
             BinInt = integer_to_binary(Counter),
             chumak:send_multipart(RouterSocket, [Id, <<>>, <<BinInt/binary, Msg/binary>>]),
             L(Counter + 1)
@@ -420,11 +420,11 @@ router_req_use(_Config) ->
 
     WorkerLoop = fun(Socket, Parent) ->
         spawn_link(fun() ->
-            ct:pal("Sending ping"),
+            ct:log("Sending ping"),
             chumak:send(Socket, list_to_binary("hello")),
             {ok, <<"0hello">>} = chumak:recv(Socket),
 
-            ct:pal("Received"),
+            ct:log("Received"),
 
 
             %% two sends in succession is very bad
@@ -434,7 +434,7 @@ router_req_use(_Config) ->
             chumak:send(Socket, list_to_binary("thiswillbediscarded")),
 
             {ok, <<"1world">>} = chumak:recv(Socket),
-            ct:pal("Received"),
+            ct:log("Received"),
 
             %% this is not allowed and will cause an efsm error
             %% RcvPrint(Socket),
