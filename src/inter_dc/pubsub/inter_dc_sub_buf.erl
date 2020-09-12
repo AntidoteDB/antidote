@@ -123,14 +123,9 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
             ?LOG_INFO("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
                   [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
             try
-              case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
-                ok ->
-                  %% Enter buffering state while waiting for response and set timeout
-                  State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT};
-                Reason  ->
-                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message, reason: ~p", [Reason]),
-                  State#inter_dc_sub_buf{state_name = normal}
-              end
+                query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast),
+                %% Enter buffering state while waiting for response and set timeout
+                State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT}
             catch
               S:T ->
                   ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message: ~p~n~p",[S,T]),

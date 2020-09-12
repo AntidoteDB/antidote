@@ -57,7 +57,6 @@
 
 -spec start() -> {ok, [atom()]} | {error, reason()}.
 start() ->
-    ok = application:ensure_started(chumak),
     application:ensure_all_started(antidote).
 
 -spec stop() -> ok | {error, reason()}.

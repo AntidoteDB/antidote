@@ -76,9 +76,9 @@
 %% Note that the function should not perform any work, instead just send
 %% the work to another process, otherwise it will block other messages
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary()) -> ok))
-             -> ok | unknown_dc.
+             -> ok.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
-    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}, ?REQUEST_TIMEOUT).
+    gen_server:cast(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -125,41 +125,8 @@ handle_call({add_dc, DCID, LogReaders}, _From, State = #state{ sockets = OldDcPa
 %% Remove a DC
 handle_call({del_dc, DCID}, _From, State = #state{ sockets = Dict}) ->
     NewDict = del_dc(DCID, Dict),
-    {reply, ok, State#state{sockets = NewDict}};
+    {reply, ok, State#state{sockets = NewDict}}.
 
-%% Handle an instruction to ask a remote DC.
-handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
-    ?LOG_NOTICE("Trying to perform request"),
-    case dict:find({DCID, Partition}, State#state.sockets) of
-        {ok, Socket} ->
-            ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
-
-            %% prepare message
-            VersionBinary = ?MESSAGE_VERSION,
-            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-
-            %% TODO the old variant (erlzmq) sent this request and receive pair in a different process async.
-            %%      That would pile up requests in the background, as the send and recv order is strictly
-            %%      needed for req sockets.
-            %%      It would make sense to open more sockets concurrently
-            %%      and dispatch these send/recv requests (e.g. as much as ?INTER_DC_QUERY_CONCURRENCY)
-            ?LOG_DEBUG("Send and receive"),
-            ok = chumak:send(Socket, FullRequest),
-            {ok, BinaryMsg} = chumak:recv(Socket),
-
-            ?LOG_DEBUG("Process and apply function"),
-            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
-            case RestMsg of
-                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
-                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
-            end,
-
-            {reply, ok, State#state{req_id = ReqId + 1}};
-        _ ->
-            ?LOG_WARNING("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
-            {reply, unknown_dc, State}
-    end.
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     ?LOG_NOTICE("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
@@ -172,6 +139,36 @@ terminate(_Reason, State) ->
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
+%% Handle an instruction to ask a remote DC.
+handle_cast({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, State=#state{req_id=ReqId}) ->
+    ?LOG_NOTICE("Trying to perform request"),
+    case dict:find({DCID, Partition}, State#state.sockets) of
+        {ok, Socket} ->
+            ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
+
+            %% prepare message
+            VersionBinary = ?MESSAGE_VERSION,
+            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
+            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+
+            %% TODO Open more sockets concurrently
+            %%      and dispatch these send/recv requests (e.g. as many sockets as ?INTER_DC_QUERY_CONCURRENCY)
+            ?LOG_DEBUG("Send and receive"),
+            ok = chumak:send(Socket, FullRequest),
+            {ok, BinaryMsg} = chumak:recv(Socket),
+
+            ?LOG_DEBUG("Process and apply function"),
+            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+            case RestMsg of
+                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
+                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
+            end,
+
+            {noreply, State#state{req_id = ReqId + 1}};
+        _ ->
+            ?LOG_ERROR("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
+            {noreply, State}
+    end;
 handle_cast(_Request, State) -> {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
@@ -204,27 +201,29 @@ connect_to_node([]) ->
 connect_to_node([_Address = {Ip, Port}| Rest]) ->
     %% Test the connection
     case connect_req(Ip, Port) of
-        {ok, Socket1} ->
+        {ok, Socket} ->
             %% Always use 0 as the id of the check up message
             ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
             BinaryVersion = ?MESSAGE_VERSION,
 
-            ok = chumak:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
-            Response = chumak:recv(Socket1),
-            inter_dc_utils:close_socket(Socket1),
+            ok = chumak:send(Socket, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
+            Response = chumak:recv(Socket),
 
             case Response of
                 {ok, Binary} ->
                     %% check that an ok msg was received
-                    {_, <<?OK_MSG>>} = inter_dc_utils:check_version_and_req_id(Binary),
-                    %% Create a subscriber socket for the specified DC
-                    case connect_req(Ip, Port) of
-                        {ok, Socket} ->
+                    case inter_dc_utils:check_version_and_req_id(Binary) of
+                        {_, <<?OK_MSG>>} ->
                             {ok, Socket};
-                        _ ->
-                            connect_to_node(Rest)
+                        Reason ->
+                            %% if the test message is not ok, then the DC is bad
+                            %% return connection_error immediately
+                            ?LOG_CRITICAL("Faulty DC (~p:~p) response detected: ~p", [Ip, Port, Reason]),
+                            inter_dc_utils:close_socket(Socket),
+                            connection_error
                     end;
                 _ ->
+                    inter_dc_utils:close_socket(Socket),
                     connect_to_node(Rest)
             end;
         _ ->
