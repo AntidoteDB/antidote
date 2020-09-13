@@ -73,8 +73,6 @@
 -define(GRACE_PERIOD, 1000000). % in Microseconds
 %% Time to forget a pending request.
 -define(REQUEST_TIMEOUT, 500000). % In Microseconds
-%% Time to forget a pending perform interdc request.
--define(PERFORM_REQUEST_TIMEOUT, 30000). % In Milliseconds
 %% Frequency at which manager requests remote resources.
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
