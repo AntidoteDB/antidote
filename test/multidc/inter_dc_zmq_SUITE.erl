@@ -258,11 +258,11 @@ pub_sub_stop(_Config) ->
         0 = M
                   end),
 
-    {Sub, SubPid} = receive {sock, Sub, SubPid} -> {Sub, SubPid} end,
+    {Subscriber, _SubscriberPid} = receive {sock, Sub, SubPid} -> {Sub, SubPid} end,
 
     ct:log("Stopping subscriber"),
 
-    inter_dc_utils:close_socket(Sub),
+    inter_dc_utils:close_socket(Subscriber),
 
     timer:sleep(50),
 
