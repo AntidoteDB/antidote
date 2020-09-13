@@ -223,7 +223,7 @@ test_init() ->
     meck:new(inter_dc_query_response),
     meck:expect(dc_utilities, get_my_partitions, fun() -> [0] end),
     meck:expect(dc_utilities, get_my_dc_id, fun() -> dcid end),
-    meck:expect(inter_dc_query_response, request_permissions, fun(A,B) ->
+    meck:expect(inter_dc_query_response, request_permissions, fun(A, B) ->
         %% send directly
         inter_dc_query_router:send_response(A, B)
                                                               end),
