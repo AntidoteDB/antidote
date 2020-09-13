@@ -261,8 +261,6 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %% internal state timeout
 -spec execute_op(state_timeout, timeout, state()) -> gen_statem:event_handler_result(state());
     ({call, pid()}, undefined | list() | {update_objects, list()} | {update, list()}, state()) -> gen_statem:event_handler_result(state()).
-execute_op(state_timeout, timeout, State = #state{operations = Operations, from = From}) ->
-    execute_op({call, From}, Operations, State);
 
 %% update kept for backwards compatibility with tests.
 execute_op({call, Sender}, {update, Args}, State) ->
@@ -637,7 +635,7 @@ reply_to_client(State = #state{
         undefined ->
             ok;
 
-        Node ->
+        {_Pid, _Tag} ->
 
             Reply = case TxState of
                         committed_read_only ->
@@ -674,12 +672,7 @@ reply_to_client(State = #state{
 %%                        Reason ->
 %%                            {TxId, Reason}
                     end,
-            case is_pid(Node) of
-                false ->
-                    gen_statem:reply(Node, Reply);
-                true ->
-                    From ! Reply
-            end
+            gen_statem:reply(From, Reply)
     end,
 
     % transaction is finished, decrement count
