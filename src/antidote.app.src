@@ -4,6 +4,7 @@
     {vsn, "0.2.2"},
     {applications, [
         kernel,
+	ranch,
         stdlib,
         riak_core,
         chumak,
@@ -14,8 +15,7 @@
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
-        antidote_crdt,
-        ranch
+        antidote_crdt
     ]},
 
     {mod, {antidote_app, []}},
