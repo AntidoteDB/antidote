@@ -112,7 +112,6 @@ how_to_close_chumak_sockets(_) ->
 %%        end
 %%    ),
 %%
-%%
 %%    true = is_process_alive(DontDie),
 %%    %% simple socket and close
 %%    spawn_link(fun() ->
