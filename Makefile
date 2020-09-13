@@ -55,7 +55,7 @@ compile-utils: compile
 	done
 
 test:
-	${REBAR} eunit -d src/
+	${REBAR} eunit skip_deps=true
 
 coverage:
 	# copy the coverdata files with a wildcard filter
