@@ -85,7 +85,6 @@ all() -> [
 ].
 
 how_to_close_chumak_sockets(_) ->
-
     %% this test case produces spam if running with other SUITEs at the same time
 %%    DontDie = spawn_link(
 %%        fun() ->
