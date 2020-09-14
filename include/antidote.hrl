@@ -43,7 +43,7 @@
 %% This can break the tests is not set to 0
 -define(OLD_SS_MICROSEC,0).
 %% The number of supervisors that are responsible for
-%% supervising transaction coorinator fsms
+%% supervising transaction coordinator fsms
 -define(NUM_SUP, 100).
 %% Threads will sleep for this length when they have to wait
 %% for something that is not ready after which they
@@ -77,16 +77,17 @@
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
 %% The definition "FIRST_OP" is used by the materializer.
-%% The materialzer caches a tuple for each key containing
+%% The materializer caches a tuple for each key containing
 %% information about the state of operations performed on that key.
 %% The first 3 elements in the tuple are the following meta-data:
 %% First is the key itself
-%% Second is a tuple defined as {the number of update operations stored in the tupe, the size of the tuple}
+%% Second is a tuple defined as {the number of update operations stored in the tuple, the size of the tuple}
 %% Third is a counter that keeps track of how many update operations have been performed on this key
 %% Fourth is where the first update operation is stored
 %% The remaining elements are update operations
 -define(FIRST_OP, 4).
 
+%%TODO can this record be deleted? Or is it used in other branches?
 -record(payload, {
     key :: key(),
     type :: type(),
@@ -139,7 +140,7 @@
 
 %% The way records are stored in the log.
 -record(log_record, {
-    %% The version of the log record, for backwards compatability
+    %% The version of the log record, for backwards compatibility
     version :: non_neg_integer(),
     op_number :: op_number(),
     bucket_op_number :: op_number(),
@@ -188,8 +189,8 @@
 
 
 %% DC Id is the riak_core ring cluster name
--type dcid() :: undefined | riak_core_ring:riak_core_ring().
--type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
+-type dcid() :: undefined | {term(), term()}.
+-type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
 
@@ -218,7 +219,7 @@
 
 -type crdt() :: term().
 -type val() :: term().
--type reason() :: atom().
+-type reason() :: term().
 -type index_node() :: {partition_id(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
