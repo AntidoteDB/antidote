@@ -15,11 +15,8 @@
  {<<"prometheus_process_collector">>,
   {pkg,<<"prometheus_process_collector">>,<<"1.6.0">>},
   1},
- {<<"ranch">>,{pkg,<<"ranch">>,<<"1.7.1">>},0},
- {<<"riak_core">>,
-  {git,"https://github.com/riak-core-lite/riak_core_lite",
-       {ref,"9194861f5857aa1d0773807a9b0d48a55b3314b8"}},
-  0},
+ {<<"ranch">>,{pkg,<<"ranch">>,<<"2.0.0">>},0},
+ {<<"riak_core">>,{pkg,<<"riak_core_lite">>,<<"0.10.1">>},0},
  {<<"vectorclock">>,{pkg,<<"vectorclock">>,<<"0.2.0">>},0}]}.
 [
 {pkg_hash,[
@@ -33,6 +30,7 @@
  {<<"poolboy">>, <<"392B007A1693A64540CEAD79830443ABF5762F5D30CF50BC95CB2C1AAAFA006B">>},
  {<<"prometheus">>, <<"20510F381DB1CCAB818B4CF2FAC5FA6AB5CC91BC364A154399901C001465F46F">>},
  {<<"prometheus_process_collector">>, <<"B169E224337497CD858DA16F9361EDABC5931B9D12201A97EE15D88EF5A6FCAA">>},
- {<<"ranch">>, <<"6B1FAB51B49196860B733A49C07604465A47BDB78AA10C1C16A3D199F7F8C881">>},
+ {<<"ranch">>, <<"FBF3D79661C071543256F9051CAF19D65DAA6DF1CF6824D8F37A49B19A66F703">>},
+ {<<"riak_core">>, <<"B6ACADE9F1C0A1A75AA4FC76BFA9AB3221AE33DBF1F76B0F916BF8741E3B77CF">>},
  {<<"vectorclock">>, <<"6C4A9D44895F51BB99910DBE31FC691BF05FA6B2BF84986F6E3BDE4BD18F6CBA">>}]}
 ].

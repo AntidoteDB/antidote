@@ -34,15 +34,15 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([start_link/4]).
--export([init/4]).
+-export([start_link/3]).
+-export([init/3]).
 
-start_link(Ref, Socket, Transport, Opts) ->
-  Pid = spawn_link(?MODULE, init, [Ref, Socket, Transport, Opts]),
+start_link(Ref, Transport, Opts) ->
+  Pid = spawn_link(?MODULE, init, [Ref, Transport, Opts]),
   {ok, Pid}.
 
-init(Ref, Socket, Transport, _Opts) ->
-  ok = ranch:accept_ack(Ref),
+init(Ref, Transport, _Opts) ->
+  {ok, Socket} = ranch:handshake(Ref),
   % Each message starts with 4 byte denoting the length of the
   % package. The setting {packet, 4} tells the socket library
   % to use this encoding (it is one of the builtin protocols of Erlang)
