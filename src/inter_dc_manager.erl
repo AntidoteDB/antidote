@@ -62,7 +62,7 @@ get_descriptor() ->
   ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
-  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_router, get_address_list, []) end, Nodes),
   {ok, #descriptor{
     dcid = dc_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
@@ -102,7 +102,7 @@ connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
     ok = forget_dcs([Desc]),
     {error, connection_error};
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
-    case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
+    case rpc:call(Node, inter_dc_query_req, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
         ok ->
             case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
                 ok ->
@@ -173,11 +173,11 @@ check_node_restart() ->
             wait_init:wait_ready(MyNode),
             ok = dc_utilities:check_registered(meta_data_sender_sup),
             ok = dc_utilities:check_registered(meta_data_manager_sup),
-            ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+            ok = dc_utilities:check_registered(inter_dc_query_router),
             ok = dc_utilities:check_registered(inter_dc_sub),
             ok = dc_utilities:check_registered(inter_dc_pub),
             ok = dc_utilities:check_registered(inter_dc_query_response_sup),
-            ok = dc_utilities:check_registered(inter_dc_query),
+            ok = dc_utilities:check_registered(inter_dc_query_req),
             {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
             ok = meta_data_sender:start(MetaDataName),
             %% Start the timers sending the heartbeats
@@ -233,7 +233,7 @@ forget_dc(#descriptor{dcid = DCID}, Nodes) ->
     true -> ok;
     false ->
       ?LOG_NOTICE("Forgetting DC ~p", [DCID]),
-      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query_req, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
 

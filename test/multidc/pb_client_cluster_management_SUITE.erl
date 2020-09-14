@@ -85,7 +85,7 @@ setup_single_dc_handoff_test(Config) ->
     {ok, TxId4} = antidotec_pb:start_transaction(Pb1, ignore, []),
     ok = antidotec_pb:update_objects(Pb1, [{Bound_object, increment, 4242}], TxId4),
     {ok, CommitTime} = antidotec_pb:commit_transaction(Pb1, TxId4),
-    ct:pal("Wrote value to counter"),
+    ct:log("Wrote value to counter"),
     _Disconnected3 = antidotec_pb_socket:stop(Pb1),
 
     % join cluster:

@@ -6,7 +6,7 @@
         kernel,
         stdlib,
         riak_core,
-        erlzmq,
+        chumak,
         runtime_tools,
         tools,
         antidote_stats

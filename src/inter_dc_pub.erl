@@ -27,7 +27,8 @@
 %% -------------------------------------------------------------------
 
 %% InterDC publisher - holds a ZeroMQ PUB socket and makes it available for Antidote processes.
-%% This vnode is used to publish interDC transactions.
+%% This process is used to publish only valid interDC transactions records #interdc_txn.
+%% It prepends all publish messages with a "P" char as a binary byte as a topic delimiter.
 
 -module(inter_dc_pub).
 
@@ -35,77 +36,79 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+
 -include_lib("kernel/include/logger.hrl").
+
 %% API
--export([
-  broadcast/1,
-  get_address/0,
-  get_address_list/0]).
+-export([broadcast/1, get_address/0, get_address_list/0]).
 
 %% Server methods
--export([
-  init/1,
-  start_link/0,
-  handle_call/3,
-  handle_cast/2,
-  handle_info/2,
-  terminate/2,
-  code_change/3]).
+-export([init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% State
--record(state, {socket}). %% socket :: erlzmq_socket()
+-record(state, {socket :: zmq_socket()}).
 
 %%%% API --------------------------------------------------------------------+
 
+-spec broadcast(interdc_txn()) -> ok.
+broadcast(Txn) ->
+    BinTxn = inter_dc_txn:to_bin(Txn),
+    ok = gen_server:call(?MODULE, {publish, <<<<"P">>/binary, BinTxn/binary>>}).
+
 -spec get_address() -> socket_address().
 get_address() ->
-  %% first try resolving our hostname according to the node name
-  [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-  Ip = case inet:getaddr(Hostname, inet) of
-    {ok, HostIp} -> HostIp;
-    {error, _} ->
-      %% cannot resolve hostname locally, fall back to interface ip
-      %% TODO check if we do not return a link-local address
-      {ok, List} = inet:getif(),
-      {IIp, _, _} = hd(List),
-      IIp
-  end,
-  Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-  {Ip, Port}.
+    Ip = inter_dc_utils:get_address(),
+    {Ip, get_pub_port()}.
 
 -spec get_address_list() -> [socket_address()].
 get_address_list() ->
-    {ok, List} = inet:getif(),
-    List1 = [Ip1 || {Ip1, _, _} <- List],
-    %% get host name from node name
-    [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
-    IpList = case inet:getaddr(Hostname, inet) of
-      {ok, HostIp} -> [HostIp|List1];
-      {error, _} -> List1
-    end,
-    Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
-    [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}].
-
--spec broadcast(interdc_txn()) -> ok.
-broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
-    Normal -> Normal
-  end.
+    inter_dc_utils:get_address_list(get_pub_port()).
 
 %%%% Server methods ---------------------------------------------------------+
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(pub, false, Port),
-  ?LOG_INFO("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+    %% the chumak socket needs to be cleaned up explicitly
+    %% gen_servers that are part of a supervision tree need to trap exit signals
+    %% so that terminate/2 is called
+    %% https://erlang.org/doc/design_principles/gen_server_concepts.html
+    process_flag(trap_exit, true),
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+    % bind on ip and port
+    Ip = get_pub_bind_ip(),
+    Port = get_pub_port(),
 
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
-handle_cast(_Request, State) -> {noreply, State}.
-handle_info(_Info, State) -> {noreply, State}.
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
+    {ok, Socket} = chumak:socket(pub),
+    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
+
+    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s", [Port, Ip]),
+    {ok, #state{socket = Socket}}.
+
+handle_call({publish, Message}, _From, State) ->
+    ok = chumak:send(State#state.socket, Message),
+    {reply, ok, State}.
+
+terminate(_Reason, State) ->
+    inter_dc_utils:close_socket(State#state.socket),
+    ok.
+
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%% Internal --------------------------------------------------------------------+
+
+-spec get_pub_port() -> inet:port_number().
+get_pub_port() ->
+    application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT).
+
+-spec get_pub_bind_ip() -> string().
+get_pub_bind_ip() ->
+    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").
