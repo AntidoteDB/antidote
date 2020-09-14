@@ -41,7 +41,6 @@
 
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
--define(VNODE(I, M), {I, {riak_core_vnode_master, start_link, [M]}, permanent, 5000, worker, [riak_core_vnode_master]}).
 
 %% ===================================================================
 %% API functions
@@ -73,19 +72,14 @@ init(_Args) ->
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-
     BCounterManager = ?CHILD(bcounter_mgr, worker, []),
 
-    ZMQContextManager = ?CHILD(zmq_context, worker, []),
-    InterDcPub = ?CHILD(inter_dc_pub, worker, []),
-    InterDcSub = ?CHILD(inter_dc_sub, worker, []),
     StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
-    InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
-    InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
-    InterDcLogReaderQMaster = ?CHILD(inter_dc_query, worker, []),
-    InterDcLogReaderRMaster = ?CHILD(inter_dc_query_receive_socket, worker, []),
-    InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    InterDcSup = {inter_dc_sup,
+        {inter_dc_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [inter_dc_sup]},
 
     MetaDataManagerSup = {meta_data_manager_sup,
                           {meta_data_manager_sup, start_link, [stable_time_functions]},
@@ -97,11 +91,6 @@ init(_Args) ->
                          permanent, 5000, supervisor,
                          [meta_data_sender_sup]},
 
-    LogResponseReaderSup = {inter_dc_query_response_sup,
-                            {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
-                            permanent, 5000, supervisor,
-                            [inter_dc_query_response_sup]},
-
     PbSup = #{id => antidote_pb_sup,
               start => {antidote_pb_sup, start_link, []},
               restart => permanent,
@@ -111,7 +100,6 @@ init(_Args) ->
 
     AntidoteStats = ?CHILD(antidote_stats, worker, []),
 
-
     {ok,
      {{one_for_one, 5, 10},
       [
@@ -119,19 +107,11 @@ init(_Args) ->
        ClockSIMaster,
        ClockSIiTxCoordSup,
        MaterializerMaster,
-       ZMQContextManager,
-       InterDcPub,
-       InterDcSub,
-       InterDcSubVnode,
-       InterDcDepVnode,
-       InterDcLogReaderQMaster,
-       InterDcLogReaderRMaster,
-       InterDcLogSenderMaster,
+       InterDcSup,
        StableMetaData,
        MetaDataManagerSup,
        MetaDataSenderSup,
        BCounterManager,
-       LogResponseReaderSup,
        PbSup,
        AntidoteStats
        ]}}.

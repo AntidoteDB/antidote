@@ -26,6 +26,9 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides an API to read and write to the materializer cache.
+%%      Materializer is partioned as per the CURE protocol.
+
 -module(materializer_vnode).
 
 -behaviour(riak_core_vnode).
