@@ -150,17 +150,20 @@ pub_alone(_Config) ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, Topic),
         {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15554),
+        %% wait until socket connected properly
+        timer:sleep(20),
+        Self ! step,
         {ok, Message} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
                end),
 
-    timer:sleep(50),
+    receive step -> ok end,
 
     % internal API, broadcast allows only for transactions
     ok = gen_server:call(Pid, {publish, Message}),
 
-    receive finish -> ok after 100 -> throw(subscriber_timeout) end,
+    receive finish -> ok after 300 -> throw(subscriber_timeout) end,
     gen_server:stop(Pid),
     ok.
 
@@ -274,18 +277,24 @@ pub_sub_stop(_Config) ->
 pub_one_sub_two_topics_partitions(_Config) ->
     application:set_env(antidote, pubsub_port, 15551),
     {ok, 15551} = application:get_env(antidote, pubsub_port),
+
+    %% start the antidote publisher module
     {ok, Pid} = inter_dc_pub:start_link(),
 
+
+    %% four topics corresponding to four partitions
     P1 = 0,
     P2 = 365375409332725729550921208179070754913983135744,
     P3 = 730750818665451459101842416358141509827966271488,
     P4 = 1096126227998177188652763624537212264741949407232,
 
+    %% Binary representation of the topics, format required by publisher
     P1Bin = inter_dc_txn:partition_to_bin(P1),
     P2Bin = inter_dc_txn:partition_to_bin(P2),
     P3Bin = inter_dc_txn:partition_to_bin(P3),
     P4Bin = inter_dc_txn:partition_to_bin(P4),
 
+    %% payload with topic prefix
     Msg = erlang:term_to_binary(helo),
     M0 = <<P1Bin/binary, Msg/binary>>,
     M1 = <<P1Bin/binary, Msg/binary>>,
@@ -297,30 +306,38 @@ pub_one_sub_two_topics_partitions(_Config) ->
 
     % start local subscriber
     spawn(fun() ->
+
+        %% create two sockets
         {ok, SubSocket} = chumak:socket(sub),
+        {ok, SubSocket2} = chumak:socket(sub),
+
+
+        %% test message with first socket only
         chumak:subscribe(SubSocket, <<>>),
         {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15551),
         {ok, MM1} = chumak:recv(SubSocket),
         ct:log("Received test message ~p", [MM1]),
 
+        %% unsubscribe partition
+        chumak:cancel(SubSocket, <<>>),
 
-        {ok, SubSocket2} = chumak:socket(sub),
-        ct:log("Socket 1: ~p   Socket 2: ~p",[SubSocket, SubSocket2]),
-
+        %% subscribe to different partitions with Sock 1 & 2
         ct:log("Subscribing to ~p",[P1Bin]),
         chumak:subscribe(SubSocket2, P1Bin),
 
         ct:log("Subscribing to ~p",[P3Bin]),
         chumak:subscribe(SubSocket2, P3Bin),
 
+        %% connect socket 2
         {ok, _} = chumak:connect(SubSocket2, tcp, "localhost", 15551),
         timer:sleep(50),
         Self ! more,
 
+        %% receive two messages with socket 2
         {ok, _MMM1} = chumak:recv(SubSocket2),
         {ok, _MMM2} = chumak:recv(SubSocket2),
 
-        %% subscriber_timeout!
+        %% subscriber_timeout when uncomment
 %%        {ok, _} = chumak:recv(SubSocket2),
 %%        logger:warning("2"),
 
@@ -335,36 +352,35 @@ pub_one_sub_two_topics_partitions(_Config) ->
 
     receive more -> ok after 100 -> throw(subscriber_timeout) end,
 
-    ct:log("Publishing ~p",[M1]),
-    ok = gen_server:call(Pid, {publish, M1}),
-    ct:log("Publishing ~p",[M2]),
-    ok = gen_server:call(Pid, {publish, M2}),
-    ct:log("Publishing ~p",[M3]),
-    ok = gen_server:call(Pid, {publish, M3}),
-    ct:log("Publishing ~p",[M4]),
-    ok = gen_server:call(Pid, {publish, M4}),
+    [ ok = gen_server:call(Pid, {publish, M}) || M <- [M1, M2, M3, M4]],
 
     receive finish -> ok after 200 -> throw(subscriber_timeout) end,
     gen_server:stop(Pid),
     ok.
 
 router_multiple_req(_Config) ->
+    Self = self(),
     % start local router
     _RouterPid = spawn(fun() ->
         {ok, RouterSocket} = chumak:socket(router),
         {ok, _BindPid} = chumak:bind(RouterSocket, tcp, "0.0.0.0", 15556),
+        %% give socket some time to bind
+        timer:sleep(20),
 
         CaseCheck = fun() ->
             {ok, [Id, <<>>, <<"ping">>]} = chumak:recv_multipart(RouterSocket),
             chumak:send_multipart(RouterSocket, [Id, <<>>, <<"pong">>])
                     end,
 
+        Self ! step,
         CaseCheck(),
         CaseCheck(),
-        inter_dc_utils:close_socket(RouterSocket)
+        inter_dc_utils:close_socket(RouterSocket),
+        false = is_process_alive(RouterSocket),
+        Self ! finish_test
         end),
 
-    timer:sleep(50),
+    receive step -> ok end,
 
     WorkerLoop = fun(Socket, _Id, _Parent) ->
         spawn_link(fun() ->
@@ -389,12 +405,11 @@ router_multiple_req(_Config) ->
 
     StartWorker(),
     StartWorker(),
-
-    timer:sleep(50),
-    false = is_process_alive(_RouterPid),
+    receive finish_test -> ok end,
     ok.
 
 router_req_use(_Config) ->
+    Self = self(),
     % start local router
     RouterPid = spawn_link(fun() ->
         process_flag(trap_exit, true), % socket will crash on test case exit, trap exit only for clean console
@@ -410,11 +425,12 @@ router_req_use(_Config) ->
             L(Counter + 1)
                     end,
         spawn_link(fun() -> CaseCheck(0) end),
+        Self ! step,
         receive finish_test -> ok end,
         inter_dc_utils:close_socket(RouterSocket)
           end),
 
-    timer:sleep(50),
+    receive step -> ok end,
 
     WorkerLoop = fun(Socket, Parent) ->
         spawn_link(fun() ->
@@ -449,5 +465,4 @@ router_req_use(_Config) ->
     receive finish -> ok end,
     RouterPid ! finish_test,
     inter_dc_utils:close_socket(Socket),
-    timer:sleep(50),
     ok.
