@@ -90,7 +90,7 @@ generate_downstream(_Key, {increment, {Amount, _IgnoreDCID}}, BCounter) ->
 
 %% @doc Processes a transfer operation between two owners of the
 %% counter.
-generate_downstream(_Key, {transfer, {Amount, ToDCID, _IgnoreFromDCID}}, BCounter) ->
+generate_downstream(Key, {transfer, {Amount, ToDCID, _IgnoreFromDCID}}, BCounter) ->
     case check_valid_dcid(ToDCID) of %%prevent transferring to arbitrary DCIDs
         true ->
             MyDCID = dc_utilities:get_my_dc_id(),
@@ -98,7 +98,7 @@ generate_downstream(_Key, {transfer, {Amount, ToDCID, _IgnoreFromDCID}}, BCounte
                 true -> antidote_crdt_counter_b:downstream({transfer, {Amount, ToDCID, MyDCID}}, BCounter);
                 false ->
                     %%TODO this transfer is equal to increment
-                    generate_downstream(_Key, {increment, {Amount, MyDCID}}, BCounter)
+                    generate_downstream(Key, {increment, {Amount, MyDCID}}, BCounter)
             end;
         false -> {error, invalid_dcid}
     end.

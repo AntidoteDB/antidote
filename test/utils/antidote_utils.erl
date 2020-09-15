@@ -218,7 +218,7 @@ update_sets_clock(Node, Keys, Ops, Clock, Bucket) ->
 spawn_com(FirstNode, TxId) ->
     timer:sleep(3000),
     End1 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
-    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
+    ?assertMatch({ok, {_, _}}, End1).
 
 
 spawn_read(Node, TxId, Return, Key, Type, Bucket) ->
