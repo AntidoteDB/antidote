@@ -47,7 +47,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(BUCKET, test_utils:bucket(bcountermgr_bucket)). %%TODO Why?
+-define(BUCKET, test_utils:bucket(bcountermgr_bucket)).
 -define(RETRY_COUNT, 10).
 
 
