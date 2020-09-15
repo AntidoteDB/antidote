@@ -36,8 +36,7 @@ reltest: rel
 
 # style checks
 lint:
-	-${REBAR} as lint lint
-	${REBAR} as lint lint
+	${REBAR} lint
 
 check: distclean cleantests test reltest dialyzer lint
 
