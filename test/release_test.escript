@@ -52,7 +52,7 @@ test_transaction(Tries) ->
     end.
 
 try_connect(Tries) ->
-     case antidotec_pb_socket:start(?ADDRESS, ?PORT) of
+    case antidotec_pb_socket:start(?ADDRESS, ?PORT) of
         {ok, Pid} ->
             {ok, Pid};
         Other when Tries > 0 ->
@@ -62,4 +62,4 @@ try_connect(Tries) ->
             try_connect(Tries - 1);
         Other ->
             Other
-     end.
+    end.

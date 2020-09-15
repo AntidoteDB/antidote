@@ -9,10 +9,10 @@ install:
 script:
   - make test
   - make reltest
-  - make systests
-  - make coverage
-  - rebar3 as test coveralls send
-  - make dialyzer
+#  - make systests
+#  - make coverage
+#  - rebar3 as test coveralls send
+#  - make dialyzer
   - make lint
 after_failure:
   - find logs -name '*.log' -exec echo -e "\e[41m#####################################" \; -exec echo {} \; -exec echo -e "#####################################\e[0m" \; -exec cat {} \;

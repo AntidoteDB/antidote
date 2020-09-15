@@ -8,7 +8,7 @@ export ROOT_DIR_PREFIX=antidote@127.0.0.1/
 export COOKIE=testcookie
 
 # cd to root project directory
-SCRIPTDIR=`dirname $0`
+SCRIPTDIR=$(dirname $0)
 cd "$SCRIPTDIR/.."
 
 # Start Antidote
