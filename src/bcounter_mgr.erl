@@ -275,8 +275,8 @@ perform_transfer_request(Key, Amount, MyDCID, RemoteDCID) ->
                 MyDCID,
                 RemoteDCID
             }),
-    inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteDCID, LocalPartition},
-        BinaryMessage, fun bcounter_mgr:request_response/2).
+    inter_dc_query_req:perform_request(?BCOUNTER_REQUEST, {RemoteDCID, LocalPartition},
+        BinaryMessage, fun bcounter_mgr:request_response/1).
 
 %% Orders the reservation of each DC, from high to low.
 -spec dcid_available_permissions_tuple_pref_list(dcid(), antidote_crdt_counter_b:antidote_crdt_counter_b()) -> [{dcid(), non_neg_integer()}].
@@ -288,7 +288,7 @@ dcid_available_permissions_tuple_pref_list(MyDCID, BCounter) ->
 
 %% @doc Removes transfers that are considered old.
 %% This allows sending new transfers for a key.
--spec clear_old_transfers(last_transfers(), microsecond()) -> last_transfers().
+-spec clear_old_transfers(last_transfers(), non_neg_integer()) -> last_transfers().
 clear_old_transfers(LastTransfers, TimeoutMicroseconds) ->
     CurrentTime = erlang:timestamp(),
     orddict:filter(
@@ -298,7 +298,7 @@ clear_old_transfers(LastTransfers, TimeoutMicroseconds) ->
 
 %% @doc Removes transfer requests that are considered old.
 %% The request might be fulfilled already or the requester does not actually need it anymore.
--spec clear_old_transfer_requests(pending_transfer_requests(), microsecond()) -> pending_transfer_requests().
+-spec clear_old_transfer_requests(pending_transfer_requests(), non_neg_integer()) -> pending_transfer_requests().
 clear_old_transfer_requests(PendingTransferRequests, TimeoutMicroseconds) ->
     CurrentTime = erlang:timestamp(),
     orddict:filter(
