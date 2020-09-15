@@ -159,7 +159,7 @@ clocksi_prepare_test(Config) ->
     antidote_utils:check_read_key(FirstNode, Key, antidote_crdt_counter_pn, 1, ignore, TxIdRead, Bucket),
 
     End1 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId1]),
-    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
+    ?assertMatch({ok, {_, _}}, End1),
 
     pass.
 

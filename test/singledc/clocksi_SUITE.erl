@@ -218,7 +218,7 @@ clocksi_read_write_write_txn_test(Config) ->
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
-    ?assertMatch({ok, _CausalSnapshot}, End),
+    ?assertMatch({ok, _}, End),
     {ok, CausalSnapshot} = End,
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
 
