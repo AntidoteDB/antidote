@@ -33,8 +33,11 @@
 -module(antidote_ets_txn_caches).
 
 -include("antidote.hrl").
--include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/logger.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 
 
 -export([has_prepared_txns_cache/1,

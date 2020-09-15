@@ -59,8 +59,9 @@
 
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
-
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([register_pre_hook/3,
          register_post_hook/3,

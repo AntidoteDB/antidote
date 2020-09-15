@@ -12,7 +12,7 @@ SCRIPTDIR=`dirname $0`
 cd "$SCRIPTDIR/.."
 
 # Start Antidote
-./_build/default/rel/antidote/bin/antidote start
+./_build/default/rel/antidote/bin/antidote daemon
 
 # Execute test transaction
 ./test/release_test.escript

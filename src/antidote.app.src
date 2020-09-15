@@ -4,7 +4,7 @@
     {vsn, "0.2.2"},
     {applications, [
         kernel,
-	ranch,
+        ranch,
         stdlib,
         riak_core,
         chumak,
@@ -16,6 +16,11 @@
         vectorclock,
         antidote_pb_codec,
         antidote_crdt
+        % antidote_ets_meta_data,
+        % antidote_ets_txn_caches,
+        % antidote_hooks,
+        % clocksi_vnode,
+        % stable_time_functions
     ]},
 
     {mod, {antidote_app, []}},
