@@ -71,11 +71,9 @@
          execute_post_commit_hook/3
         ]).
 
--ifdef(TEST).
 -export([test_commit_hook/1,
          test_increment_hook/1,
          test_post_hook/1]).
--endif.
 
 -define(PREFIX_PRE, {commit_hooks, pre}).
 -define(PREFIX_POST, {commit_hooks, post}).
@@ -155,7 +153,7 @@ execute_post_commit_hook({Key, Bucket}, Type, Param) ->
 execute_post_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
 
--ifdef(TEST).
+%-ifdef(TEST).
 %% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
 
 test_commit_hook(Object) ->
@@ -169,4 +167,4 @@ test_post_hook({{Key, Bucket}, Type, OP}) ->
     {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter_pn, commitcount}, increment, 1}]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
--endif.
+%-endif.
