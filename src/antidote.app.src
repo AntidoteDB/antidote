@@ -4,7 +4,7 @@
     {vsn, "0.2.2"},
     {applications, [
         kernel,
-	ranch,
+        ranch,
         stdlib,
         riak_core,
         chumak,

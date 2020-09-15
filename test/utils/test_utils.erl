@@ -87,7 +87,7 @@ init_multi_dc(Suite, Config) ->
 
 at_init_testsuite() ->
     {ok, Hostname} = inet:gethostname(),
-    case net_kernel:start([list_to_atom("runner@"++Hostname), shortnames]) of
+    case net_kernel:start([list_to_atom("runner@" ++ Hostname), shortnames]) of
         {ok, _} -> ok;
         {error, {already_started, _}} -> ok;
         {error, {{already_started, _}, _}} -> ok

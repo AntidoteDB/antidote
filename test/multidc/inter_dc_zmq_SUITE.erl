@@ -63,8 +63,8 @@ end_per_suite(Config) ->
     application:stop(chumak),
     Config.
 
-init_per_testcase(_Case, Config) ->
-    ct:print("[ RUN ] ~p", [_Case]),
+init_per_testcase(Case, Config) ->
+    ct:print("[ RUN ] ~p", [Case]),
     Config.
 
 end_per_testcase(Name, _) ->
@@ -181,7 +181,7 @@ pub_two_sub(_Config) ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "01"),
         {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15553),
-        {ok, <<"01","ping">>} = chumak:recv(SubSocket),
+        {ok, <<"01", "ping">>} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
                end),
@@ -191,7 +191,7 @@ pub_two_sub(_Config) ->
         {ok, SubSocket} = chumak:socket(sub),
         chumak:subscribe(SubSocket, "02"),
         {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15553),
-        {ok, <<"02","ping">>} = chumak:recv(SubSocket),
+        {ok, <<"02", "ping">>} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
         Self ! finish
                end),
@@ -322,10 +322,10 @@ pub_one_sub_two_topics_partitions(_Config) ->
         chumak:cancel(SubSocket, <<>>),
 
         %% subscribe to different partitions with Sock 1 & 2
-        ct:log("Subscribing to ~p",[P1Bin]),
+        ct:log("Subscribing to ~p", [P1Bin]),
         chumak:subscribe(SubSocket2, P1Bin),
 
-        ct:log("Subscribing to ~p",[P3Bin]),
+        ct:log("Subscribing to ~p", [P3Bin]),
         chumak:subscribe(SubSocket2, P3Bin),
 
         %% connect socket 2
@@ -382,11 +382,11 @@ router_multiple_req(_Config) ->
 
     receive step -> ok end,
 
-    WorkerLoop = fun(Socket, _Id, _Parent) ->
+    WorkerLoop = fun(Socket, Id, _Parent) ->
         spawn_link(fun() ->
             chumak:send(Socket, <<"ping">>),
             {ok, Message} = chumak:recv(Socket),
-            ct:log("~p Message received from router async ~p", [_Id, Message])
+            ct:log("~p Message received from router async ~p", [Id, Message])
                    end
         )
                  end,
@@ -395,7 +395,7 @@ router_multiple_req(_Config) ->
         Parent = self(),
         spawn_link(
             fun() ->
-                Id = atom_to_list(node())++pid_to_list(self()),
+                Id = atom_to_list(node()) ++ pid_to_list(self()),
                 {ok, Socket} = chumak:socket(req, Id),
                 {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 15556),
                 WorkerLoop(Socket, Id, Parent)
