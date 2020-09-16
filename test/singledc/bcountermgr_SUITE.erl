@@ -38,14 +38,18 @@
 %% tests
 -export([new_bcounter_test/1,
     update_bcounter_test/1,
-    actor_does_not_matter_test/1,
+    undefined_test/1,
     invalid_bcounter_test/1,
     self_transfer_is_increment_test/1,
     invalid_dcid_test/1,
     add_existing_pending_request/1,
     process_transfer_on_self_has_no_effect/1,
     process_transfer_to_invalid_dcid_has_no_effect/1,
-    crash_recovery_test/1]).
+    crash_recovery_test/1,
+    self_transfer_works_if_no_permissions_are_available_test/1,
+    valid_dcid_test/1,
+    undefined_dcid_test/1,
+    short_operation_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -81,14 +85,18 @@ end_per_testcase(Name, _) ->
 all() -> [
     new_bcounter_test,
     update_bcounter_test,
-    actor_does_not_matter_test,
+    undefined_test,
     invalid_bcounter_test,
     self_transfer_is_increment_test,
     invalid_dcid_test,
     add_existing_pending_request,
     process_transfer_on_self_has_no_effect,
     process_transfer_to_invalid_dcid_has_no_effect,
-    crash_recovery_test
+    crash_recovery_test,
+    self_transfer_works_if_no_permissions_are_available_test,
+    valid_dcid_test,
+    undefined_dcid_test,
+    short_operation_test
 ].
 
 new_bcounter_test(Config) ->
@@ -105,11 +113,11 @@ update_bcounter_test(Config) ->
     {ok, CommitTime2} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, antidote_utils:bcounter_get_increment_op(Node, 5)),
     antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime2, 5).
 
-actor_does_not_matter_test(Config) ->
+undefined_test(Config) ->
     Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = bcounter3_mgr_single,
-    Actor = no_dcid,
+    Actor = undefined,
     {_, CommitTime1} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
     {ok, CommitTime2} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, {increment, {5, Actor}}),
     antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime2, 5),
@@ -137,9 +145,13 @@ invalid_dcid_test(Config) ->
     Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = bcounter6_mgr_single,
-    {_, CommitTime1} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
-    {error, invalid_dcid} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, {transfer, {5, no_dcid, no_dcid_either}}),
-    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime1, 0).
+    {_, _} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {error, {invalid_dcid, no_dcid}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {decrement, {5, no_dcid}}),
+    {error, {invalid_dcid, no_dcid}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {increment, {5, no_dcid}}),
+    {error, {invalid_dcid, no_dcid}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, no_dcid_either, no_dcid}}),
+    {error, {invalid_dcid, no_dcid2}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, no_dcid2, antidote_utils:get_dcid(Node)}}),
+    {error, {invalid_dcid, undefined}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, undefined, antidote_utils:get_dcid(Node)}}),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0).
 
 add_existing_pending_request(Config) ->
     Bucket = ?BUCKET,
@@ -218,3 +230,49 @@ crash_recovery_test(Config) ->
     PendingTransferRequestsForKey4 = orddict:fetch({Key, Bucket}, PendingTransferRequests4),
     {[5, 5], _} = lists:unzip(PendingTransferRequestsForKey4),
     ok = rpc:call(Node, bcounter_mgr, set_transfer_periodic_active, [true]).
+
+self_transfer_works_if_no_permissions_are_available_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter11_mgr_single,
+    {_, CommitTime1} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {ok, CommitTime2} = antidote_utils:bcounter_update_single(Node, Key, Bucket, CommitTime1, antidote_utils:bcounter_get_transfer_op(Node, 5, antidote_utils:get_dcid(Node))),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, CommitTime2, 5).
+
+valid_dcid_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter12_mgr_single,
+    DCID = antidote_utils:get_dcid(Node),
+    {_, _} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {increment, {5, DCID}}),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {decrement, {5, DCID}}),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, DCID, DCID}}),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 5).
+
+undefined_dcid_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter13_mgr_single,
+    DCID = antidote_utils:get_dcid(Node),
+    {_, _} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {increment, {5, undefined}}),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {decrement, {5, undefined}}),
+    {ok, _} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, DCID, undefined}}),
+    {error, {invalid_dcid, undefined}} = antidote_utils:bcounter_update_single(Node, Key, Bucket, {transfer, {5, undefined, undefined}}),
+    antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 5).
+
+%%TODO this test case can be updated once short operations for bcounter are supported by antidote
+short_operation_test(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Key = bcounter13_mgr_single,
+    DCID = antidote_utils:get_dcid(Node),
+    {BCounter, _} = antidote_utils:bcounter_check_read_value(Node, Key, Bucket, 0),
+    {ok, DownstreamIncrement = {{increment, 5}, DCID}} = rpc:call(Node, bcounter_mgr, generate_downstream, [Key, {increment, 5}, BCounter]),
+    {ok, IncrementBCounter} = antidote_crdt_counter_b:update(DownstreamIncrement, BCounter),
+    {ok, DownstreamDecrement = {{decrement, 5}, DCID}} = rpc:call(Node, bcounter_mgr, generate_downstream, [Key, {decrement, 5}, IncrementBCounter]),
+    {ok, DecrementBCounter} = antidote_crdt_counter_b:update(DownstreamDecrement, IncrementBCounter),
+    {ok, DownstreamTransfer = {{increment, 5}, DCID}} = rpc:call(Node, bcounter_mgr, generate_downstream, [Key, {transfer, {5, DCID}}, DecrementBCounter]),
+    {ok, TransferBCounter} = antidote_crdt_counter_b:update(DownstreamTransfer, DecrementBCounter),
+    5 = antidote_crdt_counter_b:permissions(TransferBCounter).

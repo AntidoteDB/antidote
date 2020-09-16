@@ -89,7 +89,7 @@ test_dec_success(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
-    Actor = dc,
+    Actor = undefined,
     Key = bcounter1_mgr_multi,
 
     {ok, _} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
@@ -101,7 +101,7 @@ test_dec_fail(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
-    Actor = dc,
+    Actor = undefined,
     Key = bcounter2_mgr_multi,
 
     {ok, CommitTime} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
@@ -113,7 +113,7 @@ test_dec_multi_success0(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
-    Actor = dc,
+    Actor = undefined,
     Key = bcounter3_mgr_multi,
     {ok, _} = antidote_utils:bcounter_update_single(Node1, Key, Bucket, {increment, {10, Actor}}),
     {ok, CommitTime} = antidote_utils:bcounter_update_single_retry(Node2, Key, Bucket, {decrement, {5, Actor}}, ?RETRY_COUNT),
@@ -123,7 +123,7 @@ test_dec_multi_success1(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
-    Actor = dc,
+    Actor = undefined,
     Key = bcounter4_mgr_multi,
     {ok, _} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, Actor}}, ?RETRY_COUNT),
     {ok, _} = antidote_utils:bcounter_update_single_retry(Node2, Key, Bucket, {decrement, {5, Actor}}, ?RETRY_COUNT),
@@ -137,7 +137,7 @@ conditional_write_test_run(Config) ->
     Type = antidote_crdt_counter_b,
     Key = bcounter5_mgr_multi,
     BObj = {Key, Type, Bucket},
-    {ok, AfterIncrement} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, rc1}}, ?RETRY_COUNT),
+    {ok, AfterIncrement} = antidote_utils:bcounter_update_single_retry(Node1, Key, Bucket, {increment, {10, undefined}}, ?RETRY_COUNT),
 
     %% Start a transaction on the first node and perform a read operation.
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [AfterIncrement, []]),

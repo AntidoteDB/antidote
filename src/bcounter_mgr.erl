@@ -56,8 +56,8 @@
 -include("inter_dc_repl.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--type pending_transfer_requests() :: orddict:orddict({key(), bucket()}, [{pos_integer(), clock_time()}]).
--type last_transfers() :: orddict:orddict({{key(), bucket()}, dcid()}, clock_time()).
+-type pending_transfer_requests() :: orddict:orddict(internal_key(), [{pos_integer(), clock_time()}]).
+-type last_transfers() :: orddict:orddict({internal_key(), dcid()}, clock_time()).
 -record(state, {
     pending_transfer_requests = orddict:new() :: pending_transfer_requests(),
     last_transfers = orddict:new() :: last_transfers(),
@@ -66,8 +66,10 @@
 }).
 -type state() :: #state{}.
 
--type antidote_crdt_counter_b_downstream_op_result() :: {ok, {{increment, pos_integer()} | {decrement, pos_integer()} | {transfer, pos_integer(), dcid()}, dcid()}}. %%TODO maybe too specific here
--type antidote_crdt_counter_b_downstream_op_result_or_error() :: antidote_crdt_counter_b_downstream_op_result() | {error, no_permission}. %%TODO maybe too specific here
+-type counter_b() :: antidote_crdt_counter_b:antidote_crdt_counter_b().
+-type counter_b_op() :: antidote_crdt_counter_b:antidote_crdt_counter_b_anon_op().
+-type counter_b_downstream_op_result() :: {ok, {{increment, pos_integer()} | {decrement, pos_integer()} | {transfer, pos_integer(), dcid()}, dcid()}}.
+-type counter_b_downstream_op_result_or_error() :: counter_b_downstream_op_result() | {error, no_permission} | {error, {invalid_dcid, term()}}.
 
 %% ===================================================================
 %% Public API
@@ -77,34 +79,43 @@
 %% If the operation is unsafe (i.e. the value of the counter can go
 %% below 0), operation fails, otherwise a downstream for the decrement
 %% is generated.
--spec generate_downstream({key(), bucket()}, antidote_crdt_counter_b:antidote_crdt_counter_b_anon_op(), antidote_crdt_counter_b:antidote_crdt_counter_b()) -> antidote_crdt_counter_b_downstream_op_result_or_error() | {error, invalid_dcid}.
-generate_downstream(Key, {decrement, {Amount, _IgnoreDCID}}, BCounter) ->
-    MyDCID = dc_utilities:get_my_dc_id(),
-    gen_server:call(?MODULE, {Key, {decrement, {Amount, MyDCID}}, BCounter});
+-spec generate_downstream(internal_key(), counter_b_op(), counter_b()) -> counter_b_downstream_op_result_or_error().
+generate_downstream(Key, {decrement, Amount}, BCounter) when is_integer(Amount) ->
+    generate_downstream(Key, {decrement, {Amount, undefined}}, BCounter);
+generate_downstream(Key, {decrement, {Amount, undefined}}, BCounter) ->
+    generate_decrement_downstream(Key, {decrement, {Amount, dc_utilities:get_my_dc_id()}}, BCounter);
+generate_downstream(Key, {decrement, {Amount, DCID}}, BCounter) ->
+    case DCID == dc_utilities:get_my_dc_id() of
+        true -> generate_decrement_downstream(Key, {decrement, {Amount, DCID}}, BCounter);
+        false -> {error, {invalid_dcid, DCID}}
+    end;
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
-generate_downstream(_Key, {increment, {Amount, _IgnoreDCID}}, BCounter) ->
-    MyDCID = dc_utilities:get_my_dc_id(),
-    antidote_crdt_counter_b:downstream({increment, {Amount, MyDCID}}, BCounter);
+generate_downstream(Key, {increment, Amount}, BCounter) when is_integer(Amount) ->
+    generate_downstream(Key, {increment, {Amount, undefined}}, BCounter);
+generate_downstream(_Key, {increment, {Amount, undefined}}, BCounter) ->
+    generate_increment_downstream({increment, {Amount, dc_utilities:get_my_dc_id()}}, BCounter);
+generate_downstream(_Key, {increment, {Amount, DCID}}, BCounter) ->
+    case DCID == dc_utilities:get_my_dc_id() of
+        true -> generate_increment_downstream({increment, {Amount, DCID}}, BCounter);
+        false -> {error, {invalid_dcid, DCID}}
+    end;
 
 %% @doc Processes a transfer operation between two owners of the
 %% counter.
-generate_downstream(Key, {transfer, {Amount, ToDCID, _IgnoreFromDCID}}, BCounter) ->
-    case check_valid_dcid(ToDCID) of %%prevent transferring to arbitrary DCIDs
-        true ->
-            MyDCID = dc_utilities:get_my_dc_id(),
-            case ToDCID /= MyDCID of
-                true -> antidote_crdt_counter_b:downstream({transfer, {Amount, ToDCID, MyDCID}}, BCounter);
-                false ->
-                    %%TODO this transfer is equal to increment
-                    generate_downstream(Key, {increment, {Amount, MyDCID}}, BCounter)
-            end;
-        false -> {error, invalid_dcid}
+generate_downstream(Key, {transfer, {Amount, ToDCID}}, BCounter) ->
+    generate_downstream(Key, {transfer, {Amount, ToDCID, undefined}}, BCounter);
+generate_downstream(_Key, {transfer, {Amount, ToDCID, undefined}}, BCounter) ->
+    generate_transfer_downstream({transfer, {Amount, ToDCID, dc_utilities:get_my_dc_id()}}, BCounter);
+generate_downstream(_Key, {transfer, {Amount, ToDCID, FromDCID}}, BCounter) ->
+    case FromDCID == dc_utilities:get_my_dc_id() of
+        true -> generate_transfer_downstream({transfer, {Amount, ToDCID, FromDCID}}, BCounter);
+        false -> {error, {invalid_dcid, FromDCID}}
     end.
 
 %% @doc Handles a remote transfer request.
--spec process_transfer({transfer, {{key(), bucket()}, pos_integer(), dcid()}}) -> ok.
+-spec process_transfer({transfer, {internal_key(), pos_integer(), dcid()}}) -> ok.
 process_transfer({transfer, TransferOp = {_, _, _}}) ->
     gen_server:cast(?MODULE, {transfer, TransferOp}).
 
@@ -161,6 +172,27 @@ code_change(_OldVsn, State, _Extra) ->
 %% Private functions
 %% ===================================================================
 
+-spec generate_decrement_downstream(internal_key(), counter_b_op(), counter_b()) -> counter_b_downstream_op_result_or_error().
+generate_decrement_downstream(Key, {decrement, {Amount, ValidDCID}}, BCounter) ->
+    gen_server:call(?MODULE, {Key, {decrement, {Amount, ValidDCID}}, BCounter}).
+
+-spec generate_increment_downstream(counter_b_op(), counter_b()) -> counter_b_downstream_op_result().
+generate_increment_downstream({increment, {Amount, ValidDCID}}, BCounter) ->
+    antidote_crdt_counter_b:downstream({increment, {Amount, ValidDCID}}, BCounter).
+
+-spec generate_transfer_downstream(counter_b_op(), counter_b()) -> counter_b_downstream_op_result_or_error().
+generate_transfer_downstream({transfer, {Amount, ToDCID, ValidFromDCID}}, BCounter) ->
+    case check_valid_dcid(ToDCID) of %%prevent transferring to arbitrary DCIDs
+        true ->
+            case ToDCID /= ValidFromDCID of
+                true -> antidote_crdt_counter_b:downstream({transfer, {Amount, ToDCID, ValidFromDCID}}, BCounter);
+                false ->
+                    %%TODO this transfer is equal to increment
+                    generate_increment_downstream({increment, {Amount, ValidFromDCID}}, BCounter)
+            end;
+        false -> {error, {invalid_dcid, ToDCID}}
+    end.
+
 -spec restart_timer(state()) -> state().
 restart_timer(State = #state{transfer_timer = Timer}) ->
     _ = erlang:cancel_timer(Timer),
@@ -179,7 +211,7 @@ check_valid_dcid(DCID) ->
 %% In case enough permissions exist locally the decrement is performed locally.
 %% Otherwise the decrement fails and a transfer request is added to the pending transfer requests.
 %% Requests are sent periodically to remote dcs so it might take some time until the requested amount is available.
--spec decrement({{key(), bucket()}, {decrement, {pos_integer(), dcid()}}, antidote_crdt_counter_b:antidote_crdt_counter_b()}, pending_transfer_requests()) -> {antidote_crdt_counter_b_downstream_op_result_or_error(), pending_transfer_requests()}.
+-spec decrement({internal_key(), {decrement, {pos_integer(), dcid()}}, counter_b()}, pending_transfer_requests()) -> {counter_b_downstream_op_result_or_error(), pending_transfer_requests()}.
 decrement({Key, {Op, {Amount, MyDCID}}, BCounter}, PendingTransferRequests) ->
     case antidote_crdt_counter_b:generate_downstream_check({Op, Amount}, MyDCID, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
@@ -193,7 +225,7 @@ decrement({Key, {Op, {Amount, MyDCID}}, BCounter}, PendingTransferRequests) ->
 %% @doc Performs a transfer request for another dc.
 %% Transfers on a key are limited by a timeout (GRACE_PERIOD).
 %% The transfer is performed locally (which gets replicated eventually) and can also fail (in case the transfer amount is larger than what is available locally)
--spec transfer({{key(), bucket()}, pos_integer(), dcid()}, last_transfers()) -> last_transfers().
+-spec transfer({internal_key(), pos_integer(), dcid()}, last_transfers()) -> last_transfers().
 transfer({KeyBucket = {Key, Bucket}, Amount, RequesterDCID}, LastTransfers) ->
     ClearedLastTransfers = clear_old_transfers(LastTransfers, ?GRACE_PERIOD),
     MyDCID = dc_utilities:get_my_dc_id(),
@@ -231,7 +263,7 @@ transfer_periodic(PendingTransferRequests) ->
 
 %% @doc Adds a transfer request to the pending transfer requests.
 %% The transfer request are sent periodically in a single batch.
--spec add_transfer_request({key(), bucket()}, pos_integer(), pending_transfer_requests()) -> pending_transfer_requests().
+-spec add_transfer_request(internal_key(), pos_integer(), pending_transfer_requests()) -> pending_transfer_requests().
 add_transfer_request(Key, Amount, PendingTransferRequests) ->
     PendingTransferRequestsForKey =
         case orddict:find(Key, PendingTransferRequests) of
@@ -242,7 +274,7 @@ add_transfer_request(Key, Amount, PendingTransferRequests) ->
     orddict:store(Key, [{Amount, CurrentTime} | PendingTransferRequestsForKey], PendingTransferRequests).
 
 %% @doc Sends a transfer request to remote dcs to fulfill decrement requests eventually.
--spec send_transfer_request_to_remote_dcs({key(), bucket()}, pos_integer()) -> non_neg_integer().
+-spec send_transfer_request_to_remote_dcs(internal_key(), pos_integer()) -> non_neg_integer().
 send_transfer_request_to_remote_dcs(KeyBucket = {Key, Bucket}, AmountRequiredSum) ->
     MyDCID = dc_utilities:get_my_dc_id(),
     BCounterObject = {Key, antidote_crdt_counter_b, Bucket},
@@ -264,7 +296,7 @@ send_transfer_request_to_remote_dcs(KeyBucket = {Key, Bucket}, AmountRequiredSum
 
 %%TODO unknown_dc should not happen since we checked DCID before (special cases like individual crash possible)
 %% @doc Send the request to a specified DC. Works asynchronously.
--spec perform_transfer_request({key(), bucket()}, pos_integer(), dcid(), dcid()) -> ok | unknown_dc.
+-spec perform_transfer_request(internal_key(), pos_integer(), dcid(), dcid()) -> ok | unknown_dc.
 perform_transfer_request(Key, Amount, MyDCID, RemoteDCID) ->
     {LocalPartition, _} = log_utilities:get_key_partition(Key),
     BinaryMessage =
@@ -279,7 +311,7 @@ perform_transfer_request(Key, Amount, MyDCID, RemoteDCID) ->
         BinaryMessage, fun bcounter_mgr:request_response/1).
 
 %% Orders the reservation of each DC, from high to low.
--spec dcid_available_permissions_tuple_pref_list(dcid(), antidote_crdt_counter_b:antidote_crdt_counter_b()) -> [{dcid(), non_neg_integer()}].
+-spec dcid_available_permissions_tuple_pref_list(dcid(), counter_b()) -> [{dcid(), non_neg_integer()}].
 dcid_available_permissions_tuple_pref_list(MyDCID, BCounter) ->
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
     OtherDCIDs = [DCID || #descriptor{dcid = DCID} <- OtherDCDescriptors, DCID /= MyDCID],
@@ -314,7 +346,7 @@ clear_old_transfer_requests(PendingTransferRequests, TimeoutMicroseconds) ->
 %% @doc This checks whether a transfer for a key was performed to frequently
 %% and prevents further transfers until a timeout is reached.
 %% Also prevents transferring to invalid actors (unknown DCID)
--spec can_transfer({key(), bucket()}, dcid(), dcid(), last_transfers()) -> boolean().
+-spec can_transfer(internal_key(), dcid(), dcid(), last_transfers()) -> boolean().
 can_transfer(_, DCID, DCID, _) -> false;
 can_transfer(Key, _, RequesterDCID, LastTransfers) ->
     ValidDCID = check_valid_dcid(RequesterDCID),
@@ -322,3 +354,31 @@ can_transfer(Key, _, RequesterDCID, LastTransfers) ->
         {ok, _Timeout} -> false;
         error -> ValidDCID
     end.
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+%%TODO use meck
+
+setup() ->
+    process_flag(trap_exit, true),
+    {ok, Pid} = bcounter_mgr:start_link(),
+    Pid.
+
+cleanup(Pid) ->
+    exit(Pid, normal),
+    timer:sleep(50), %%TODO maybe check with recursion and lower intervals
+    ?assertEqual(false, is_process_alive(Pid)).
+
+bcounter_mgr_test() ->
+    {foreach, fun setup/0, fun cleanup/1, [
+        fun server_is_alive/1
+    ]}.
+
+server_is_alive(Pid) ->
+    fun() ->
+        ?assertEqual(true, is_process_alive(Pid))
+    end.
+
+-endif.
