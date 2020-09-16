@@ -265,10 +265,7 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% internal state timeout
--spec execute_op(state_timeout, timeout, state()) -> gen_statem:event_handler_result(state());
-    ({call, pid()}, undefined | list() | {update_objects, list()} | {update, list()}, state()) -> gen_statem:event_handler_result(state()).
-execute_op(state_timeout, timeout, State = #state{operations = Operations, from = From}) ->
-    execute_op({call, From}, Operations, State);
+-spec execute_op({call, gen_statem:from()}, {update | update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
 
 %% update kept for backwards compatibility with tests.
 execute_op({call, Sender}, {update, Args}, State) ->
@@ -561,7 +558,7 @@ create_transaction_record(ClientClock, _IsStatic, Properties) ->
 
 
 %% @doc Execute the commit protocol
--spec execute_command(atom(), term(), pid(), state()) -> gen_statem:event_handler_result(state()).
+-spec execute_command(atom(), term(), gen_statem:from(), state()) -> gen_statem:event_handler_result(state()).
 execute_command(prepare, Protocol, Sender, State0) ->
     State = State0#state{from=Sender, commit_protocol=Protocol},
     prepare(State);
@@ -651,7 +648,7 @@ reply_to_client(State = #state{
         undefined ->
             ok;
 
-        Node ->
+        {_Pid, _Tag} ->
 
             Reply = case TxState of
                         committed_read_only ->
@@ -688,12 +685,7 @@ reply_to_client(State = #state{
 %%                        Reason ->
 %%                            {TxId, Reason}
                     end,
-            case is_pid(Node) of
-                false ->
-                    gen_statem:reply(Node, Reply);
-                true ->
-                    From ! Reply
-            end
+            gen_statem:reply(From, Reply)
     end,
 
     % transaction is finished, decrement count
@@ -781,10 +773,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
             Snapshot;
 
         {error, Reason} ->
-            case Sender of
-                undefined -> ok;
-                _ -> gen_statem:reply(Sender, {error, Reason})
-            end,
+            gen_statem:reply(Sender, {error, Reason}),
             {error, Reason}
     end.
 

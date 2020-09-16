@@ -26,6 +26,9 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utilities to retrieve and store dc metadata like
+%%      env variables and descriptors.
+
 -module(dc_meta_data_utilities).
 
 -include("antidote.hrl").
@@ -123,7 +126,8 @@ get_dc_descriptors() ->
         error ->
             ?LOG_DEBUG("Could not read shared meta data for external_descriptors"),
             %% return self descriptor only
-            [inter_dc_manager:get_descriptor()]
+            {ok, Descriptor} = inter_dc_manager:get_descriptor(),
+            [Descriptor]
     end.
 
 %% Gets the list of external datacenters

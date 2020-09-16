@@ -1,4 +1,5 @@
 #!/usr/bin/env escript
+%%! -setcookie testcookie
 
 -define(ADDRESS, "localhost").
 

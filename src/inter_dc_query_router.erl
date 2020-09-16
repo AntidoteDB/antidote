@@ -30,9 +30,9 @@
 %% queries from other DCs, the types of messages that can be sent are found in
 %% include/antidote_message_types.hrl
 %% To handle new types, need to update the handle_info method below
-%% As well as in the sender of the query at inter_dc_query
+%% As well as in the sender of the query at inter_dc_query_req
 
--module(inter_dc_query_receive_socket).
+-module(inter_dc_query_router).
 
 -behaviour(gen_server).
 
@@ -57,7 +57,7 @@
   code_change/3]).
 
 %% State
--record(state, {socket, id, next}). %% socket :: erlzmq_socket()
+-record(state, {socket :: zmq_socket()}).
 
 %%%% API --------------------------------------------------------------------+
 
@@ -102,36 +102,43 @@ send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sende
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    {_, Port} = get_address(),
-    Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
-    ?LOG_INFO("Log reader started on port ~p", [Port]),
-    {ok, #state{socket = Socket, next=getid}}.
+    %% trap_exit to close sockets properly via terminate/2
+    process_flag(trap_exit, true),
 
-%% Handle the remote request
-%% ZMQ requests come in 3 parts
-%% 1st the Id of the sender, 2nd an empty binary, 3rd the binary msg
-handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
-    {noreply, State#state{next = blankmsg, id=Id}};
-handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
-    {noreply, State#state{next=getmsg}};
-handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) ->
+    Ip = get_router_bind_ip(),
+    {_, Port} = get_address(),
+    {ok, Socket} = chumak:socket(router),
+    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
+
+    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
+
+    %% spawn receive subscription worker and trap exit
+    Self = self(),
+    spawn_link(fun () -> loop(Self, Socket) end),
+
+    ?LOG_NOTICE("Log reader router started on port ~p binding on IP ~s", [Port, Ip]),
+    {ok, #state{socket = Socket}}.
+
+loop(Parent, Socket) ->
+    {ok, [Identity, <<>>, BinaryMsg]} = chumak:recv_multipart(Socket),
+    {ReqId, RestMsg} = inter_dc_utils:check_version_and_req_id(BinaryMsg),
+
     %% Decode the message
-    {ReqId, RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
     %% Create a response
     QueryState =
-      fun(RequestType) ->
-        #inter_dc_query_state{
-          request_type = RequestType,
-          zmq_id = Id,
-          request_id_num_binary = ReqId,
-          local_pid = self()}
-      end,
+        fun(RequestType) ->
+            #inter_dc_query_state{
+                request_type = RequestType,
+                zmq_id = Identity,
+                request_id_num_binary = ReqId,
+                local_pid = Parent}
+        end,
+
     case RestMsg of
         <<?LOG_READ_MSG, QueryBinary/binary>> ->
             ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
         <<?CHECK_UP_MSG>> ->
-            ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
+            ok = finish_send_response(<<?OK_MSG>>, Identity, ReqId, Socket);
         <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
             ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
         <<?LOCK_SERVER_REQUEST, RequestBinary/binary>> ->
@@ -140,15 +147,23 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
         %% TODO: Handle other types of requests
         _ ->
             ErrorBinary = term_to_binary(bad_request),
-            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Id, ReqId, Socket)
+            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Identity, ReqId, Socket)
     end,
-    {noreply, State#state{next=getid}};
+
+    loop(Parent, Socket).
+
+%% zmq connect worker shutdown
+handle_info({'EXIT', Pid, Reason}, State) ->
+    ?LOG_NOTICE("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
+    {noreply, State};
 handle_info(Info, State) ->
     ?LOG_INFO("got weird info ~p", [Info]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.
-terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+terminate(_Reason, State) ->
+    ?LOG_INFO("Query router terminating"),
+    inter_dc_utils:close_socket(State#state.socket).
 
 handle_cast({send_response, BinaryResponse,
          #inter_dc_query_state{request_type = ReqType, zmq_id = Id,
@@ -162,12 +177,72 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(<<_:8, _:_*8>>, binary(), binary(), erlzmq:erlzmq_socket()) -> ok.
+-spec finish_send_response(<<_:8, _:_*8>>, binary(), binary(), zmq_socket()) -> ok.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message
     VersionBinary = ?MESSAGE_VERSION,
     Msg = <<VersionBinary/binary, ReqId/binary, BinaryResponse/binary>>,
-    ok = erlzmq:send(Socket, Id, [sndmore]),
-    ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, Msg).
+    ok = chumak:send_multipart(Socket, [Id, <<>>, Msg]).
+
+
+-spec get_router_bind_ip() -> string().
+get_router_bind_ip() ->
+    application:get_env(antidote, router_bind_ip, "0.0.0.0").
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+simple() ->
+    {ok, Req} = inter_dc_query_req:start_link(),
+
+    {ok, Router} = inter_dc_query_router:start_link(),
+
+    LogReaders = inter_dc_query_router:get_address_list(),
+    DcId = dc_utilities:get_my_dc_id(),
+
+    inter_dc_query_req:add_dc(DcId, [LogReaders]),
+
+    BinaryMsg = term_to_binary({request_permissions, {transfer, {"hello", 0, dcid}}, 0, dcid, 0}),
+    inter_dc_query_req:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
+
+    gen_server:stop(Req),
+    gen_server:stop(Router),
+    ok.
+
+test_init() ->
+    logger:add_handler_filter(default, ?MODULE, {fun(_, _) -> stop end, nostate}),
+
+    application:ensure_started(chumak),
+    application:set_env(antidote, logreader_port, 14444),
+    {ok, 14444} = application:get_env(antidote, logreader_port),
+
+    meck:new(dc_utilities),
+    meck:new(inter_dc_query_response),
+    meck:expect(dc_utilities, get_my_partitions, fun() -> [0] end),
+    meck:expect(dc_utilities, get_my_dc_id, fun() -> dcid end),
+    meck:expect(inter_dc_query_response, request_permissions, fun(A, B) ->
+        %% send directly
+        inter_dc_query_router:send_response(A, B)
+                                                              end),
+    ok.
+
+test_cleanup(_) ->
+    application:stop(chumak),
+    meck:unload(dc_utilities),
+    logger:remove_handler_filter(default, ?MODULE).
+
+meck_test_() -> {
+    setup,
+    fun test_init/0,
+    fun test_cleanup/1,
+    [
+        fun simple/0
+    ]}.
+
+-endif.

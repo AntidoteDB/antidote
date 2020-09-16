@@ -28,8 +28,10 @@
 -module(antidote_ets_meta_data).
 
 -include("antidote.hrl").
--include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/logger.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).

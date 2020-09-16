@@ -36,7 +36,7 @@ reltest: rel
 
 # style checks
 lint:
-	${REBAR} as lint lint
+	${REBAR} lint
 
 check: distclean cleantests test reltest dialyzer lint
 
@@ -55,7 +55,7 @@ compile-utils: compile
 	done
 
 test:
-	${REBAR} eunit skip_deps=true
+	${REBAR} eunit
 
 coverage:
 	# copy the coverdata files with a wildcard filter

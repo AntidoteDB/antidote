@@ -29,9 +29,11 @@
 %% These functions are used to instantiate a meta_data_sender for vectorclocks.
 
 -module(stable_time_functions).
--include_lib("eunit/include/eunit.hrl").
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([update/2,
          merge/1,

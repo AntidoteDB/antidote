@@ -99,7 +99,7 @@ dc_count(Config) ->
     DCs3 = rpc:call(Node3, dc_meta_data_utilities, get_dc_descriptors, []),
     DCs4 = rpc:call(Node4, dc_meta_data_utilities, get_dc_descriptors, []),
 
-    ?assertEqual({3,3,3,3}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
+    ?assertEqual({3, 3, 3, 3}, {length(DCs1), length(DCs2), length(DCs3), length(DCs4)}),
     ok.
 
 
@@ -112,7 +112,7 @@ shard_count(Config) ->
     Shards3 = rpc:call(Node3, dc_utilities, get_my_dc_nodes, []),
     Shards4 = rpc:call(Node4, dc_utilities, get_my_dc_nodes, []),
 
-    ?assertEqual({2,2,1,1}, {length(Shards1), length(Shards2), length(Shards3), length(Shards4)}),
+    ?assertEqual({2, 2, 1, 1}, {length(Shards1), length(Shards2), length(Shards3), length(Shards4)}),
     ok.
 
 dummy_test(Config) ->
