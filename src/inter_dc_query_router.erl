@@ -30,7 +30,7 @@
 %% queries from other DCs, the types of messages that can be sent are found in
 %% include/antidote_message_types.hrl
 %% To handle new types, need to update the handle_info method below
-%% As well as in the sender of the query at inter_dc_query_req
+%% As well as in the sender of the query at inter_dc_query_dealer
 
 -module(inter_dc_query_router).
 
@@ -196,29 +196,29 @@ get_router_bind_ip() ->
 -include_lib("eunit/include/eunit.hrl").
 
 simple() ->
-    {ok, Req} = inter_dc_query_req:start_link(),
+    {ok, Req} = inter_dc_query_dealer:start_link(),
 
     {ok, Router} = inter_dc_query_router:start_link(),
 
     LogReaders = inter_dc_query_router:get_address_list(),
     DcId = dc_utilities:get_my_dc_id(),
 
-    inter_dc_query_req:add_dc(DcId, [LogReaders]),
+    inter_dc_query_dealer:add_dc(DcId, [LogReaders]),
 
     BinaryMsg = term_to_binary({request_permissions, {transfer, {"hello", 0, dcid}}, 0, dcid, 0}),
-    inter_dc_query_req:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
+    inter_dc_query_dealer:perform_request(?BCOUNTER_REQUEST, {dcid, 0}, BinaryMsg, fun bcounter_mgr:request_response/1),
 
     gen_server:stop(Req),
     gen_server:stop(Router),
     ok.
 
 request_log_entries() ->
-    {ok, Req} = inter_dc_query_req:start_link(),
+    {ok, Req} = inter_dc_query_dealer:start_link(),
     {ok, Router} = inter_dc_query_router:start_link(),
 
     LogReaders = inter_dc_query_router:get_address_list(),
     DcId = dc_utilities:get_my_dc_id(),
-    inter_dc_query_req:add_dc(DcId, [LogReaders]),
+    inter_dc_query_dealer:add_dc(DcId, [LogReaders]),
     Self = self(),
 
     meck:expect(inter_dc_sub_vnode, deliver_log_reader_resp, fun(BinaryRep) ->
@@ -245,7 +245,7 @@ request_log_entries() ->
 
     %% read log entries 1-4 from partition 0
     BinaryRequest = term_to_binary({read_log, 0, 1, 4}),
-    inter_dc_query_req:perform_request(2, {DcId, 0}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
+    inter_dc_query_dealer:perform_request(2, {DcId, 0}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
 
     receive finish -> ok after 100 -> throw(test_timeout) end,
 
@@ -254,12 +254,12 @@ request_log_entries() ->
     ok.
 
 request_log_entries_delay() ->
-    {ok, Req} = inter_dc_query_req:start_link(),
+    {ok, Req} = inter_dc_query_dealer:start_link(),
     {ok, Router} = inter_dc_query_router:start_link(),
 
     LogReaders = inter_dc_query_router:get_address_list(),
     DcId = dc_utilities:get_my_dc_id(),
-    inter_dc_query_req:add_dc(DcId, [LogReaders]),
+    inter_dc_query_dealer:add_dc(DcId, [LogReaders]),
 
     Self = self(),
 
@@ -290,11 +290,11 @@ request_log_entries_delay() ->
 
     %% read log entries 1-4 from partition 0, delay
     BinaryRequest = term_to_binary({read_log, 0, 1, 4}),
-    inter_dc_query_req:perform_request(2, {DcId, 0}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
+    inter_dc_query_dealer:perform_request(2, {DcId, 0}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
 
     %% do second one, should not block
     BinaryRequest2 = term_to_binary({read_log, 1, 1, 4}),
-    inter_dc_query_req:perform_request(2, {DcId, 1}, BinaryRequest2, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
+    inter_dc_query_dealer:perform_request(2, {DcId, 1}, BinaryRequest2, fun inter_dc_sub_vnode:deliver_log_reader_resp/1),
 
 
     receive {finish_test, Partition} -> Partition = 1 after 100 -> throw(test_timeout) end,
