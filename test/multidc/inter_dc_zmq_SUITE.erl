@@ -151,7 +151,7 @@ pub_alone(_Config) ->
         chumak:subscribe(SubSocket, Topic),
         {ok, _SocketPid} = chumak:connect(SubSocket, tcp, "localhost", 15554),
         %% wait until socket connected properly
-        timer:sleep(20),
+        timer:sleep(100),
         Self ! step,
         {ok, Message} = chumak:recv(SubSocket),
         ok = inter_dc_utils:close_socket(SubSocket),
