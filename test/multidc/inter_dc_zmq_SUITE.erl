@@ -45,8 +45,8 @@
     pub_sub_stop/1,
     pub_one_sub_two_topics_partitions/1,
 
-    router_multiple_req/1,
-    router_req_use/1,
+    router_multiple_dealer/1,
+    router_dealer_use/1,
 
     how_to_close_chumak_sockets/1
 ]).
@@ -80,8 +80,8 @@ all() -> [
     pub_sub_stop,
     pub_one_sub_two_topics_partitions,
 
-    router_multiple_req,
-    router_req_use
+    router_multiple_dealer,
+    router_dealer_use
 ].
 
 how_to_close_chumak_sockets(_) ->
@@ -358,7 +358,7 @@ pub_one_sub_two_topics_partitions(_Config) ->
     gen_server:stop(Pid),
     ok.
 
-router_multiple_req(_Config) ->
+router_multiple_dealer(_Config) ->
     Self = self(),
     % start local router
     _RouterPid = spawn(fun() ->
@@ -368,8 +368,8 @@ router_multiple_req(_Config) ->
         timer:sleep(20),
 
         CaseCheck = fun() ->
-            {ok, [Id, <<>>, <<"ping">>]} = chumak:recv_multipart(RouterSocket),
-            chumak:send_multipart(RouterSocket, [Id, <<>>, <<"pong">>])
+            {ok, [Id, <<"ping">>]} = chumak:recv_multipart(RouterSocket),
+            chumak:send_multipart(RouterSocket, [Id, <<"pong">>])
                     end,
 
         Self ! step,
@@ -384,9 +384,9 @@ router_multiple_req(_Config) ->
 
     WorkerLoop = fun(Socket, Id, _Parent) ->
         spawn_link(fun() ->
-            chumak:send(Socket, <<"ping">>),
-            {ok, Message} = chumak:recv(Socket),
-            ct:log("~p Message received from router async ~p", [Id, Message])
+            chumak:send_multipart(Socket, [<<"ping">>]),
+            {ok, [<<"pong">>]} = chumak:recv_multipart(Socket),
+            ct:log("~p Message received from router", [Id])
                    end
         )
                  end,
@@ -396,7 +396,7 @@ router_multiple_req(_Config) ->
         spawn_link(
             fun() ->
                 Id = atom_to_list(node()) ++ pid_to_list(self()),
-                {ok, Socket} = chumak:socket(req, Id),
+                {ok, Socket} = chumak:socket(dealer, Id),
                 {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 15556),
                 WorkerLoop(Socket, Id, Parent)
             end
@@ -408,7 +408,7 @@ router_multiple_req(_Config) ->
     receive finish_test -> ok end,
     ok.
 
-router_req_use(_Config) ->
+router_dealer_use(_Config) ->
     Self = self(),
     % start local router
     RouterPid = spawn_link(fun() ->
@@ -418,10 +418,10 @@ router_req_use(_Config) ->
 
         ct:log("Spawned router, waiting"),
         CaseCheck = fun L(Counter) ->
-            {ok, [Id, <<>>, Msg]} = chumak:recv_multipart(RouterSocket),
+            {ok, [Id, Msg]} = chumak:recv_multipart(RouterSocket),
             ct:log("Got Message from ~p", [Id]),
             BinInt = integer_to_binary(Counter),
-            chumak:send_multipart(RouterSocket, [Id, <<>>, <<BinInt/binary, Msg/binary>>]),
+            chumak:send_multipart(RouterSocket, [Id, <<BinInt/binary, Msg/binary>>]),
             L(Counter + 1)
                     end,
         spawn_link(fun() -> CaseCheck(0) end),
@@ -435,30 +435,27 @@ router_req_use(_Config) ->
     WorkerLoop = fun(Socket, Parent) ->
         spawn_link(fun() ->
             ct:log("Sending ping"),
-            chumak:send(Socket, list_to_binary("hello")),
-            {ok, <<"0hello">>} = chumak:recv(Socket),
+            chumak:send_multipart(Socket, [list_to_binary("hello")]),
+            {ok, [<<"0hello">>]} = chumak:recv_multipart(Socket),
 
             ct:log("Received"),
 
+            %% two sends in succession is ok
+            chumak:send_multipart(Socket, [list_to_binary("hello")]),
+            chumak:send_multipart(Socket, [list_to_binary("world")]),
 
-            %% two sends in succession is very bad
-            %% the router will not receive the second request and reply to the receive with the first request
-            %% this should not happen in implementation
-            chumak:send(Socket, list_to_binary("world")),
-            chumak:send(Socket, list_to_binary("thiswillbediscarded")),
-
-            {ok, <<"1world">>} = chumak:recv(Socket),
+            %% two receive in succession is ok
+            {ok, [<<"1hello">>]} = chumak:recv_multipart(Socket),
+            {ok, [<<"2world">>]} = chumak:recv_multipart(Socket),
             ct:log("Received"),
 
-            %% this is not allowed and will cause an efsm error
-            %% RcvPrint(Socket),
             Parent ! finish
                    end
         )
                  end,
 
     %% request identity is strictly required by chumak
-    {ok, Socket} = chumak:socket(req, "A"),
+    {ok, Socket} = chumak:socket(dealer, "A"),
     {ok, _PeerPid} = chumak:connect(Socket, tcp, "localhost", 15557),
     WorkerLoop(Socket, self()),
 

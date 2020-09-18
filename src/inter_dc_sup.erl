@@ -58,7 +58,7 @@ init(_Args) ->
 
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
-    InterDcQueryReq = ?CHILD(inter_dc_query_req, worker, []),
+    InterDcQueryReq = ?CHILD(inter_dc_query_dealer, worker, []),
     InterDcQueryReqRecv = ?CHILD(inter_dc_query_router, worker, []),
 
 

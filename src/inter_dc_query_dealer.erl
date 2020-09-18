@@ -36,7 +36,7 @@
 %% The reliability-related features like resending the query are handled by ZeroMQ.
 
 
--module(inter_dc_query_req).
+-module(inter_dc_query_dealer).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -141,28 +141,27 @@ terminate(_Reason, State) ->
 
 %% Handle an instruction to ask a remote DC.
 handle_cast({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, State=#state{req_id=ReqId}) ->
-    ?LOG_NOTICE("Trying to perform request"),
     case dict:find({DCID, Partition}, State#state.sockets) of
         {ok, Socket} ->
-            ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
+            ?LOG_DEBUG("Request ~p to ~p ~p (~p)", [RequestType, DCID, Partition, Socket]),
 
             %% prepare message
             VersionBinary = ?MESSAGE_VERSION,
             ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
             FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
 
-            %% TODO Open more sockets concurrently
-            %%      and dispatch these send/recv requests (e.g. as many sockets as ?INTER_DC_QUERY_CONCURRENCY)
-            ?LOG_DEBUG("Send and receive"),
-            ok = chumak:send(Socket, FullRequest),
-            {ok, BinaryMsg} = chumak:recv(Socket),
+            ok = chumak:send_multipart(Socket, [FullRequest]),
 
-            ?LOG_DEBUG("Process and apply function"),
-            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
-            case RestMsg of
-                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
-                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
-            end,
+            %% spawn receive
+            spawn_link(fun() ->
+                {ok, [BinaryMsg]} = chumak:recv_multipart(Socket),
+
+                <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+                case RestMsg of
+                    <<RequestType, RestBinary/binary>> -> Func(RestBinary);
+                    Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
+                end
+                                    end),
 
             {noreply, State#state{req_id = ReqId + 1}};
         _ ->
@@ -206,11 +205,11 @@ connect_to_node([_Address = {Ip, Port}| Rest]) ->
             ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
             BinaryVersion = ?MESSAGE_VERSION,
 
-            ok = chumak:send(Socket, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
-            Response = chumak:recv(Socket),
+            ok = chumak:send_multipart(Socket, [<<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>]),
+            Response = chumak:recv_multipart(Socket),
 
             case Response of
-                {ok, Binary} ->
+                {ok, [Binary]} ->
                     %% check that an ok msg was received
                     case inter_dc_utils:check_version_and_req_id(Binary) of
                         {_, <<?OK_MSG>>} ->
@@ -237,7 +236,7 @@ connect_req(Ip, Port) ->
     %% having a fixed ID could make use of the ID mechanism of zeromq sockets if used properly
     %% might require a redesign of inter-dc communication with zeromq
     Id = inter_dc_utils:generate_random_id(),
-    case chumak:socket(req, Id) of
+    case chumak:socket(dealer, Id) of
         {ok, Socket} ->
             {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
             ?LOG_INFO("Opening socket ID ~p (~p)", [Id, Socket]),

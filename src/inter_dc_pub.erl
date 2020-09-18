@@ -97,6 +97,10 @@ terminate(_Reason, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
+%% bind shutdown
+handle_info({'EXIT', Pid, Reason}, State) ->
+    ?LOG_CRITICAL("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
+    {stop, {bind_socket_shutdown, Reason}, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
