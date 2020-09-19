@@ -52,8 +52,6 @@
 
 -spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
-%%    BinTxn = inter_dc_txn:to_bin(Txn),
-%%    ok = gen_server:call(?MODULE, {publish, <<<<"P">>/binary, BinTxn/binary>>}).
     case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
         {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
         Normal -> Normal
@@ -94,10 +92,6 @@ terminate(_Reason, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-%% bind shutdown
-%%handle_info({'EXIT', Pid, Reason}, State) ->
-%%    ?LOG_CRITICAL("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
-%%    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 

@@ -141,9 +141,6 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id, next=getmsg}) 
             ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Id, ReqId, Socket)
     end,
     {noreply, State#state{next=getid}};
-%%handle_info({'EXIT', Pid, Reason}, State) ->
-%%    ?LOG_NOTICE("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
-%%    {noreply, State};
 handle_info(Info, State) ->
     ?LOG_INFO("got weird info ~p", [Info]),
     {noreply, State}.
@@ -174,13 +171,11 @@ finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     ok = erlzmq:send(Socket, Id, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
     ok = erlzmq:send(Socket, Msg).
-%%    ok = chumak:send_multipart(Socket, [Id, Msg]).
 
 
 -spec get_router_bind_ip() -> string().
 get_router_bind_ip() ->
     application:get_env(antidote, router_bind_ip, "0.0.0.0").
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%

@@ -80,7 +80,6 @@ get_address_list(Port) ->
 close_socket(Socket) ->
     _ = zmq_utils:close_socket(Socket),
     ok.
-%%    catch (gen_server:stop(Socket)).
 
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].
