@@ -7,7 +7,6 @@
         ranch,
         stdlib,
         riak_core,
-%%        chumak,
         erlzmq,
         runtime_tools,
         tools,

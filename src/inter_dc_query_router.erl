@@ -102,54 +102,12 @@ send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sende
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    %% trap_exit to close sockets properly via terminate/2
-%%    process_flag(trap_exit, true),
-
     Ip = get_router_bind_ip(),
     {_, Port} = get_address(),
 
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-%%    {ok, Socket} = chumak:socket(router),
-%%    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
-%%
-%%    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
-%%
-%%    %% spawn receive subscription worker and trap exit
-%%    Self = self(),
-%%    spawn_link(fun () -> loop(Self, Socket) end),
-%%
     ?LOG_NOTICE("Log reader router started on port ~p binding on IP ~s", [Port, Ip]),
     {ok, #state{socket = Socket, next = getid}}.
-
-%%loop(Parent, Socket) ->
-%%    {ok, [Identity, BinaryMsg]} = chumak:recv_multipart(Socket),
-%%    {ReqId, RestMsg} = inter_dc_utils:check_version_and_req_id(BinaryMsg),
-%%
-%%    %% Decode the message
-%%    %% Create a response
-%%    QueryState =
-%%        fun(RequestType) ->
-%%            #inter_dc_query_state{
-%%                request_type = RequestType,
-%%                zmq_id = Identity,
-%%                request_id_num_binary = ReqId,
-%%                local_pid = Parent}
-%%        end,
-%%
-%%    case RestMsg of
-%%        <<?LOG_READ_MSG, QueryBinary/binary>> ->
-%%            ok = inter_dc_query_response:get_entries(QueryBinary, QueryState(?LOG_READ_MSG));
-%%        <<?CHECK_UP_MSG>> ->
-%%            ok = finish_send_response(<<?OK_MSG>>, Identity, ReqId, Socket);
-%%        <<?BCOUNTER_REQUEST, RequestBinary/binary>> ->
-%%            ok = inter_dc_query_response:request_permissions(RequestBinary, QueryState(?BCOUNTER_REQUEST));
-%%        %% TODO: Handle other types of requests
-%%        _ ->
-%%            ErrorBinary = term_to_binary(bad_request),
-%%            ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Identity, ReqId, Socket)
-%%    end,
-%%
-%%    loop(Parent, Socket).
 
 %% Handle the remote request
 %% ZMQ requests come in 3 parts

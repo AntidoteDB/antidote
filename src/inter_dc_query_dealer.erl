@@ -95,8 +95,6 @@ del_dc(DCID) ->
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
-    %% trap_exit to close sockets properly via terminate/2
-%%    process_flag(trap_exit, true),
     {ok, #state{sockets = dict:new(), req_id = 1}}.
 
 %% Handle an instruction to ask a remote DC.
@@ -166,9 +164,6 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State = #state{unanswered_queries
             ?LOG_ERROR("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
     end,
     {noreply, State};
-%%handle_info({'EXIT', Pid, Reason}, State) ->
-%%    ?LOG_NOTICE("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
-%%    {noreply, State};
 handle_info(_, State) ->
     {noreply, State}.
 
@@ -235,52 +230,6 @@ connect_to_node([Address| Rest]) ->
         _ ->
             connect_to_node(Rest)
     end.
-%%    %% Test the connection
-%%    case connect_req(Ip, Port) of
-%%        {ok, Socket} ->
-%%            %% Always use 0 as the id of the check up message
-%%            ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
-%%            BinaryVersion = ?MESSAGE_VERSION,
-%%
-%%            ok = chumak:send_multipart(Socket, [<<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>]),
-%%            Response = chumak:recv_multipart(Socket),
-%%
-%%            case Response of
-%%                {ok, [Binary]} ->
-%%                    %% check that an ok msg was received
-%%                    case inter_dc_utils:check_version_and_req_id(Binary) of
-%%                        {_, <<?OK_MSG>>} ->
-%%                            {ok, Socket};
-%%                        Reason ->
-%%                            %% if the test message is not ok, then the DC is bad
-%%                            %% return connection_error immediately
-%%                            ?LOG_CRITICAL("Faulty DC (~p:~p) response detected: ~p", [Ip, Port, Reason]),
-%%                            inter_dc_utils:close_socket(Socket),
-%%                            connection_error
-%%                    end;
-%%                _ ->
-%%                    inter_dc_utils:close_socket(Socket),
-%%                    connect_to_node(Rest)
-%%            end;
-%%        _ ->
-%%            connect_to_node(Rest)
-%%    end.
-
-
-%%-spec connect_req(inet:ip_address(), inet:port_number()) -> {ok, zmq_socket()} | connection_error.
-%%connect_req(Ip, Port) ->
-%%    %% current semantics of zmq is generating new unique IDs for each socket
-%%    %% having a fixed ID could make use of the ID mechanism of zeromq sockets if used properly
-%%    %% might require a redesign of inter-dc communication with zeromq
-%%    Id = inter_dc_utils:generate_random_id(),
-%%    case chumak:socket(dealer, Id) of
-%%        {ok, Socket} ->
-%%            {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-%%            ?LOG_INFO("Opening socket ID ~p (~p)", [Id, Socket]),
-%%            {ok, Socket};
-%%        {error, _Reason} ->
-%%            connection_error
-%%    end.
 
 
 %%%===================================================================

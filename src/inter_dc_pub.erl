@@ -74,21 +74,13 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-%%    %% the chumak socket needs to be cleaned up explicitly
-%%    %% gen_servers that are part of a supervision tree need to trap exit signals
-%%    %% so that terminate/2 is called
-%%    %% https://erlang.org/doc/design_principles/gen_server_concepts.html
-%%    process_flag(trap_exit, true),
-
     % bind on ip and port
-    Ip = get_pub_bind_ip(),
+    %% TODO erlzmq pub bind IP
+%%    Ip = get_pub_bind_ip(),
     Port = get_pub_port(),
 
-%%    {ok, Socket} = chumak:socket(pub),
-%%    {ok, Pid} = chumak:bind(Socket, tcp, Ip, Port),
-
     Socket = zmq_utils:create_bind_socket(pub, false, Port),
-    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s", [Port, Ip]),
+    ?LOG_NOTICE("InterDC publisher started on port ~p", [Port]),
     {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) ->
@@ -118,6 +110,6 @@ code_change(_OldVsn, State, _Extra) ->
 get_pub_port() ->
     application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT).
 
--spec get_pub_bind_ip() -> string().
-get_pub_bind_ip() ->
-    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").
+%%-spec get_pub_bind_ip() -> string().
+%%get_pub_bind_ip() ->
+%%    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").

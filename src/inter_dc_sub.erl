@@ -65,7 +65,6 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-%%    process_flag(trap_exit, true),
     {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
@@ -87,10 +86,6 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
     Msg = inter_dc_txn:from_bin(BinaryMsg),
     ok = inter_dc_sub_vnode:deliver_txn(Msg),
     {noreply, State}.
-
-%%handle_info({'EXIT', Pid, Reason}, State) ->
-%%    ?LOG_INFO("Subsriber connect socket ~p shutdown: ~p", [Pid, Reason]),
-%%    {noreply, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -153,69 +148,3 @@ connect_to_node([Address | Rest]) ->
         _ ->
             connect_to_node(Rest)
     end.
-
-%%    %% Test the connection
-%%    case sub_socket_and_connect(Ip, Port) of
-%%        {ok, Socket1} ->
-%%            %% receives a ping
-%%            ok = chumak:subscribe(Socket1, <<>>),
-%%            Res = chumak:recv(Socket1),
-%%            inter_dc_utils:close_socket(Socket1),
-%%
-%%            case Res of
-%%                {ok, _} ->
-%%                    %% Create a subscriber socket for the specified DC
-%%                    {ok, Socket} = chumak:socket(sub),
-%%
-%%                    SubscribePartitionFun = fun(Partition) ->
-%%                        %% Make the socket subscribe to messages prefixed with the given partition number and <<"P">>
-%%                        PartitionBin = inter_dc_txn:partition_to_bin(Partition),
-%%                        ?LOG_INFO("Subscribing to ~p of ~p:~p", [PartitionBin, Ip, Port]),
-%%                        ok = chumak:subscribe(Socket, <<<<"P">>/binary, PartitionBin/binary>>)
-%%                                            end,
-%%
-%%                    %% For each partition in the current node, subscribe
-%%                    %% this assumes that every DC has its cluster fully set up and partitions won't change anymore
-%%                    lists:foreach(SubscribePartitionFun, inter_dc_utils:get_my_partitions()),
-%%
-%%                    %% connect the socket
-%%                    {ok, _Pid} = chumak:connect(Socket, tcp, inet_parse:ntoa(Ip), Port),
-%%
-%%                    %% spawn receive subscription worker and trap exit
-%%                    Self = self(),
-%%                    spawn_link(fun () ->
-%%                        ?LOG_DEBUG("Spawned sub connect worker ~p", [self()]),
-%%                        loop(Self, Socket)
-%%                               end),
-%%
-%%                    {ok, Socket};
-%%                _ ->
-%%                    connect_to_node(Rest)
-%%            end;
-%%
-%%        connection_error -> connect_to_node(Rest)
-%%    end.
-%%
-%%
-%%-spec sub_socket_and_connect(inet:ip_address(), inet:port_number()) -> {ok, zmq_socket()} | conn_err().
-%%sub_socket_and_connect(Ip, Port) ->
-%%    case chumak:socket(sub) of
-%%        {ok, Socket1} ->
-%%            case chumak:connect(Socket1, tcp, inet_parse:ntoa(Ip), Port) of
-%%                {ok, _Pid} ->
-%%                    {ok, Socket1};
-%%                {error, Reason} ->
-%%                    ?LOG_WARNING("Could not connect to publisher: ~p", [Reason]),
-%%                    connection_error
-%%            end;
-%%        {error, Reason} ->
-%%            ?LOG_ERROR("Could not create subscriber socket: ~p", [Reason]),
-%%            connection_error
-%%    end.
-%%
-%%
-%%loop(Parent, Socket) ->
-%%    {ok, <<P:1/binary, Data/binary>>} = chumak:recv(Socket),
-%%    <<"P">> = P, % first byte should be partition delimiter
-%%    Parent ! {zmq, Data},
-%%    loop(Parent, Socket).
