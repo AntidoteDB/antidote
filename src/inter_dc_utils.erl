@@ -78,7 +78,7 @@ get_address_list(Port) ->
 
 -spec close_socket(zmq_socket()) -> ok.
 close_socket(Socket) ->
-    zmq_utils:close_socket(Socket),
+    _ = zmq_utils:close_socket(Socket),
     ok.
 %%    catch (gen_server:stop(Socket)).
 
