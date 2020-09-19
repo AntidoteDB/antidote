@@ -36,6 +36,13 @@
 %% TODO check whether only local operations are allowed (currently yes to prevent odd behaviour)
 
 -module(bcounter_mgr).
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+-endif.
+
 -behaviour(gen_server).
 
 -export([generate_downstream/3,
@@ -357,9 +364,11 @@ can_transfer(Key, _, RequesterDCID, LastTransfers) ->
 
 -ifdef(TEST).
 
--include_lib("eunit/include/eunit.hrl").
-
 %%TODO use meck
+bcounter_mgr_test() ->
+    {foreach, fun setup/0, fun cleanup/1, [
+        fun server_is_alive/1
+    ]}.
 
 setup() ->
     process_flag(trap_exit, true),
@@ -370,11 +379,6 @@ cleanup(Pid) ->
     exit(Pid, normal),
     timer:sleep(50), %%TODO maybe check with recursion and lower intervals
     ?assertEqual(false, is_process_alive(Pid)).
-
-bcounter_mgr_test() ->
-    {foreach, fun setup/0, fun cleanup/1, [
-        fun server_is_alive/1
-    ]}.
 
 server_is_alive(Pid) ->
     fun() ->
