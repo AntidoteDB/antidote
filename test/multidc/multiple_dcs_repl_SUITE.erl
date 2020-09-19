@@ -70,11 +70,20 @@ all() -> [
     join_to_replicate
 ].
 
+%% DC1 and DC3 are main DCs with all updates
+%% DC2 is joining later empty
 join_to_replicate(Config) ->
-    NodeNames = [dcdev1, dcdev2],
+    NodeNames = [dcdev1, dcdev2, dcdev3],
     Nodes = test_utils:pmap(fun(Node) -> test_utils:start_node(Node, Config) end, NodeNames),
-    [Node, ReplNode] = test_utils:unpack(Nodes),
+    [Node, ReplNode, Node2] = test_utils:unpack(Nodes),
 
+    {ok, DescriptorRepl} = rpc:call(Node, antidote_dc_manager, get_connection_descriptor, []),
+    {ok, DescriptorMain} = rpc:call(Node, antidote_dc_manager, get_connection_descriptor, []),
+    {ok, DescriptorMain2} = rpc:call(Node2, antidote_dc_manager, get_connection_descriptor, []),
+
+    %% dcdev1 == dcdev3
+    ok = rpc:call(Node, antidote_dc_manager, subscribe_updates_from, [[DescriptorMain2]]),
+    ok = rpc:call(Node2, antidote_dc_manager, subscribe_updates_from, [[DescriptorMain]]),
     Bucket = ?BUCKET_BIN,
 
     % write counter on dcdv1:
@@ -87,12 +96,12 @@ join_to_replicate(Config) ->
     {Val1, _} = antidote_utils:read_pn_counter(Node, append_key1, Bucket, Clock),
     Val1 = Times,
 
-    {ok, DescriptorMain} = rpc:call(Node, antidote_dc_manager, get_connection_descriptor, []),
-    {ok, DescriptorRepl} = rpc:call(Node, antidote_dc_manager, get_connection_descriptor, []),
 
     %% subscribe to descriptors of other dcs
     ok = rpc:call(ReplNode, antidote_dc_manager, subscribe_updates_from, [[DescriptorMain]]),
+    ok = rpc:call(ReplNode, antidote_dc_manager, subscribe_updates_from, [[DescriptorMain2]]),
     ok = rpc:call(Node, antidote_dc_manager, subscribe_updates_from, [[DescriptorRepl]]),
+    ok = rpc:call(Node2, antidote_dc_manager, subscribe_updates_from, [[DescriptorRepl]]),
 
     %% read on repl node
     {Val1, _} = antidote_utils:read_pn_counter(ReplNode, append_key1, Bucket, Clock).
