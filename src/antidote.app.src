@@ -7,7 +7,8 @@
         ranch,
         stdlib,
         riak_core,
-        chumak,
+%%        chumak,
+        erlzmq,
         runtime_tools,
         tools,
         antidote_stats

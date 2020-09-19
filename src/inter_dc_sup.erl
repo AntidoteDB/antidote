@@ -66,7 +66,11 @@ init(_Args) ->
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
     InterDcLogSenderVnode = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    ZMQContextManager = ?CHILD(zmq_context, worker, []),
+
     {ok, {{one_for_one, 5, 10}, [
+        ZMQContextManager,
+
         LogResponseReaderSup,
 
         InterDcPub,
