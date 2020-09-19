@@ -81,9 +81,9 @@ init([]) ->
     Port = get_pub_port(),
 
     {ok, Socket} = chumak:socket(pub),
-    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
+    {ok, Pid} = chumak:bind(Socket, tcp, Ip, Port),
 
-    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s", [Port, Ip]),
+    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s (Pid ~p)", [Port, Ip, Pid]),
     {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) ->

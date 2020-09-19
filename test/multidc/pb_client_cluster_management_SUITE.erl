@@ -68,8 +68,8 @@ end_per_testcase(Name, _) ->
 
 
 all() -> [
-    setup_cluster_test,
-    setup_single_dc_handoff_test
+    setup_cluster_test
+%%    setup_single_dc_handoff_test
 ].
 
 

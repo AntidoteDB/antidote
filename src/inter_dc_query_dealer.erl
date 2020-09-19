@@ -157,6 +157,7 @@ handle_cast({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, 
                 {ok, [BinaryMsg]} = chumak:recv_multipart(Socket),
 
                 <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+                ?LOG_DEBUG("Processing request response ~p", [ReqId]),
                 case RestMsg of
                     <<RequestType, RestBinary/binary>> -> Func(RestBinary);
                     Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
