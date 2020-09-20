@@ -73,5 +73,5 @@ op() ->
   ]).
 
 set_element() ->
-  oneof([a,b]).
+  oneof([a, b]).
 

@@ -110,7 +110,7 @@ filter_resets(Operations) ->
   ResetClocks = [Clock || {Clock, {reset, {}}} <- Operations],
   % consider only operations, that are not invalidated by a reset:
   [{Clock, Op} ||
-    % all operations ... 
+    % all operations ...
     {Clock, Op} <- Operations,
     % such that no reset comes after the operation
     [] == [ResetClock || ResetClock <- ResetClocks, clock_le(Clock, ResetClock)]].

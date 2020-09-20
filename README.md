@@ -1,5 +1,6 @@
 # Antidote CRDT library
 [![Build Status](https://travis-ci.org/AntidoteDB/antidote_crdt.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote_crdt)
+[![Coverage Status](https://coveralls.io/repos/github/AntidoteDB/antidote_crdt/badge.svg?branch=master)](https://coveralls.io/github/AntidoteDB/antidote_crdt?branch=master)
 
 Operation based CRDT implementations to use with Antidote.
 
@@ -25,9 +26,9 @@ For a more detailed description of the different data types, the [Antidote Docum
     | antidote_crdt_map_rr.         % Recursive Resets Map aka RR-Map
 
 % The State of a CRDT:
--type crdt() :: ...
+-type crdt() :: term().
 % The downstream effect, which has to be applied at each replica
--type effect() :: ...
+-type effect() :: term().
 % The update operation, consisting of operation name and parameters
 % (e.g. {increment, 1} to increment a counter by one)
 -type update() :: {atom(), term()}.
@@ -74,24 +75,31 @@ Use the following `make` targets to build and test the CRDT library:
 
     # compile
     make compile
-    # run unit tests:
-    make test
     # check types:
     make dialyzer
     # check code style:
     make lint
 
 
-## PropEr tests
+## EUnit and PropEr tests
 
 To run the property based tests in the test directory install the [rebar3 PropEr plugin](https://www.rebar3.org/docs/using-available-plugins#proper) by adding the following line to `~/.config/rebar3/rebar.config`:
 
     {plugins, [{rebar3_proper, "0.9.0"}]}.
 
+Alternatively, running the command
+
+    sed -i -- 's/%%PROPER//g' rebar.config
+
+in the main folder of this repository will change the rebar3 config so that tests (eunit + proper) will run. For more information check the comments in the file rebar.config.
+
 Then execute the tests with:
 
+    # run unit tests (eunit):
+    make test
+    # run proper tests:
     make proper
 
-For more control, you can run PropEr manually and specify parameters like the tested module or the number of generated tests:
+For more control, you can run PropEr manually and specify parameters like the tested module, or the number of generated tests:
 
     rebar3 proper -n 1000 -m prop_crdt_orset

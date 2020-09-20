@@ -44,19 +44,19 @@ spec(Operations1, Value) ->
   Keys = allKeys(Operations),
   GroupedByKey = [{Key, nestedOps(Operations, Key)}  || Key <- Keys],
   KeyCheck =
-    fun({{Key,Type},Ops}) ->
+    fun({{Key, Type}, Ops}) ->
       ?WHENFAIL(
         begin
           io:format("~n~nOperations1 = ~p~n", [Operations1]),
           io:format("Operations = ~p~n", [Operations]),
           io:format("GroupedByKey = ~p~n", [GroupedByKey])
         end,
-        nestedSpec(Type, Ops, antidote_crdt_map_rr:get({Key,Type}, Value))
+        nestedSpec(Type, Ops, antidote_crdt_map_rr:get({Key, Type}, Value))
       )
     end,
   conjunction(
-    [{Key, KeyCheck({{Key,Type}, Ops})}
-     || {{Key,Type}, Ops} <- GroupedByKey]).
+    [{Key, KeyCheck({{Key, Type}, Ops})}
+     || {{Key, Type}, Ops} <- GroupedByKey]).
 
 normalize(Operations) ->
    lists:flatmap(fun(Op) -> normalizeOp(Op, Operations) end, Operations).
@@ -64,7 +64,7 @@ normalize(Operations) ->
 allKeys(Operations) ->
   lists:usort([Key || {_AddClock, {update, {Key, _}}} <- Operations]).
 
-nestedOps(Operations, {_,Type}=Key) ->
+nestedOps(Operations, {_, Type}=Key) ->
   Resets =
     case Type:is_operation({reset, {}}) of
       true ->
@@ -102,8 +102,8 @@ op(Size) ->
     {update, ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))},
     {remove, typed_key()},
     {remove, ?LET(L, list(typed_key()), lists:usort(L))},
-    ?LET({Updates,Removes},
-      {list(nestedOp(Size div 2)),list(typed_key())},
+    ?LET({Updates, Removes},
+      {list(nestedOp(Size div 2)), list(typed_key())},
       begin
         Removes2 = lists:usort(Removes),
         Updates2 = removeDuplicateKeys(Updates, Removes2),
@@ -113,7 +113,7 @@ op(Size) ->
   ]).
 
 removeDuplicateKeys([], _) -> [];
-removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
+removeDuplicateKeys([{Key, Op}|Rest], Keys) ->
   case lists:member(Key, Keys) of
     true -> removeDuplicateKeys(Rest, Keys);
     false -> [{Key, Op}|removeDuplicateKeys(Rest, [Key|Keys])]
@@ -140,7 +140,7 @@ crdt_type() ->
   oneof([antidote_crdt_set_rw, antidote_crdt_map_rr]).
 
 key() ->
-  oneof([key1,key2,key3,key4]).
+  oneof([key1, key2, key3, key4]).
 
 
 
