@@ -12,7 +12,7 @@ clean:
 	${REBAR} clean
 
 lint:
-	${REBAR} as lint lint
+	${REBAR} lint
 
 test:
 	${REBAR} eunit
