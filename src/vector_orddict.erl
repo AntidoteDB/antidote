@@ -161,10 +161,52 @@ to_list({List, _Size}) ->
   List.
 
 %% @doc Turns list into vector orddict.
-%% TODO Check that list is ordered!
+%% If the list is not ordered then it is sorted by the vts.
 -spec from_list([{vectorclock(), term()}]) -> vector_orddict().
 from_list(List) ->
-  {List, length(List)}.
+    IsSorted = is_sorted(lists:map(fun({Vts, _}) -> Vts end, List)),
+    SortedList =
+        case IsSorted of
+            true -> List;
+            false -> sort_by_vts(fun({Vts, _}) -> Vts end, List)
+        end,
+    {SortedList, length(SortedList)}.
+
+-spec is_sorted([vectorclock()]) -> boolean().
+is_sorted([]) -> true;
+is_sorted([_LastVts]) -> true;
+is_sorted([CurrentVts | GreaterVtsList]) ->
+    LeOrConcAll =
+        lists:all(
+            fun(GreaterVts) ->
+                vectorclock:le(CurrentVts, GreaterVts)
+                    orelse vectorclock:conc(CurrentVts, GreaterVts)
+            end, GreaterVtsList),
+    case LeOrConcAll of
+        true -> is_sorted(GreaterVtsList);
+        false -> false
+    end.
+
+-spec sort_by_vts(fun((Type :: term()) -> vectorclock()), [Type :: term()]) -> [Type :: term()].
+sort_by_vts(_, []) -> [];
+sort_by_vts(_, [ElementThatContainsVts]) -> [ElementThatContainsVts];
+sort_by_vts(FunThatGetsVtsFromElement, ElementThatContainsVtsList) ->
+    {SmallestElementThatContainsVtsList, RemainingElementThatContainsVtsList} =
+        lists:foldl(
+            fun(ElementThatContainsVts, {CurrentSmallestElementThatContainsVtsList, CurrentRemainingElementThatContainsVtsList}) ->
+                AnySmaller =
+                    lists:any(
+                        fun(OtherElementThatContainsVts) ->
+                            vectorclock:lt(FunThatGetsVtsFromElement(OtherElementThatContainsVts), FunThatGetsVtsFromElement(ElementThatContainsVts))
+                        end, CurrentRemainingElementThatContainsVtsList),
+                case AnySmaller of
+                    true ->
+                        {CurrentSmallestElementThatContainsVtsList, [ElementThatContainsVts | CurrentRemainingElementThatContainsVtsList]};
+                    false ->
+                        {[ElementThatContainsVts | CurrentSmallestElementThatContainsVtsList], CurrentRemainingElementThatContainsVtsList}
+                end
+            end, {[], []}, ElementThatContainsVtsList),
+    SmallestElementThatContainsVtsList ++ sort_by_vts(FunThatGetsVtsFromElement, RemainingElementThatContainsVtsList).
 
 %% @doc Returns the first entry.
 -spec first(vector_orddict()) -> {vectorclock(), term()}.
