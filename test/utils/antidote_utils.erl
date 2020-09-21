@@ -38,6 +38,7 @@
     increment_pn_counter/3,
 
     read_pn_counter/3,
+    read_pn_counter/4,
     read_b_counter/3,
     read_b_counter_commit/4,
 
@@ -62,13 +63,18 @@
 increment_pn_counter(Node, Key, Bucket) ->
     Obj = {Key, ?TYPE_PNC, Bucket},
     WriteResult = rpc:call(Node, antidote, update_objects, [ignore, [], [{Obj, increment, 1}]]),
-    ?assertMatch({ok, _}, WriteResult),
-    ok.
+    {ok, Vectorclock} = WriteResult,
+    Vectorclock.
 
 
 read_pn_counter(Node, Key, Bucket) ->
     Obj = {Key, ?TYPE_PNC, Bucket},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [ignore, [], [Obj]]),
+    {Value, CommitTime}.
+
+read_pn_counter(Node, Key, Bucket, Clock) ->
+    Obj = {Key, ?TYPE_PNC, Bucket},
+    {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [Clock, [], [Obj]]),
     {Value, CommitTime}.
 
 

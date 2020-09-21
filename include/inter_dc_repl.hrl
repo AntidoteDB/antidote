@@ -12,7 +12,7 @@
 -type recvr_state() :: #recvr_state{}.
 
 -type socket_address() :: {inet:ip_address(), inet:port_number()}.
--type zmq_socket() :: pid().
+-type zmq_socket() :: any().
 -type pdcid() :: {dcid(), partition_id()}.
 -type log_opid() :: non_neg_integer().
 

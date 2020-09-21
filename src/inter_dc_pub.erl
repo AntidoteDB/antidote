@@ -52,8 +52,10 @@
 
 -spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
-    BinTxn = inter_dc_txn:to_bin(Txn),
-    ok = gen_server:call(?MODULE, {publish, <<<<"P">>/binary, BinTxn/binary>>}).
+    case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
+        {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+        Normal -> Normal
+    end.
 
 -spec get_address() -> socket_address().
 get_address() ->
@@ -70,24 +72,17 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    %% the chumak socket needs to be cleaned up explicitly
-    %% gen_servers that are part of a supervision tree need to trap exit signals
-    %% so that terminate/2 is called
-    %% https://erlang.org/doc/design_principles/gen_server_concepts.html
-    process_flag(trap_exit, true),
-
     % bind on ip and port
-    Ip = get_pub_bind_ip(),
+    %% TODO erlzmq pub bind IP
+%%    Ip = get_pub_bind_ip(),
     Port = get_pub_port(),
 
-    {ok, Socket} = chumak:socket(pub),
-    {ok, _Pid} = chumak:bind(Socket, tcp, Ip, Port),
-
-    ?LOG_NOTICE("InterDC publisher started on port ~p binding on IP ~s", [Port, Ip]),
+    Socket = zmq_utils:create_bind_socket(pub, false, Port),
+    ?LOG_NOTICE("InterDC publisher started on port ~p", [Port]),
     {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) ->
-    ok = chumak:send(State#state.socket, Message),
+    ok = erlzmq:send(State#state.socket, Message),
     {reply, ok, State}.
 
 terminate(_Reason, State) ->
@@ -97,10 +92,6 @@ terminate(_Reason, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-%% bind shutdown
-handle_info({'EXIT', Pid, Reason}, State) ->
-    ?LOG_CRITICAL("Bind router socket ~p shutdown: ~p", [Pid, Reason]),
-    {stop, {bind_socket_shutdown, Reason}, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -113,6 +104,6 @@ code_change(_OldVsn, State, _Extra) ->
 get_pub_port() ->
     application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT).
 
--spec get_pub_bind_ip() -> string().
-get_pub_bind_ip() ->
-    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").
+%%-spec get_pub_bind_ip() -> string().
+%%get_pub_bind_ip() ->
+%%    application:get_env(antidote, pubsub_bind_ip, "0.0.0.0").

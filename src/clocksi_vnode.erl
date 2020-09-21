@@ -407,7 +407,6 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]),
-    ?LOG_DEBUG("Inserted preparing txn to PreparedTxns list ~p", [{Key, TxId, Time}]),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
