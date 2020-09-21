@@ -378,7 +378,7 @@ send_interdc_lock_request(OtherDcID, ReqMsg, Retries) ->
     PDCID = {OtherDcID, LocalPartition},
     logger:notice("send_interdc_lock_request to ~p:~n~p", [OtherDcID, ReqMsg]),
     Msg = term_to_binary(#interdc_message{sender = dc_utilities:get_my_dc_id(), body = ReqMsg}),
-    case inter_dc_query_dealer:perform_request(?LOCK_SERVER_REQUEST, PDCID, Msg, fun antidote_lock_server:on_interdc_reply/2) of
+    case inter_dc_query_dealer:perform_request(?LOCK_SERVER_REQUEST, PDCID, Msg, fun antidote_lock_server:on_interdc_reply/1) of
         ok ->
             ok;
         Err when Retries > 0 ->
