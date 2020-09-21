@@ -42,7 +42,7 @@
 
 
 %% API
--export([start_link/0, request_locks/2, release_locks/2, on_interdc_reply/2, on_interdc_request/1]).
+-export([start_link/0, request_locks/2, release_locks/2, on_interdc_reply/1, on_interdc_request/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -336,7 +336,7 @@ handle_release_locks(FromPid, CommitTime, State) ->
             end
     end.
 
-on_interdc_reply(_BinaryResp, _RequestCacheEntry) ->
+on_interdc_reply(_BinaryResp) ->
     % Nothing to do here, messages are handled asynchronous and response should always be 'ok'
     ok.
 
@@ -378,7 +378,7 @@ send_interdc_lock_request(OtherDcID, ReqMsg, Retries) ->
     PDCID = {OtherDcID, LocalPartition},
     logger:notice("send_interdc_lock_request to ~p:~n~p", [OtherDcID, ReqMsg]),
     Msg = term_to_binary(#interdc_message{sender = dc_utilities:get_my_dc_id(), body = ReqMsg}),
-    case inter_dc_query:perform_request(?LOCK_SERVER_REQUEST, PDCID, Msg, fun antidote_lock_server:on_interdc_reply/2) of
+    case inter_dc_query_dealer:perform_request(?LOCK_SERVER_REQUEST, PDCID, Msg, fun antidote_lock_server:on_interdc_reply/2) of
         ok ->
             ok;
         Err when Retries > 0 ->
