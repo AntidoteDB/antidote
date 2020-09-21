@@ -39,7 +39,8 @@
 -export([start_link/1,
          get_entries/2,
          request_permissions/2,
-         generate_server_name/1]).
+         generate_server_name/1,
+         on_lock_server_request/2]).
 -export([init/1,
          handle_cast/2,
          handle_call/3,
@@ -66,6 +67,12 @@ get_entries(BinaryQuery, QueryState) ->
 request_permissions(BinaryRequest, QueryState) ->
     ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
 
+-spec on_lock_server_request(binary(), inter_dc_query_state()) -> ok.
+on_lock_server_request(BinaryRequest, QueryState) ->
+    ServerName = generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)),
+    ok = gen_server:cast(ServerName, {lock_server_request, BinaryRequest, QueryState}).
+
+
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
@@ -89,6 +96,13 @@ handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
     ok = bcounter_mgr:process_transfer(Operation),
     ok = inter_dc_query_router:send_response(BinaryResp, QueryState),
     {noreply, State};
+
+handle_cast({lock_server_request, BinaryRequest, QueryState}, State) ->
+    Request = binary_to_term(BinaryRequest),
+    Response = antidote_lock_server:on_interdc_request(Request),
+    ok = inter_dc_query_router:send_response(term_to_binary(Response), QueryState),
+    {noreply, State};
+
 
 handle_cast(_Info, State) ->
     {noreply, State}.

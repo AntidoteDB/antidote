@@ -46,6 +46,7 @@
          get_key/1,
          key_as_integer/1,
          store_dc_descriptors/1,
+         get_dcs/0,
          get_dc_descriptors/0
          ]).
 
@@ -129,6 +130,10 @@ get_dc_descriptors() ->
             [Descriptor]
     end.
 
+%% Gets the list of external datacenters
+-spec get_dcs() -> [dcid()].
+get_dcs() ->
+    [DcId || #descriptor{dcid = DcId} <- get_dc_descriptors()].
 
 -spec get_key(term()) -> term().
 get_key(Key) when is_binary(Key) ->

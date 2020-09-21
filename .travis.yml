@@ -10,6 +10,7 @@ script:
   - make test
   - make reltest
   - make systests
+  - make propertytests
   - make coverage
   - rebar3 as test coveralls send
   - make dialyzer

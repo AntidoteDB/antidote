@@ -230,7 +230,8 @@ finish_op(From, Key, Result) ->
     return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
     full_commit :: boolean(),
-    properties :: txn_properties()
+    properties :: txn_properties(),
+    locks :: antidote_locks:lock_spec()
 }).
 
 -type state() :: #state{}.
@@ -248,9 +249,14 @@ init([]) ->
 
 wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, _State) ->
     BaseState = init_state(false, false, Properties),
-    {ok, State} = start_tx_internal(ClientClock, Properties, BaseState),
+    case start_tx_internal(ClientClock, Properties, BaseState) of
+        {ok, State} ->
     TxnId = (State#state.transaction)#transaction.txn_id,
-    {next_state, execute_op, State, {reply, Sender, {ok, TxnId}}}.
+            {next_state, execute_op, State, {reply, Sender, {ok, TxnId}}};
+        {error, Reason} ->
+            {stop_and_reply, Reason, {reply, Sender, {error, Reason}}}
+    end.
+
 
 
 %%%== execute_op
@@ -504,17 +510,25 @@ init_state(FullCommit, IsStatic, Properties) ->
         return_accumulator = [],
         is_static = IsStatic,
         full_commit = FullCommit,
-        properties = Properties
+        properties = Properties,
+        locks = []
     }.
 
 
 %% @doc TODO
 -spec start_tx_internal(snapshot_time(), proplists:proplist(), state()) -> {ok, state()} | {error, any()}.
-start_tx_internal(ClientClock, Properties, State = #state{}) ->
-    TransactionRecord = create_transaction_record(ClientClock, false, Properties),
-    % a new transaction was started, increment metrics
-    ?STATS(open_transaction),
-    {ok, State#state{transaction = TransactionRecord, num_to_read = 0, properties = Properties}}.
+start_tx_internal(ClientClock, Properties, State = #state{is_static = false}) ->
+    Locks = ordsets:from_list([{Lock, shared} || Lock <- proplists:get_value(shared_locks, Properties, [])]
+    ++ [{Lock, exclusive} || Lock <- proplists:get_value(exclusive_locks, Properties, [])]),
+    case antidote_locks:obtain_locks(ClientClock, Locks) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, ClientClock2} ->
+            TransactionRecord = create_transaction_record(ClientClock2, false, Properties),
+            % a new transaction was started, increment metrics
+            ?STATS(open_transaction),
+            {ok, State#state{transaction = TransactionRecord, num_to_read = 0, properties = Properties}}
+    end.
 
 
 %% @doc TODO
@@ -883,33 +897,60 @@ prepare(State = #state{
 %% {normal_commit, clock_time(): wait until all participants have acknowledged the commit and then reply to the client
 -spec prepare_done(state(), Action) -> gen_statem:event_handler_result(state())
     when Action :: single_committing | commit_read_only | {reply_and_then_commit, clock_time()} | {normal_commit, clock_time()}.
-prepare_done(State, Action) ->
-    case Action of
-        single_committing ->
-            UpdatedPartitions = State#state.updated_partitions,
-            Transaction = State#state.transaction,
-            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
-            {next_state, single_committing, State#state{state = committing, num_to_ack = 1}};
-        commit_read_only ->
-            reply_to_client(State#state{state = committed_read_only});
-        {reply_and_then_commit, CommitSnapshotTime} ->
-            From = State#state.from,
-            {next_state, committing, State#state{
-                state = committing,
-                commit_time = CommitSnapshotTime},
-                [{reply, From, {ok, CommitSnapshotTime}}]};
-        {normal_commit, MaxPrepareTime} ->
-            UpdatedPartitions = State#state.updated_partitions,
-            Transaction = State#state.transaction,
-                        ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
-            {next_state, receive_committed,
-                            State#state{
-                                num_to_ack = length(UpdatedPartitions),
-                                commit_time = MaxPrepareTime,
-                                state = committing}}
+prepare_done(State1, Action) ->
+    case before_commit_checks(State1) of
+        {error, Reason} ->
+            abort(State1#state{return_accumulator = {error, Reason}});
+        {ok, State} ->
+            case Action of
+                single_committing ->
+                    UpdatedPartitions = State#state.updated_partitions,
+                    Transaction = State#state.transaction,
+                    ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
+                    {next_state, single_committing, State#state{state = committing, num_to_ack = 1}};
+                commit_read_only ->
+                    reply_to_client(State#state{state = committed_read_only});
+                {reply_and_then_commit, CommitSnapshotTime} ->
+                    From = State#state.from,
+                    {next_state, committing, State#state{
+                        state = committing,
+                        commit_time = CommitSnapshotTime},
+                        [{reply, From, {ok, CommitSnapshotTime}}]};
+                {normal_commit, MaxPrepareTime} ->
+                    UpdatedPartitions = State#state.updated_partitions,
+                    Transaction = State#state.transaction,
+                    ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
+                    {next_state, receive_committed,
+                        State#state{
+                            num_to_ack = length(UpdatedPartitions),
+                            commit_time = MaxPrepareTime,
+                            state = committing}}
+            end
     end.
 
 
+%% Checks executed before starting the commit phase.
+-spec before_commit_checks(state()) -> {ok, state()} | {error, any()}.
+before_commit_checks(State) ->
+    Transaction = State#state.transaction,
+    CommitSnapshot =
+        case State#state.updated_partitions of
+            [] ->
+                Transaction#transaction.vec_snapshot_time;
+            _ when is_integer(State#state.commit_time) ->
+                CommitTime = State#state.commit_time,
+                DcId = ?DC_META_UTIL:get_my_dc_id(),
+                ?VECTORCLOCK:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time);
+            _ ->
+                Transaction#transaction.vec_snapshot_time
+        end,
+    Locks = State#state.locks,
+    case antidote_locks:release_locks(CommitSnapshot, Locks) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 
 process_prepared(ReceivedPrepareTime, State = #state{num_to_ack = NumToAck,
