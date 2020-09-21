@@ -73,7 +73,7 @@ antidote_crdt_counter_pn
 -type internal_crdt() :: term().
 -type internal_effect() :: term().
 
--export([is_type/1, new/1, value/2, downstream/3, update/3, require_state_downstream/2, is_operation/2]).
+-export([is_type/1, alias/1, new/1, value/2, downstream/3, update/3, require_state_downstream/2, is_operation/2]).
 
 % Callbacks implemented by each concrete CRDT implementation
 -callback new() -> internal_crdt().
@@ -89,33 +89,52 @@ antidote_crdt_counter_pn
 
 % Check if the given type is supported by Antidote
 -spec is_type(typ()) -> boolean().
-is_type(antidote_crdt_counter_pn)        -> true;
-is_type(antidote_crdt_counter_b)         -> true;
-is_type(antidote_crdt_counter_fat)       -> true;
-is_type(antidote_crdt_secure_counter_pn) -> true;
-is_type(antidote_crdt_flag_ew)           -> true;
-is_type(antidote_crdt_flag_dw)           -> true;
-is_type(antidote_crdt_set_go)            -> true;
-is_type(antidote_crdt_set_aw)            -> true;
-is_type(antidote_crdt_set_rw)            -> true;
-is_type(antidote_crdt_register_lww)      -> true;
-is_type(antidote_crdt_register_mv)       -> true;
-is_type(antidote_crdt_map_go)            -> true;
-is_type(antidote_crdt_map_rr)            -> true;
-is_type(_)                               -> false.
+is_type(antidote_crdt_counter_pn)          -> true;
+is_type(antidote_crdt_counter_b)           -> true;
+is_type(antidote_crdt_counter_fat)         -> true;
+is_type(antidote_crdt_flag_ew)             -> true;
+is_type(antidote_crdt_flag_dw)             -> true;
+is_type(antidote_crdt_set_go)              -> true;
+is_type(antidote_crdt_set_aw)              -> true;
+is_type(antidote_crdt_set_rw)              -> true;
+is_type(antidote_crdt_register_lww)        -> true;
+is_type(antidote_crdt_register_mv)         -> true;
+is_type(antidote_crdt_map_go)              -> true;
+is_type(antidote_crdt_map_rr)              -> true;
+is_type(antidote_crdt_secure_counter_pn)   -> true;
+is_type(antidote_crdt_secure_set_go)       -> true;
+is_type(antidote_crdt_secure_set_aw)       -> true;
+is_type(antidote_crdt_secure_set_rw)       -> true;
+is_type(antidote_crdt_secure_register_lww) -> true;
+is_type(antidote_crdt_secure_register_mv)  -> true;
+is_type(antidote_crdt_secure_map_go)       -> true;
+is_type(antidote_crdt_secure_map_rr)       -> true;
+is_type(_)                                 -> false.
 
+% Makes it possible to map multiple CRDT types to one CRDT implementation.
+-spec alias(typ()) -> typ().
+alias(antidote_crdt_secure_set_go)       -> antidote_crdt_set_go;
+alias(antidote_crdt_secure_set_aw)       -> antidote_crdt_set_aw;
+alias(antidote_crdt_secure_set_rw)       -> antidote_crdt_set_rw;
+alias(antidote_crdt_secure_register_lww) -> antidote_crdt_register_lww;
+alias(antidote_crdt_secure_register_mv)  -> antidote_crdt_register_mv;
+alias(antidote_crdt_secure_map_go)       -> antidote_crdt_map_go;
+alias(antidote_crdt_secure_map_rr)       -> antidote_crdt_map_rr;
+alias(Type)                              -> Type.
 
 % Returns the initial CRDT state for the given Type
 -spec new(typ()) -> crdt().
 new(Type) ->
-    true = is_type(Type),
-    Type:new().
+    T = alias(Type),
+    true = is_type(T),
+    T:new().
 
 % Reads the value from a CRDT state
 -spec value(typ(), crdt()) -> any().
 value(Type, State) ->
-    true = is_type(Type),
-    Type:value(State).
+    T = alias(Type),
+    true = is_type(T),
+    T:value(State).
 
 % Computes the downstream effect for a given update operation and current state.
 % This has to be called once at the source replica.
@@ -124,9 +143,10 @@ value(Type, State) ->
 % and the atom 'ignore' can be passed instead (see function require_state_downstream).
 -spec downstream(typ(), update(), crdt() | ignore) -> {ok, effect()} | {error, reason()}.
 downstream(Type, Update, State) ->
-    true = is_type(Type),
-    true = Type:is_operation(Update),
-    Type:downstream(Update, State).
+    T = alias(Type),
+    true = is_type(T),
+    true = T:is_operation(Update),
+    T:downstream(Update, State).
 
 % Updates the state of a CRDT by applying a downstream effect calculated
 % using the downstream function.
@@ -135,21 +155,24 @@ downstream(Type, Update, State) ->
 % then Eff1 has to be applied before Eff2 on all replicas.
 -spec update(typ(), effect(), crdt()) -> {ok, crdt()}.
 update(Type, Effect, State) ->
-    true = is_type(Type),
-    Type:update(Effect, State).
+    T = alias(Type),
+    true = is_type(T),
+    T:update(Effect, State).
 
 % Checks whether the current state is required by the downstream function
 % for a specific type and update operation
 -spec require_state_downstream(typ(), update()) -> boolean().
 require_state_downstream(Type, Update) ->
-    true = is_type(Type),
-    Type:require_state_downstream(Update).
+    T = alias(Type),
+    true = is_type(T),
+    T:require_state_downstream(Update).
 
 % Checks whether the given update operation is valid for the given type
 -spec is_operation(typ(), update()) -> boolean().
 is_operation(Type, Update) ->
-    true = is_type(Type),
-    Type:is_operation(Update).
+    T = alias(Type),
+    true = is_type(T),
+    T:is_operation(Update).
 
 -spec to_binary(crdt()) -> binary().
 to_binary(Term) ->

@@ -87,15 +87,16 @@ new() ->
 
 -spec value(state()) -> value().
 value(Map) ->
-    lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
+    lists:sort([{{Key, Type}, (antidote_crdt:alias(Type)):value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
 % get a value from the map
 % returns empty value if the key is not present in the map
 -spec get(typedKey(), value()) -> term().
 get({_K, Type}=Key, Map) ->
+    T = antidote_crdt:alias(Type),
     case orddict:find(Key, Map) of
         {ok, Val} -> Val;
-        error -> Type:value(Type:new())
+        error -> T:value(T:new())
     end.
 
 
@@ -124,26 +125,28 @@ downstream({reset, {}}, CurrentMap) ->
 
 -spec generate_downstream_update({typedKey(), Op::term()}, state()) -> nested_downstream().
 generate_downstream_update({{Key, Type}, Op}, CurrentMap) ->
+    T = antidote_crdt:alias(Type),
     CurrentState =
         case dict:is_key({Key, Type}, CurrentMap) of
             true -> dict:fetch({Key, Type}, CurrentMap);
-            false -> Type:new()
+            false -> T:new()
         end,
-    {ok, DownstreamEffect} = Type:downstream(Op, CurrentState),
+    {ok, DownstreamEffect} = T:downstream(Op, CurrentState),
     {{Key, Type}, {ok, DownstreamEffect}}.
 
 
 -spec generate_downstream_remove(typedKey(), state()) -> nested_downstream().
 generate_downstream_remove({Key, Type}, CurrentMap) ->
+    T = antidote_crdt:alias(Type),
     CurrentState =
         case dict:is_key({Key, Type}, CurrentMap) of
             true -> dict:fetch({Key, Type}, CurrentMap);
-            false -> Type:new()
+            false -> T:new()
         end,
     DownstreamEffect =
-        case Type:is_operation({reset, {}}) of
+        case T:is_operation({reset, {}}) of
             true ->
-                {ok, _} = Type:downstream({reset, {}}, CurrentState);
+                {ok, _} = T:downstream({reset, {}}, CurrentState);
             false ->
                 none
         end,
@@ -158,20 +161,22 @@ update({Updates, Removes}, State) ->
     {ok, State4}.
 
 update_entry({{Key, Type}, {ok, Op}}, Map) ->
+    T = antidote_crdt:alias(Type),
     case dict:find({Key, Type}, Map) of
         {ok, State} ->
-            {ok, UpdatedState} = Type:update(Op, State),
+            {ok, UpdatedState} = T:update(Op, State),
             dict:store({Key, Type}, UpdatedState, Map);
         error ->
-            NewValue = Type:new(),
-            {ok, NewValueUpdated} = Type:update(Op, NewValue),
+            NewValue = T:new(),
+            {ok, NewValueUpdated} = T:update(Op, NewValue),
             dict:store({Key, Type}, NewValueUpdated, Map)
     end.
 
 remove_entry({{Key, Type}, {ok, Op}}, Map) ->
+    T = antidote_crdt:alias(Type),
     case dict:find({Key, Type}, Map) of
         {ok, State} ->
-            {ok, UpdatedState} = Type:update(Op, State),
+            {ok, UpdatedState} = T:update(Op, State),
             case is_bottom(Type, UpdatedState) of
                 true ->
                     dict:erase({Key, Type}, Map);
@@ -193,7 +198,8 @@ remove_obsolete({Key, Type}, Val, Map) ->
     end.
 
 is_bottom(Type, State) ->
-    erlang:function_exported(Type, is_bottom, 1) andalso Type:is_bottom(State).
+    T = antidote_crdt:alias(Type),
+    erlang:function_exported(T, is_bottom, 1) andalso T:is_bottom(State).
 
 equal(Map1, Map2) ->
     Map1 == Map2. % TODO better implementation (recursive equals)
@@ -211,8 +217,8 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 is_operation(Operation) ->
     case Operation of
         {update, {{_Key, Type}, Op}} ->
-            antidote_crdt:is_type(Type)
-                andalso Type:is_operation(Op);
+            T = antidote_crdt:alias(Type),
+            antidote_crdt:is_type(Type) andalso T:is_operation(Op);
         {update, Ops} when is_list(Ops) ->
             distinct([Key || {Key, _} <- Ops])
                 andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
