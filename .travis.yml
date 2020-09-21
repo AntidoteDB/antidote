@@ -7,10 +7,6 @@ otp_release:
   - 22.3
   - 23.0
 install:
-# Here sed is used to replace the string "%%PROPER" with the empty string "" in the file rebar.config
-# %%PROPER is used to define comments that must be uncommented before tests with proper can be run
-# For more information see rebar.config
-  - sed -i -- 's/%%PROPER//g' rebar.config
   - make
 script:
   - make test
