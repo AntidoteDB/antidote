@@ -53,7 +53,7 @@ spec(Operations) ->
   end.
 
 correctTime(Operations, {OperationVc, {assign, Value, Timestamp}}) ->
-  Before = [{Vc,Op} || {Vc,Op} <- Operations, Vc =/= OperationVc, crdt_properties:clock_le(Vc, OperationVc)],
+  Before = [{Vc, Op} || {Vc, Op} <- Operations, Vc =/= OperationVc, crdt_properties:clock_le(Vc, OperationVc)],
   Before2 = [correctTime(Before, Op) || Op <- Before],
   BeforeTimestampMax = lists:max([0] ++ [T || {_, {assign, _, T}} <- Before2]),
   {OperationVc, {assign, Value, max(Timestamp, BeforeTimestampMax+1) }}.
@@ -61,5 +61,5 @@ correctTime(Operations, {OperationVc, {assign, Value, Timestamp}}) ->
 
 % generates a random counter operation
 op() ->
-  {assign, oneof([a,b,c,d,e,f,g,h,i]), non_neg_integer()}.
+  {assign, oneof([a, b, c, d, e, f, g, h, i]), non_neg_integer()}.
 

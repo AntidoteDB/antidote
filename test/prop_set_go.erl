@@ -53,4 +53,4 @@ op() ->
   ]).
 
 set_element() ->
-  oneof([a,b,c,d]).
+  oneof([a, b, c, d]).

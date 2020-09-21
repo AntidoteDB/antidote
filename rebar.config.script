@@ -1,0 +1,6 @@
+case os:getenv("TRAVIS") of
+    "true" ->
+        lists:keystore(coveralls_service_job_id, 1, CONFIG, {coveralls_service_job_id, os:getenv("TRAVIS_JOB_ID")});
+    _ ->
+        CONFIG
+end.

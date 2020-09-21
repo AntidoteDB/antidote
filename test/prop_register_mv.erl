@@ -47,7 +47,7 @@ spec(Operations) ->
 % generates a random operation
 op() ->
   frequency([
-    {5, {assign, oneof([a,b,c,d,e,f,g,h,i])}},
+    {5, {assign, oneof([a, b, c, d, e, f, g, h, i])}},
     {1, {reset, {}}}
   ]).
 

@@ -43,7 +43,7 @@ spec(Operations1) ->
   Operations = lists:flatmap(fun normalizeOp/1, Operations1),
   Keys = lists:usort([Key || {_, {update, {Key, _}}} <- Operations]),
   GroupedByKey = [{Key, nestedOps(Operations, Key)}  || Key <- Keys],
-  NestedSpec = [{{Key,Type}, nestedSpec(Type, Ops)} || {{Key,Type}, Ops} <- GroupedByKey],
+  NestedSpec = [{{Key, Type}, nestedSpec(Type, Ops)} || {{Key, Type}, Ops} <- GroupedByKey],
   lists:sort(NestedSpec).
 
 nestedOps(Operations, Key) ->
@@ -68,7 +68,7 @@ op(Size) ->
       ])}.
 
 removeDuplicateKeys([], _) -> [];
-removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
+removeDuplicateKeys([{Key, Op}|Rest], Keys) ->
   case lists:member(Key, Keys) of
     true -> removeDuplicateKeys(Rest, Keys);
     false -> [{Key, Op}|removeDuplicateKeys(Rest, [Key|Keys])]
@@ -92,4 +92,4 @@ nestedOp(Size) ->
 
 
 key() ->
-  oneof([a,b,c,d]).
+  oneof([a, b, c, d]).

@@ -144,7 +144,7 @@ new_test() ->
 update_test() ->
     Map1 = new(),
     {ok, DownstreamOp} = downstream({update, {{key1, antidote_crdt_register_lww}, {assign, <<"test">>}}}, Map1),
-    ?assertMatch({update, {{key1, antidote_crdt_register_lww}, {_TS, <<"test">>}}}, DownstreamOp),
+    ?assertMatch({update, {{key1, antidote_crdt_register_lww}, {_, <<"test">>}}}, DownstreamOp),
     {ok, Map2} = update(DownstreamOp, Map1),
     ?assertEqual([{{key1, antidote_crdt_register_lww}, <<"test">>}], value(Map2)).
 
