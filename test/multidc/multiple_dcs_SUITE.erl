@@ -41,7 +41,8 @@
          simple_replication_test/1,
          failure_test/1,
          blocking_test/1,
-         parallel_writes_test/1]).
+         parallel_writes_test/1
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").

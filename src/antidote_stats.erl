@@ -71,8 +71,8 @@ init([]) ->
     {ok, #state{
         timer = TimerCheap,
         timer_expensive = TimerExpensive,
-        % start only monitoring inter_dc_query_req and processes without registered names (undefined)
-        monitored_processes = [inter_dc_query_req, undefined]
+        % start only monitoring inter_dc_query_dealer and processes without registered names (undefined)
+        monitored_processes = [inter_dc_query_dealer, undefined]
     }}.
 
 handle_call(_Req, _From, State) ->

@@ -58,7 +58,7 @@ init(_Args) ->
 
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
-    InterDcQueryReq = ?CHILD(inter_dc_query_req, worker, []),
+    InterDcQueryReq = ?CHILD(inter_dc_query_dealer, worker, []),
     InterDcQueryReqRecv = ?CHILD(inter_dc_query_router, worker, []),
 
 
@@ -66,7 +66,11 @@ init(_Args) ->
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
     InterDcLogSenderVnode = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    ZMQContextManager = ?CHILD(zmq_context, worker, []),
+
     {ok, {{one_for_one, 5, 10}, [
+        ZMQContextManager,
+
         LogResponseReaderSup,
 
         InterDcPub,

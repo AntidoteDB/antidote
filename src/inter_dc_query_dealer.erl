@@ -36,7 +36,7 @@
 %% The reliability-related features like resending the query are handled by ZeroMQ.
 
 
--module(inter_dc_query_req).
+-module(inter_dc_query_dealer).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -63,7 +63,8 @@
 %% State
 -record(state, {
   sockets :: req_dict(), % {DCID, partition} -> Socket
-  req_id :: non_neg_integer()
+  req_id :: non_neg_integer(),
+    unanswered_queries = create_queries_table()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -76,9 +77,9 @@
 %% Note that the function should not perform any work, instead just send
 %% the work to another process, otherwise it will block other messages
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary()) -> ok))
-             -> ok.
+             -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
-    gen_server:cast(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -94,10 +95,28 @@ del_dc(DCID) ->
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
-    %% trap_exit to close sockets properly via terminate/2
-    process_flag(trap_exit, true),
     {ok, #state{sockets = dict:new(), req_id = 1}}.
 
+%% Handle an instruction to ask a remote DC.
+handle_call({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
+    case dict:find({DCID, Partition}, State#state.sockets) of
+        {ok, Socket} ->
+            ?LOG_DEBUG("Request ~p to ~p ~p (~p)", [RequestType, DCID, Partition, Socket]),
+
+            %% prepare message
+            VersionBinary = ?MESSAGE_VERSION,
+            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
+            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
+
+            ok = erlzmq:send(Socket, FullRequest),
+            RequestEntry = #request_cache_entry{request_type=RequestType, req_id_binary=ReqIdBinary,
+                func=Func, pdcid={DCID, Partition}, binary_req=FullRequest},
+
+            {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
+        _ ->
+            ?LOG_ERROR("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
+            {reply, unknown_dc, State}
+    end;
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State = #state{ sockets = OldDcPartitionDict }) ->
     %% delete the dc if already added
@@ -128,8 +147,22 @@ handle_call({del_dc, DCID}, _From, State = #state{ sockets = Dict}) ->
     {reply, ok, State#state{sockets = NewDict}}.
 
 
-handle_info({'EXIT', Pid, Reason}, State) ->
-    ?LOG_NOTICE("Connect query socket ~p shutdown: ~p", [Pid, Reason]),
+handle_info({zmq, _Socket, BinaryMsg, _Flags}, State = #state{unanswered_queries = Table}) ->
+    <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
+    %% Be sure this is a request from this socket
+    case get_request(Table, ReqIdBinary) of
+        {ok, #request_cache_entry{request_type=RequestType, func=Func}} ->
+            case RestMsg of
+                <<RequestType, RestBinary/binary>> ->
+                    Func(RestBinary);
+                Other ->
+                    ?LOG_ERROR("Received unknown reply: ~p", [Other])
+            end,
+            %% Remove the request from the list of unanswered queries.
+            true = delete_request(Table, ReqIdBinary);
+        not_found ->
+            ?LOG_ERROR("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
+    end,
     {noreply, State};
 handle_info(_, State) ->
     {noreply, State}.
@@ -139,42 +172,17 @@ terminate(_Reason, State) ->
     lists:foreach(F, dict:to_list(State#state.sockets)),
     ok.
 
-%% Handle an instruction to ask a remote DC.
-handle_cast({any_request, RequestType, {DCID, Partition}, BinaryRequest, Func}, State=#state{req_id=ReqId}) ->
-    ?LOG_NOTICE("Trying to perform request"),
-    case dict:find({DCID, Partition}, State#state.sockets) of
-        {ok, Socket} ->
-            ?LOG_DEBUG("Request and receive message async to ~p ~p (~p)", [DCID, Partition, Socket]),
-
-            %% prepare message
-            VersionBinary = ?MESSAGE_VERSION,
-            ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-            FullRequest = <<VersionBinary/binary, ReqIdBinary/binary, RequestType, BinaryRequest/binary>>,
-
-            %% TODO Open more sockets concurrently
-            %%      and dispatch these send/recv requests (e.g. as many sockets as ?INTER_DC_QUERY_CONCURRENCY)
-            ?LOG_DEBUG("Send and receive"),
-            ok = chumak:send(Socket, FullRequest),
-            {ok, BinaryMsg} = chumak:recv(Socket),
-
-            ?LOG_DEBUG("Process and apply function"),
-            <<_ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary, RestMsg/binary>> = inter_dc_utils:check_message_version(BinaryMsg),
-            case RestMsg of
-                <<RequestType, RestBinary/binary>> -> Func(RestBinary);
-                Other -> ?LOG_ERROR("Received unknown reply: ~p", [Other])
-            end,
-
-            {noreply, State#state{req_id = ReqId + 1}};
-        _ ->
-            ?LOG_ERROR("Could not find ~p:~p in socket dict ~p", [DCID, Partition, State#state.sockets]),
-            {noreply, State}
-    end;
 handle_cast(_Request, State) -> {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 
 %%%% Internal methods ---------------------------------------------------------+
+
+%% Saves the request in the state, so it can be resent if the DC was disconnected.
+req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table, req_id=OldReq}) ->
+    true = insert_request(Table, ReqIdBinary, RequestEntry),
+    State#state{req_id=(OldReq+1)}.
 
 -spec del_dc(dcid(), req_dict()) -> req_dict().
 del_dc(DCID, Dict) ->
@@ -198,50 +206,55 @@ del_dc(DCID, Dict) ->
 connect_to_node([]) ->
     ?LOG_ERROR("Unable to subscribe to DC log reader"),
     connection_error;
-connect_to_node([_Address = {Ip, Port}| Rest]) ->
+connect_to_node([Address| Rest]) ->
     %% Test the connection
-    case connect_req(Ip, Port) of
-        {ok, Socket} ->
-            %% Always use 0 as the id of the check up message
-            ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
-            BinaryVersion = ?MESSAGE_VERSION,
-
-            ok = chumak:send(Socket, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
-            Response = chumak:recv(Socket),
-
-            case Response of
-                {ok, Binary} ->
-                    %% check that an ok msg was received
-                    case inter_dc_utils:check_version_and_req_id(Binary) of
-                        {_, <<?OK_MSG>>} ->
-                            {ok, Socket};
-                        Reason ->
-                            %% if the test message is not ok, then the DC is bad
-                            %% return connection_error immediately
-                            ?LOG_CRITICAL("Faulty DC (~p:~p) response detected: ~p", [Ip, Port, Reason]),
-                            inter_dc_utils:close_socket(Socket),
-                            connection_error
-                    end;
-                _ ->
-                    inter_dc_utils:close_socket(Socket),
-                    connect_to_node(Rest)
-            end;
+    Socket1 = zmq_utils:create_connect_socket(req, false, Address),
+    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    BinaryVersion = ?MESSAGE_VERSION,
+    %% Always use 0 as the id of the check up message
+    ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
+    ok = erlzmq:send(Socket1, <<BinaryVersion/binary, ReqIdBinary/binary, ?CHECK_UP_MSG>>),
+    Res = erlzmq:recv(Socket1),
+    ok = zmq_utils:close_socket(Socket1),
+    case Res of
+        {ok, Binary} ->
+            %% erlzmq:recv returns binary, its spec says iolist, but dialyzer compains that it is not a binary
+            %% so I added this conversion, even though the result of recv is a binary anyway...
+            ResBinary = iolist_to_binary(Binary),
+            %% check that an ok msg was received
+            {_, <<?OK_MSG>>} = inter_dc_utils:check_version_and_req_id(ResBinary),
+            %% Create a subscriber socket for the specified DC
+            Socket = zmq_utils:create_connect_socket(req, true, Address),
+            %% For each partition in the current node:
+            {ok, Socket};
         _ ->
             connect_to_node(Rest)
     end.
 
 
--spec connect_req(inet:ip_address(), inet:port_number()) -> {ok, zmq_socket()} | connection_error.
-connect_req(Ip, Port) ->
-    %% current semantics of zmq is generating new unique IDs for each socket
-    %% having a fixed ID could make use of the ID mechanism of zeromq sockets if used properly
-    %% might require a redesign of inter-dc communication with zeromq
-    Id = inter_dc_utils:generate_random_id(),
-    case chumak:socket(req, Id) of
-        {ok, Socket} ->
-            {ok, _Pid1} = chumak:connect(Socket, tcp, inet:ntoa(Ip), Port),
-            ?LOG_INFO("Opening socket ID ~p (~p)", [Id, Socket]),
-            {ok, Socket};
-        {error, _Reason} ->
-            connection_error
+%%%===================================================================
+%%%  Ets tables
+%%%
+%%%  unanswered_queries_table:
+%%%===================================================================
+
+-spec create_queries_table() -> ets:tid().
+create_queries_table() ->
+    ets:new(queries, [set]).
+
+-spec insert_request(ets:tid(), binary(), request_cache_entry()) -> true.
+insert_request(Table, ReqIdBinary, RequestEntry) ->
+    ets:insert(Table, {ReqIdBinary, RequestEntry}).
+
+-spec delete_request(ets:tid(), binary()) -> true.
+delete_request(Table, ReqIdBinary) ->
+    ets:delete(Table, ReqIdBinary).
+
+-spec get_request(ets:tid(), binary()) -> not_found | {ok, request_cache_entry()}.
+get_request(Table, ReqIdBinary) ->
+    case ets:lookup(Table, ReqIdBinary) of
+        [] ->
+            not_found;
+        [{ReqIdBinary, Val}] ->
+            {ok, Val}
     end.

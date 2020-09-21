@@ -189,7 +189,7 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({request_permissions,
                                 {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
-    inter_dc_query_req:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
+    inter_dc_query_dealer:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
                                    BinaryMsg, fun bcounter_mgr:request_response/1).
 
 %% Orders the reservation of each DC, from high to low.
