@@ -37,10 +37,6 @@
 %% Expected time to wait until the logging_vnode is started
 -define(LOG_STARTUP_WAIT, 1000).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 %% API
 -export([
   new_state/1,
@@ -57,8 +53,7 @@ new_state(PDCID) ->
     pdcid = PDCID,
     last_observed_opid = init,
     queue = queue:new(),
-    logging_enabled = EnableLogging,
-    log_reader_timeout = 0
+    logging_enabled = EnableLogging
   }.
 
 -spec process({txn, interdc_txn()} | {log_reader_resp, [interdc_txn()]}, inter_dc_sub_buf()) -> inter_dc_sub_buf().
@@ -82,24 +77,23 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
         State
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering, log_reader_timeout = Timeout}) ->
-    %% Buffering incoming transactions while waiting for log reader response.
-    %% Change to normal state, if response timeout exceed, to query for response again.
-    ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
-    Time = erlang:system_time(millisecond),
-    if
-        Timeout < Time ->
-            ?LOG_WARNING("Got timeout for log_reader_resp in ~p", [State#inter_dc_sub_buf.pdcid]),
-            process_queue(push(Txn, State#inter_dc_sub_buf{state_name = normal}));
-        true ->
-            push(Txn, State)
-    end;
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
+  ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
+  push(Txn, State);
 
-process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue}) ->
-    %% Add log response to buffer and process.
-    NewQueue = queue:join(queue:from_list(Txns), Queue),
-    NewState = State#inter_dc_sub_buf{queue = NewQueue},
-    process_queue(NewState).
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
+  ok = lists:foreach(fun deliver/1, Txns),
+  NewLast = case queue:peek(Queue) of
+    empty -> State#inter_dc_sub_buf.last_observed_opid;
+    {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
+  end,
+  NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
+  process_queue(NewState);
+
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{state_name = normal}) ->
+  %% This case must not happen
+  ?LOG_CRITICAL("Received unexpected log_reader_resp messages in state normal Message ~p. State ~p", [Txns, State]),
+  State.
 
 
 %%%% Methods ----------------------------------------------------------------+
@@ -123,9 +117,13 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
             ?LOG_INFO("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
                   [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
             try
-                query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast),
-                %% Enter buffering state while waiting for response and set timeout
-                State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT}
+              case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
+                ok ->
+                  State#inter_dc_sub_buf{state_name = buffering};
+                _  ->
+                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message"),
+                  State#inter_dc_sub_buf{state_name = normal}
+              end
             catch
               S:T ->
                   ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message: ~p~n~p", [S, T]),
@@ -140,7 +138,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction has an old value, drop it.
         lt ->
-            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [(TxnLast + 1), Last]),
+            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
             process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
@@ -164,111 +162,3 @@ query({DCID, Partition}, From, To) ->
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;
 cmp(_, _) -> eq.
-
--ifdef(TEST).
-
-process_init() ->
-    meck_reset(),
-    State = new_state({0, 0}),
-    Txn = make_txn(0),
-    NewState = process({txn, Txn}, State),
-    ?assertEqual(normal, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(1, 1, 1, 0).
-
-process_old() ->
-    meck_reset(),
-    State = new_state({0, 0}),
-    Txn = make_txn(-1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
-    ?assertEqual(normal, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0, 0, 0, 0).
-
-process_missing_txn() ->
-    meck_reset(),
-    State = new_state({0, 0}),
-    Txn = make_txn(1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
-    ?assertEqual(1, meck:num_calls(inter_dc_query_dealer, perform_request, '_')),
-    ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0, 0, 0, 1).
-
-process_buffering() ->
-    meck_reset(),
-    State = new_state({0, 0}),
-    Txn = make_txn(1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + 3000, last_observed_opid=0}),
-    ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
-    check_meck_calls(0, 0, 0, 0),
-    NewState2 = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) - 1000, last_observed_opid=0}),
-    ?assertEqual(buffering, NewState2#inter_dc_sub_buf.state_name),
-    check_meck_calls(0, 0, 0, 1).
-
-process_resp() ->
-    meck_reset(),
-    State = new_state({0, 0}),
-    Txn = make_txn(1),
-    BufState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
-    ?assertEqual(buffering, BufState#inter_dc_sub_buf.state_name),
-    ?assertEqual(1, queue:len(BufState#inter_dc_sub_buf.queue)),
-    Txn2 = make_txn(0),
-    NormalState = process({log_reader_resp, [Txn2]}, BufState),
-    ?assertEqual(normal, NormalState#inter_dc_sub_buf.state_name),
-    ?assertEqual(0, queue:len(NormalState#inter_dc_sub_buf.queue)),
-    check_meck_calls(0, 0, 2, 1).
-
-make_txn(Last) ->
-    #interdc_txn{
-        dcid = 0,
-        partition = 0,
-        prev_log_opid = #op_number{node = {node(), 0}, global = 0, local = Last},
-        log_records = [#log_record{
-            op_number = #op_number{node = {node(), 0}, global = 0, local = Last + 1},
-            log_operation = #log_operation{op_type = commit}
-        }]
-    }.
-
-meck_reset() ->
-    meck:reset(dc_utilities),
-    meck:reset(logging_vnode),
-    meck:reset(inter_dc_dep_vnode),
-    meck:reset(inter_dc_query_dealer).
-
-check_meck_calls(Dc_utilities, Logging_vnode, Inter_dc_dep_vnode, Inter_dc_query) ->
-    ?assertEqual(Dc_utilities, meck:num_calls(dc_utilities, partition_to_indexnode, '_')),
-    ?assertEqual(Logging_vnode, meck:num_calls(logging_vnode, request_op_id, '_')),
-    ?assertEqual(Inter_dc_dep_vnode, meck:num_calls(inter_dc_dep_vnode, handle_transaction, '_')),
-    ?assertEqual(Inter_dc_query, meck:num_calls(inter_dc_query_dealer, perform_request, '_')).
-
-test_init() ->
-    application:set_env(antidote, enable_logging, true),
-    meck:new(dc_utilities),
-    meck:new(logging_vnode),
-    meck:new(inter_dc_dep_vnode),
-    meck:new(inter_dc_query_dealer),
-    meck:expect(logging_vnode, request_op_id, fun(_, _, _) -> {ok, 0} end),
-    meck:expect(dc_utilities, partition_to_indexnode, fun(_) -> {0, node()} end),
-    meck:expect(inter_dc_query_dealer, perform_request, fun(_, _, _, _) -> ok end),
-    meck:expect(inter_dc_dep_vnode, handle_transaction, fun(_) -> ok end),
-    logger:add_handler_filter(default, ?MODULE, {fun(_, _) -> stop end, nostate}),
-    ok.
-
-test_cleanup(_) ->
-    meck:unload(dc_utilities),
-    meck:unload(logging_vnode),
-    meck:unload(inter_dc_dep_vnode),
-    meck:unload(inter_dc_query_dealer),
-    logger:remove_handler_filter(default, ?MODULE).
-
-meck_test_() -> {
-    setup,
-    fun test_init/0,
-    fun test_cleanup/1,
-    [
-        fun process_init/0,
-        fun process_old/0,
-        fun process_missing_txn/0,
-        fun process_buffering/0,
-        fun process_resp/0
-    ]}.
-
--endif.
