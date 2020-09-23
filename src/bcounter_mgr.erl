@@ -365,7 +365,6 @@ can_transfer(Key, _, RequesterDCID, LastTransfers) ->
 -ifdef(TEST).
 
 %%TODO use meck
-
 bcounter_mgr_test() ->
     {foreach, fun setup/0, fun cleanup/1, [
         fun server_is_alive/1
