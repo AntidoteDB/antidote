@@ -230,6 +230,7 @@
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
+-type internal_key() :: {key(), bucket()}.
 
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tab().
@@ -253,7 +254,7 @@
               clocksi_payload/0,
               materialized_snapshot/0,
               snapshot_get_response/0, log_operation/0, log_record/0, op_number/0,
-              update_log_payload/0, commit_log_payload/0]).
+              update_log_payload/0, commit_log_payload/0, internal_key/0]).
 
 
 %% The record is using during materialization to keep the
