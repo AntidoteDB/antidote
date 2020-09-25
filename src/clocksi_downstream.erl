@@ -40,7 +40,7 @@
     {ok, effect()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
     %% TODO: Check if read can be omitted for some types as registers
-    NeedState = Type:require_state_downstream(Update),
+    NeedState = antidote_crdt:require_state_downstream(Type, Update),
     Result =
         %% If state is needed to generate downstream, read it from the partition.
         case NeedState of
@@ -63,6 +63,6 @@ generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
                     %% bcounter data-type.
                     bcounter_mgr:generate_downstream(Key, Update, Snapshot);
                 _ ->
-                    Type:downstream(Update, Snapshot)
+                    antidote_crdt:downstream(Type, Update, Snapshot)
             end
     end.

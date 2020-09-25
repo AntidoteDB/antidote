@@ -187,7 +187,7 @@ transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
             object_state -> States;
             object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
-                                          Type:value(State) end,
+                                          antidote_crdt:value(Type, State) end,
                                       lists:zip(States, Objects))
     end.
 
