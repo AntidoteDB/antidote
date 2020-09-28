@@ -29,7 +29,7 @@
 %% Module for handling bounded counter operations.
 %% Allows safe increment, decrement and transfer operations.
 %% Basic inter-dc reservations manager only requests remote reservations
-%% when necessay.
+%% when necessary.
 %% Transfer requests are throttled to prevent distribution unbalancing
 %% (TODO: implement inter-dc transference policy E.g, round-robin).
 
@@ -39,7 +39,7 @@
 -export([start_link/0,
          generate_downstream/3,
          process_transfer/1,
-         request_response/2
+         request_response/1
         ]).
 
 -export([init/1,
@@ -52,6 +52,7 @@
 
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -record(state, {req_queue :: orddict:orddict(),
                 last_transfers :: orddict:orddict(),
@@ -69,7 +70,6 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    lager:info("Started Bounded counter manager at node ~p", [node()]),
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 
@@ -78,13 +78,13 @@ init([]) ->
 %% below 0), operation fails, otherwhise a downstream for the decrement
 %% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     gen_server:call(?MODULE, {consume, Key, {decrement, {V, MyDCId}}, BCounter});
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
 generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 
 %% @doc Processes a trasfer operation between two owners of the
@@ -102,19 +102,20 @@ process_transfer({transfer, TransferOp}) ->
 
 handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=State) ->
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case can_process(Key, Requester, NewLT) of
         true ->
             {SKey, Bucket} = Key,
             BObj = {SKey, ?DATA_TYPE, Bucket},
-            antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
+            % try to transfer locks, might return {error,no_permissions} if not enough permissions are available locally
+            _ = antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
             {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
     end.
 
 handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case ?DATA_TYPE:generate_downstream_check({Op, Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
             Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
@@ -125,7 +126,7 @@ handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue
     end.
 
 handle_info(transfer_periodic, #state{req_queue=RQ0, transfer_timer=OldTimer}=State) ->
-    erlang:cancel_timer(OldTimer),
+    _ = erlang:cancel_timer(OldTimer),
     RQ = clear_pending_req(RQ0, ?REQUEST_TIMEOUT),
     RQNew = orddict:fold(
               fun(Key, Queue, Accum) ->
@@ -165,7 +166,7 @@ queue_request(Key, Amount, RequestsQueue) ->
 request_remote(0, _Key) -> 0;
 
 request_remote(RequiredSum, Key) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     {SKey, Bucket} = Key,
     BObj = {SKey, ?DATA_TYPE, Bucket},
     {ok, [Obj], _} = antidote:read_objects(ignore, [], [BObj]),
@@ -188,28 +189,19 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({request_permissions,
                                 {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
-    inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
-                                   BinaryMsg, fun bcounter_mgr:request_response/2).
+    inter_dc_query_dealer:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
+                                   BinaryMsg, fun bcounter_mgr:request_response/1).
 
 %% Orders the reservation of each DC, from high to low.
 pref_list(Obj) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
-    OtherDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
-                                     case Id == MyDCId of
-                                         true -> IdsList;
-                                         false -> [Id | IdsList]
-                                     end
-                             end, [], OtherDCDescriptors),
-    lists:sort(
-      fun({_, A}, {_, B}) -> A =< B end,
-      lists:foldl(fun(Id, Accum) ->
-                          Permissions = ?DATA_TYPE:localPermissions(Id, Obj),
-                          [{Id, Permissions} | Accum]
-                  end, [], OtherDCIds)).
+    OtherDCIds = [ Id || #descriptor{dcid=Id} <- OtherDCDescriptors, Id /= MyDCId ],
+    OtherDCPermissions = [ {Id, ?DATA_TYPE:localPermissions(Id, Obj)} || Id <- OtherDCIds],
+    lists:sort(fun({_, A}, {_, B}) -> A =< B end, OtherDCPermissions).
 
 %% Request response - do nothing.
-request_response(_BinaryRep, _RequestCacheEntry) -> ok.
+request_response(_BinaryRep) -> ok.
 
 cancel_consecutive_req(LastTransfers, Period) ->
     CurrTime = erlang:timestamp(),
@@ -226,7 +218,7 @@ clear_pending_req(LastRequests, Period) ->
                    end , LastRequests).
 
 can_process(Key, Requester, LastTransfers) ->
-    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_utilities:get_my_dc_id(),
     case Requester == MyDCId of
         false ->
             case orddict:find({Key, Requester}, LastTransfers) of

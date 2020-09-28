@@ -25,7 +25,14 @@
 %% List of the contributors to the development of Antidote: see AUTHORS file.
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
+
+%% @doc Implements application callbacks, starts the antidote supervisor
+%% process, registers riak_core applications and stops the server
+%%
+
 -module(antidote_app).
+
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(application).
 
@@ -37,6 +44,14 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    ok = validate_data_dir(),
+
+    % set the error logger counting the number of errors during operation
+    ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
+
+    % set the warning logger counting the number of warnings during operation
+    ok = logger:add_handler(count_warnings, antidote_warning_monitor, #{level => warning}),
+
     case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
@@ -66,7 +81,7 @@ start(_StartType, _StartArgs) ->
             case application:get_env(antidote, auto_start_read_servers) of
                 {ok, true} ->
                     %% start read servers
-                    inter_dc_manager:start_bg_processes(stable);
+                    inter_dc_manager:start_bg_processes(stable_time_functions);
                 _->
                     ok %dont_start_read_servers
             end,
@@ -75,5 +90,33 @@ start(_StartType, _StartArgs) ->
             {error, Reason}
     end.
 
+validate_data_dir() ->
+    {ok, DataDir} = application:get_env(antidote, data_dir),
+    case filelib:ensure_dir(filename:join(DataDir, "dummy")) of
+        ok -> ok;
+        {error, Reason} ->
+            ?LOG_CRITICAL("Data directory ~p does not exist, and could not be created: ~p", [DataDir, Reason]),
+            throw({error, invalid_data_dir})
+    end.
+
 stop(_State) ->
     ok.
+
+
+%% ===================================================================
+%% Unit Tests
+%% ===================================================================
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% Throw error if data dir is a file
+data_dir_is_a_file_test() ->
+    {ok, Level} = maps:find(level, logger:get_primary_config()),
+    logger:set_primary_config(level, emergency),
+    application:set_env(antidote, data_dir, "tmpfile"),
+    ok = file:write_file("tmpfile", <<"hello">>),
+    {error, invalid_data_dir} = (catch validate_data_dir()),
+    logger:set_primary_config(level, Level),
+    ok = file:delete("tmpfile").
+-endif.

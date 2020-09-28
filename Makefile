@@ -1,5 +1,6 @@
 REBAR = $(shell pwd)/rebar3
-.PHONY: rel test relgentlerain
+COVERPATH = $(shell pwd)/_build/test/cover
+.PHONY: rel test relgentlerain docker-build docker-run
 
 all: compile
 
@@ -18,15 +19,11 @@ cleantests:
 	rm -f test/multidc/*.beam
 	rm -rf logs/
 
-shell:
-	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
-
-# same as shell, but automatically reloads code when changed
-# to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
-# the tool requires inotifywait (sudo apt install inotify-tools)
-# see https://github.com/vans163/rebar3_auto or http://blog.erlware.org/rebar3-auto-comile-and-load-plugin/
-auto:
-	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+shell: rel
+	export NODE_NAME=antidote@127.0.0.1 ; \
+	export COOKIE=antidote ; \
+	export ROOT_DIR_PREFIX=$$NODE_NAME/ ; \
+	_build/default/rel/antidote/bin/antidote console ${ARGS}
 
 rel:
 	$(REBAR) release
@@ -39,7 +36,7 @@ reltest: rel
 
 # style checks
 lint:
-	${REBAR} as lint lint
+	${REBAR} lint
 
 check: distclean cleantests test reltest dialyzer lint
 
@@ -52,37 +49,68 @@ relnocert: relclean cleantests rel
 stage :
 	$(REBAR) release -d
 
-include tools.mk
+compile-utils: compile
+	for filename in "test/utils/*.erl" ; do \
+		erlc -o test/utils $$filename ; \
+	done
 
-# Tutorial targets.
+test:
+	${REBAR} eunit
 
-tutorial:
-	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
-	docker run -t -i cmeiklejohn/antidote-tutorial
+coverage:
+	# copy the coverdata files with a wildcard filter
+	# won't work if there are multiple folders (multiple systests)
+	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
+	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
+	${REBAR} cover --verbose
 
-# Mesos targets.
+singledc: compile-utils rel
+	rm -f test/singledc/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/singledc/${SUITE} -cover test/antidote.coverspec
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/singledc -cover test/antidote.coverspec
+endif
 
-foreground: rel
-	./_build/default/rel/antidote/bin/env foreground
+multidc: compile-utils rel
+	rm -f test/multidc/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
+else
+	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec -erl_args -hidden
+endif
 
-console: rel
-	./_build/default/rel/antidote/bin/env console
+propertytests: compile-utils rel
+	rm -f test/propertytests/*.beam
+	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/test/lib/*/ebin test/utils/ -logdir logs -suite test/propertytests/${SUITE} -cover test/antidote.coverspec -erl_args -hidden
+else
+	ct_run -pa ./_build/test/lib/*/ebin test/utils/ -logdir logs -dir test/propertytests -cover test/antidote.coverspec -erl_args -hidden
+endif
 
-mesos-docker-build:
-	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+systests: singledc multidc
 
-mesos-docker-run: mesos-docker-build
-	docker run -t -i cmeiklejohn/antidote-mesos
+docs:
+	${REBAR} doc skip_deps=true
 
-mesos-docker-build-dev:
-	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
+xref: compile
+	${REBAR} xref skip_deps=true
 
-mesos-docker-run-dev: mesos-docker-build-dev
-	docker run -t -i cmeiklejohn/antidote-mesos-dev
+dialyzer:
+	${REBAR} dialyzer
 
 docker-build:
-	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles
+	tmpdir=`mktemp -d` ; \
+	wget "https://raw.githubusercontent.com/AntidoteDB/docker-antidote/master/local-build/Dockerfile" -O "$$tmpdir/Dockerfile" ; \
+	docker build -f $$tmpdir/Dockerfile -t antidotedb:local-build .
 
-docker-local:
-	docker run --rm -v $(shell pwd):/code -w /code erlang:19 make rel
-	docker build -f Dockerfiles/Dockerfile-local -t antidotedb/antidote:local .
+docker-run: docker-build
+	docker run -d --name antidote -p "8087:8087" antidotedb:local-build
+
+docker-clean:
+ifneq ($(docker images -q antidotedb:local-build 2> /dev/null), "")
+	docker image rm -f antidotedb:local-build
+endif

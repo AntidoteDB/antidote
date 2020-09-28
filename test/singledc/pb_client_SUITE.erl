@@ -54,7 +54,9 @@
     crdt_set_rw_test/1,
     crdt_gmap_test/1,
     crdt_map_rr_test/1,
-    crdt_flag_tests/1
+    crdt_flag_tests/1,
+    aborted_transaction_test/1,
+    abort_transaction_test/1
 ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -98,7 +100,9 @@ all() -> [
     crdt_gmap_test,
     update_reg_test,
     crdt_map_rr_test,
-    crdt_flag_tests
+    crdt_flag_tests,
+    aborted_transaction_test,
+    abort_transaction_test
 ].
 
 
@@ -194,7 +198,7 @@ pb_test_set_read_write(_Config) ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
 
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, []),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
 
@@ -515,3 +519,38 @@ static_transaction_test(_Config) ->
     ?assertMatch(true, antidotec_set:contains(<<"a">>, Val)),
     ?assertMatch(true, antidotec_set:contains(<<"b">>, Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
+
+
+aborted_transaction_test(_Config) ->
+    Bucket = ?BUCKET_BIN,
+    Key = <<"pb_client_SUITE_pb_test_aborted_transaction_test">>,
+    {ok, Pid1} = antidotec_pb_socket:start_link(?ADDRESS, ?PORT),
+    {ok, Pid2} = antidotec_pb_socket:start_link(?ADDRESS, ?PORT),
+    Bound_object = {Key, antidote_crdt_register_mv, Bucket},
+    {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, []),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid2, ignore, []),
+
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, assign, <<"1">>}], Tx1),
+
+    ok = antidotec_pb:update_objects(Pid2, [{Bound_object, assign, <<"2">>}], Tx2),
+
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+    {error, aborted} = antidotec_pb:commit_transaction(Pid2, Tx2),
+
+    _ = antidotec_pb_socket:stop(Pid1),
+    _ = antidotec_pb_socket:stop(Pid2),
+    ok.
+
+
+abort_transaction_test(_Config) ->
+    Bucket = ?BUCKET_BIN,
+    Key = <<"pb_client_SUITE_pb_test_aborted_transaction_test">>,
+    {ok, Pid1} = antidotec_pb_socket:start_link(?ADDRESS, ?PORT),
+    Bound_object = {Key, antidote_crdt_register_mv, Bucket},
+    {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, []),
+
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, assign, <<"1">>}], Tx1),
+    ok = antidotec_pb:abort_transaction(Pid1, Tx1),
+
+    _ = antidotec_pb_socket:stop(Pid1),
+    ok.

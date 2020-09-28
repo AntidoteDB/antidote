@@ -38,6 +38,7 @@
 -behaviour(gen_server).
 
 -include("querying.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -113,7 +114,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-    lager:info("Started Query Optimizer at node ~p", [node()]),
+    ?LOG_INFO("Started Query Optimizer at node ~p", [node()]),
     {ok, #state{}}.
 
 handle_call({query, Filter, TxId}, _From, State) ->

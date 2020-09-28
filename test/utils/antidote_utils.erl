@@ -38,6 +38,7 @@
     increment_pn_counter/3,
 
     read_pn_counter/3,
+    read_pn_counter/4,
     read_b_counter/3,
     read_b_counter_commit/4,
 
@@ -62,13 +63,18 @@
 increment_pn_counter(Node, Key, Bucket) ->
     Obj = {Key, ?TYPE_PNC, Bucket},
     WriteResult = rpc:call(Node, antidote, update_objects, [ignore, [], [{Obj, increment, 1}]]),
-    ?assertMatch({ok, _}, WriteResult),
-    ok.
+    {ok, Vectorclock} = WriteResult,
+    Vectorclock.
 
 
 read_pn_counter(Node, Key, Bucket) ->
     Obj = {Key, ?TYPE_PNC, Bucket},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [ignore, [], [Obj]]),
+    {Value, CommitTime}.
+
+read_pn_counter(Node, Key, Bucket, Clock) ->
+    Obj = {Key, ?TYPE_PNC, Bucket},
+    {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [Clock, [], [Obj]]),
     {Value, CommitTime}.
 
 
@@ -164,7 +170,7 @@ update_sets_clock(Node, Keys, Ops, Clock, Bucket) ->
 spawn_com(FirstNode, TxId) ->
     timer:sleep(3000),
     End1 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
-    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
+    ?assertMatch({ok, {_, _}}, End1).
 
 
 spawn_read(Node, TxId, Return, Key, Type, Bucket) ->
@@ -173,8 +179,8 @@ spawn_read(Node, TxId, Return, Key, Type, Bucket) ->
 
 
 get_random_key() ->
-    rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    rand_compat:uniform(1000).  % TODO use deterministic keys in testcase
+    rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
+    rand:uniform(1000).  % TODO use deterministic keys in testcase
 
 
 find_key_same_node(FirstNode, IndexNode, Num) ->

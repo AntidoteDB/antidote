@@ -32,10 +32,11 @@
 
 -module(inter_dc_log_sender_vnode).
 -behaviour(riak_core_vnode).
+
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
-
+-include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([
@@ -67,17 +68,17 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: #op_number{},
+  last_log_id :: op_number(),
   timer :: any()
 }).
-
+-type state() :: #state{}.
 %%%% API --------------------------------------------------------------------+
 
 %% Send the new operation to the log_sender.
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
 %% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
--spec send(partition_id(), #log_record{}) -> ok.
+-spec send(partition_id(), log_record()) -> ok.
 send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
 
 %% Start the heartbeat timer
@@ -85,8 +86,8 @@ send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_se
 start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {start_timer}).
 
 %% After restarting from failure, load the operation id of the last operation sent by this DC
-%% Otherwise the stable time won't advance as the receving DC will be thinking it is getting old messages
--spec update_last_log_id(partition_id(), #op_number{}) -> ok.
+%% Otherwise the stable time won't advance as the receiving DC will be thinking it is getting old messages
+-spec update_last_log_id(partition_id(), op_number()) -> ok.
 update_last_log_id(Partition, OpId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId}).
 
 %% Send the stable time to this vnode, no transaction in the future will commit with a smaller time
@@ -111,11 +112,11 @@ handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
 handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
-    lager:debug("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
+    ?LOG_DEBUG("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
     {reply, ok, State#state{last_log_id = OpId}};
 
 %% Handle the new operation
-%% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
+%% -spec handle_command({log_event, log_record()}, pid(), state()) -> {noreply, state()}.
 handle_command({log_event, LogRecord}, _Sender, State) ->
   %% Use the txn_assembler to check if the complete transaction was collected.
   {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
@@ -173,18 +174,18 @@ handle_overload_info(_, _) ->
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Cancels the ping timer, if one is set.
--spec del_timer(#state{}) -> #state{}.
+-spec del_timer(state()) -> state().
 del_timer(State = #state{timer = none}) -> State;
 del_timer(State = #state{timer = Timer}) ->
   _ = erlang:cancel_timer(Timer),
   State#state{timer = none}.
 
 %% Cancels the previous ping timer and sets a new one.
--spec set_timer(#state{}) -> #state{}.
+-spec set_timer(state()) -> state().
 set_timer(State) ->
     set_timer(false, State).
 
--spec set_timer(boolean(), #state{}) -> #state{}.
+-spec set_timer(boolean(), state()) -> state().
 set_timer(First, State = #state{partition = Partition}) ->
     case First of
         true ->
@@ -205,7 +206,7 @@ set_timer(First, State = #state{partition = Partition}) ->
 
 
 %% Broadcasts the transaction via local publisher.
--spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
+-spec broadcast(state(), interdc_txn()) -> state().
 broadcast(State, Txn) ->
   inter_dc_pub:broadcast(Txn),
   Id = inter_dc_txn:last_log_opid(Txn),

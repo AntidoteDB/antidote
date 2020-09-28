@@ -62,11 +62,11 @@
 
 %% Public API
 
--spec start() -> {ok, _} | {error, term()}.
+-spec start() -> {ok, [atom()]} | {error, reason()}.
 start() ->
     application:ensure_all_started(antidote).
 
--spec stop() -> ok.
+-spec stop() -> ok | {error, reason()}.
 stop() ->
     application:stop(antidote).
 
@@ -134,7 +134,7 @@ unregister_hook(Prefix, Bucket) ->
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties) ->
-    cure:start_transaction(Clock, Properties, false).
+    cure:start_transaction(Clock, Properties).
 
 -spec abort_transaction(TxId::txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
@@ -181,7 +181,7 @@ query_objects(Filter, TxId) ->
 get_objects(Clock, Objects, Properties) ->
     cure:get_objects(Clock, Objects, Properties).
 
--spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
+-spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     case type_check(Updates, fun type_check_update/1) of
@@ -194,7 +194,7 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}])
+-spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}])
                      -> {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     case type_check(Updates, fun type_check_update/1) of
@@ -208,26 +208,27 @@ update_objects(Clock, Properties, Updates) ->
 
 -spec get_locks(default | integer(), [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
 get_locks(default, Locks, TxId) ->
-    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
+    cure:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
 get_locks(Timeout, Locks, TxId) ->
-    clocksi_interactive_coord:get_locks(Timeout, TxId, Locks).
+    cure:get_locks(Timeout, TxId, Locks).
 
 -spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, {[{txid(), [key()]}], [{txid(), [key()]}]}}.
 get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
-    clocksi_interactive_coord:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
+    cure:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
 get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
-    clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
+    cure:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
 
--spec release_locks(locks | es_locks, txid()) -> ok.
+-spec release_locks(antidote_locks:lock_kind(), txid()) -> ok.
 release_locks(Type, TxId) ->
-    clocksi_interactive_coord:release_locks(Type, TxId).
+    cure:release_locks(Type, TxId).
 
 %%% Internal function %%
 %%% ================= %%
 
+
+-spec type_check_update({bound_object(), op_name(), op_param()}) -> boolean().
 type_check_update({{_K, Type, _bucket}, Op, Param}) ->
-    antidote_crdt:is_type(Type) andalso
-        Type:is_operation({Op, Param}).
+    antidote_crdt:is_operation(Type, {Op, Param}).
 
 type_check_read({{_K, _T, _B} = BoundObject, {_Op, _Args}}) ->
     %% TODO: Check Op is valid. It requires each CRDT to export its read operations.

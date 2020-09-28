@@ -30,6 +30,7 @@
 -module(builtin_functions).
 
 -include("querying.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -230,7 +231,7 @@ parse_function(Function) when is_list(Function) ->
     catch
         Exception ->
             ErrorMsg = io_lib:format("An error ocurred when parsing a function: ~p", [Exception]),
-            lager:error(lists:flatten(ErrorMsg))
+            ?LOG_ERROR(lists:flatten(ErrorMsg))
     end.
 
 -ifdef(TEST).

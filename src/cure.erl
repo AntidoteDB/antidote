@@ -26,13 +26,21 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides a transaction API based on the CURE protocol
+%%      to replicate updates from one cluster to another.
+%%      CURE provides causal consistency along with high availability
+%%      and enables the updates to be made asynchronously.
+%%      CURE also allows applications to pack reads and writes to
+%%      multiple objects in a transaction.
+%%      CURE assumes each DC to keep the same number of partitions.
+%%      Link to the paper: https://pages.lip6.fr/Marc.Shapiro/papers/Cure-final-ICDCS16.pdf
+
 -module(cure).
 
 -include("antidote.hrl").
 
 
 -export([
-         start_transaction/3,
          start_transaction/2,
          commit_transaction/1,
          abort_transaction/1,
@@ -42,28 +50,23 @@
          get_objects/3,
          update_objects/2,
          update_objects/3,
-         update_objects/4,
-         obtain_objects/5,
+         obtain_objects/4,
          %% Following functions should be only used for testing
          clocksi_iprepare/1,
          clocksi_icommit/1
         ]).
 
 
--spec start_transaction(snapshot_time() | ignore, txn_properties(), boolean())
-                       -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, Properties, KeepAlive) ->
-    clocksi_istart_tx(Clock, Properties, KeepAlive).
-
 -spec start_transaction(snapshot_time() | ignore, txn_properties())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties) ->
-    clocksi_istart_tx(Clock, Properties, false).
+    clocksi_istart_tx(Clock, Properties).
+
 
 -spec abort_transaction(txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
     case gen_statem:call(TxId#tx_id.server_pid, {abort, []}) of
-        {error, {aborted, _TxId}} -> ok;
+        {error, aborted} -> ok;
         {error, Reason} -> {error, Reason}
     end.
 
@@ -104,7 +107,7 @@ update_objects(Updates, TxId) ->
         ok ->
             ok;
         {aborted, TxId} ->
-            {error, {aborted, TxId}};
+            {error, aborted};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -112,29 +115,26 @@ update_objects(Updates, TxId) ->
 %% For static transactions: bulk updates and bulk reads
 -spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
-update_objects(Clock, Properties, Updates) ->
-    update_objects(Clock, Properties, Updates, false).
-
--spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}], boolean()) ->
-                            {ok, snapshot_time()} | {error, reason()}.
-update_objects(_Clock, _Properties, [], _StayAlive) ->
+update_objects(_Clock, _Properties, []) ->
     {ok, vectorclock:new()};
-update_objects(ClientCausalVC, Properties, Updates, StayAlive) ->
-    {ok, TxId} = clocksi_istart_tx(ClientCausalVC, Properties, StayAlive),
+update_objects(ClientCausalVC, Properties, Updates) ->
+    {ok, TxId} = clocksi_istart_tx(ClientCausalVC, Properties),
     case update_objects(Updates, TxId) of
         ok -> commit_transaction(TxId);
         {error, Reason} -> {error, Reason}
     end.
 
+-spec read_objects(snapshot_time() | ignore, txn_properties(), [bound_object()]) ->
+    {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
-    obtain_objects(Clock, Properties, Objects, false, object_value).
+    obtain_objects(Clock, Properties, Objects, object_value).
 get_objects(Clock, Properties, Objects) ->
-    obtain_objects(Clock, Properties, Objects, false, object_state).
+    obtain_objects(Clock, Properties, Objects, object_state).
 
 
--spec obtain_objects(snapshot_time() | ignore, txn_properties(), [bound_object()], boolean(), object_value|object_state) ->
+-spec obtain_objects(snapshot_time() | ignore, txn_properties(), [bound_object()], object_value|object_state) ->
                           {ok, list(), vectorclock()} | {error, reason()}.
-obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
+obtain_objects(Clock, Properties, Objects, StateOrValue) ->
     SingleKey = case Objects of
                     [_O] -> %% Single key update
                         case Clock of
@@ -146,20 +146,14 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
     case SingleKey of
         true -> %% Execute the fast path
             FormattedObjects = format_read_params(Objects),
-            case FormattedObjects of
-                [{Key, Type}] ->
-                    {ok, Val, CommitTime} = clocksi_interactive_coord:
-                    perform_singleitem_operation(Clock, Key, Type, Properties),
-                    {ok, transform_reads([{{0, Key}, {state, Val}}], StateOrValue, Objects), CommitTime};
-                [{Key, Type, Function}] ->
-                    {ok, _, Val, CommitTime} = clocksi_interactive_coord:
-                    perform_singleitem_operation(Clock, Key, Type, Function, Properties),
-                    {ok, transform_reads([{{0, Key}, {value, Val}}], StateOrValue, Objects), CommitTime}
-            end;
+            [{Key, Type}] = FormattedObjects,
+            {ok, Val, CommitTime} = clocksi_interactive_coord:
+                perform_singleitem_operation(Clock, Key, Type, Properties),
+            {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
-                    {ok, TxId} = clocksi_istart_tx(Clock, Properties, StayAlive),
+                    {ok, TxId} = clocksi_istart_tx(Clock, Properties),
                     case obtain_objects(Objects, TxId, StateOrValue) of
                         {ok, Res} ->
                             {ok, CommitTime} = commit_transaction(TxId),
@@ -169,7 +163,7 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
                 {ok, gr} ->
                     case Objects of
                         [_Op] -> %% Single object read = read latest value
-                            {ok, TxId} = clocksi_istart_tx(Clock, Properties, StayAlive),
+                            {ok, TxId} = clocksi_istart_tx(Clock, Properties),
                             case obtain_objects(Objects, TxId, StateOrValue) of
                                 {ok, Res} ->
                                     {ok, CommitTime} = commit_transaction(TxId),
@@ -191,60 +185,23 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
 
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
-        object_state ->
-            {_, Result} = lists:foldl(fun(ReadObj, {Num, Acc}) ->
-                case ReadObj of
-                    {{K, _T, B}, {_Op, _Args}} ->
-                        {value, Value} = proplists:get_value({Num, {K, B}}, States),
-                        {Num + 1, lists:append(Acc, [Value])};
-                    {K, _T, B} ->
-                        {state, Snapshot} = proplists:get_value({Num, {K, B}}, States),
-                        {Num + 1, lists:append(Acc, [Snapshot])}
-                end
-            end, {0, []}, Objects),
-            Result;
-        object_value ->
-            {_, Result} = lists:foldl(fun(ReadObj, {Num, Acc}) ->
-                case ReadObj of
-                    {{K, _T, B}, {_Op, _Args}} ->
-                        {value, Value} = proplists:get_value({Num, {K, B}}, States),
-                        {Num + 1, lists:append(Acc, [Value])};
-                    {K, Type, B} ->
-                        {state, Snapshot} = proplists:get_value({Num, {K, B}}, States),
-                        {Num + 1, lists:append(Acc, [Type:value(Snapshot)])}
-                end
-            end, {0, []}, Objects),
-            Result
+            object_state -> States;
+            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
+                                          Type:value(State) end,
+                                      lists:zip(States, Objects))
     end.
-
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(snapshot_time() | ignore, txn_properties(), boolean()) ->
+-spec clocksi_istart_tx(snapshot_time() | ignore, txn_properties()) ->
                                {ok, txid()} | {error, reason()}.
-clocksi_istart_tx(Clock, Properties, KeepAlive) ->
-    TxPid = case KeepAlive of
-                true ->
-                    whereis(clocksi_interactive_coord:generate_name(self()));
-                false ->
-                    undefined
-            end,
-    _ = case TxPid of
-            undefined ->
-                {ok, _} = clocksi_interactive_coord_sup:start_fsm([self(), Clock,
-                                                                      Properties, KeepAlive]);
-            TxPid ->
-                ok = gen_statem:cast(TxPid, {start_tx, self(), Clock, Properties})
-        end,
-    receive
-        {ok, TxId} ->
-            {ok, TxId};
-        Other ->
-            {error, Other}
-    end.
+clocksi_istart_tx(Clock, Properties) ->
+    {ok, Pid} = clocksi_interactive_coord_sup:start_fsm(),
+    gen_statem:call(Pid, {start_tx, Clock, Properties}).
+
 
 -spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}
                                           | {error, reason()}.
@@ -261,16 +218,16 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     %% GST = scalar stable time
     %% VST = vector stable time with entries for each dc
     {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
-    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    DcId = dc_utilities:get_my_dc_id(),
+    Dt = vectorclock:get(DcId, ClientClock),
     case Dt =< GST of
         true ->
             %% Set all entries in snapshot as GST
-            ST = dict:map(fun(_, _) -> GST end, VST),
+            ST = vectorclock:set_all(GST, VST),
             %% ST doesnot contain entry for local dc, hence explicitly
             %% add it in snapshot time
-            SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
-            {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}], false),
+            SnapshotTime = vectorclock:set(DcId, GST, ST),
+            {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}]),
             case obtain_objects(Objects, TxId, StateOrValue) of
                 {ok, Res} ->
                     {ok, CommitTime} = commit_transaction(TxId),
@@ -317,3 +274,6 @@ clocksi_iprepare(TxId)->
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit(TxId)->
     gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).
+
+
+-spec get_locks()

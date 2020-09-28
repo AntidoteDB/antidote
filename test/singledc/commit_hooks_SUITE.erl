@@ -75,16 +75,24 @@ register_hook_test(Config) ->
     Node = proplists:get_value(node, Config),
     Bucket = ?BUCKET,
 
+    ok = rpc:call(Node, antidote, register_pre_hook, [Bucket, antidote_hooks, test_increment_hook]),
+    Result0 = rpc:call(Node, antidote_hooks, get_hooks, [pre_commit, Bucket]),
+    ?assertMatch({antidote_hooks, test_increment_hook}, Result0),
+
+    ok = rpc:call(Node, antidote, unregister_hook, [pre_commit, Bucket]),
+    Result1 = rpc:call(Node, antidote_hooks, get_hooks, [pre_commit, Bucket]),
+    ?assertMatch(undefined, Result1),
+
     Response = rpc:call(Node, antidote, register_pre_hook, [Bucket, hooks_module, hooks_function]),
     ?assertMatch({error, _}, Response),
 
     ok = rpc:call(Node, antidote_hooks, register_post_hook, [Bucket, antidote_hooks, test_commit_hook]),
-    Result1 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
-    ?assertMatch({antidote_hooks, test_commit_hook}, Result1),
+    Result2 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
+    ?assertMatch({antidote_hooks, test_commit_hook}, Result2),
 
     ok = rpc:call(Node, antidote, unregister_hook, [post_commit, Bucket]),
-    Result2 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
-    ?assertMatch(undefined, Result2).
+    Result3 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
+    ?assertMatch(undefined, Result3).
 
 
 %% Test pre-commit hook
@@ -96,7 +104,6 @@ execute_hook_test(Config) ->
     ok = rpc:call(Node, antidote, register_pre_hook, [Bucket, antidote_hooks, test_increment_hook]),
 
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ct:log("Txid ~p", [TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{BoundObject, increment, 1}], TxId]),
     {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 

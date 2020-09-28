@@ -28,8 +28,6 @@
 
 -module(clocksi_SUITE).
 
--compile({parse_transform, lager_transform}).
-
 %% common_test callbacks
 -export([
     init_per_suite/1,
@@ -220,7 +218,7 @@ clocksi_read_write_write_txn_test(Config) ->
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
-    ?assertMatch({ok, _CausalSnapshot}, End),
+    ?assertMatch({ok, _}, End),
     {ok, CausalSnapshot} = End,
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
 
@@ -435,7 +433,6 @@ clocksi_static_parallel_writes_test(Config) ->
                           {BoundObject3, increment, 3},
                           {BoundObject4, increment, 4},
                           {BoundObject5, increment, 5}]
-                        , true
                         ]),
 
     ct:log("updated 5 objects no problem"),
@@ -444,7 +441,7 @@ clocksi_static_parallel_writes_test(Config) ->
                               [CT, [], [BoundObject1,
                                         BoundObject2, BoundObject3,
                                         BoundObject4, BoundObject5],
-                              true, object_value
+                              object_value
                               ]),
     ?assertMatch([1, 2, 3, 4, 5], Res),
 
@@ -458,12 +455,11 @@ clocksi_static_parallel_writes_test(Config) ->
                            {BoundObject1, increment, 1},
                            {BoundObject1, increment, 1},
                            {BoundObject1, increment, 1}]
-                         , true
                          ]),
 
     ct:log("updated 5 objects concurrently"),
 
     {ok, Res1, _CT4} = rpc:call(Node, cure, obtain_objects,
-                                [CT2, [], [BoundObject1], true, object_value]),
+                                [CT2, [], [BoundObject1], object_value]),
     ?assertMatch([6], Res1),
     pass.

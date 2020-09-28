@@ -43,7 +43,7 @@
 %% This can break the tests is not set to 0
 -define(OLD_SS_MICROSEC,0).
 %% The number of supervisors that are responsible for
-%% supervising transaction coorinator fsms
+%% supervising transaction coordinator fsms
 -define(NUM_SUP, 100).
 %% Threads will sleep for this length when they have to wait
 %% for something that is not ready after which they
@@ -57,13 +57,7 @@
 -define(VECTORCLOCK_UPDATE_PERIOD, 20).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 100).
--define(META_TABLE_NAME, a_meta_data_table).
--define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
--define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
-%% At commit, if this is set to true, the logging vnode
-%% will ensure that the transaction record is written to disk
--define(SYNC_LOG, false).
+-define(META_DATA_SLEEP, 1000).
 %% Uncomment the following line to use erlang:now()
 %% Otherwise os:timestamp() is used which can go backwards
 %% which is unsafe for clock-si
@@ -79,16 +73,17 @@
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
 %% The definition "FIRST_OP" is used by the materializer.
-%% The materialzer caches a tuple for each key containing
+%% The materializer caches a tuple for each key containing
 %% information about the state of operations performed on that key.
 %% The first 3 elements in the tuple are the following meta-data:
 %% First is the key itself
-%% Second is a tuple defined as {the number of update operations stored in the tupe, the size of the tuple}
-%% Thrid is a counter that keeps track of how many update operations have been performed on this key
+%% Second is a tuple defined as {the number of update operations stored in the tuple, the size of the tuple}
+%% Third is a counter that keeps track of how many update operations have been performed on this key
 %% Fourth is where the first update operation is stored
 %% The remaining elements are update operations
 -define(FIRST_OP, 4).
 
+%%TODO can this record be deleted? Or is it used in other branches?
 -record(payload, {
     key :: key(),
     type :: type(),
@@ -100,6 +95,7 @@
     commit_time :: dc_and_commit_time(),
     snapshot_time :: snapshot_time()
 }).
+-type commit_log_payload() :: #commit_log_payload{}.
 
 -record(update_log_payload, {
     key :: key(),
@@ -107,6 +103,7 @@
     type :: type(),
     op :: op()
 }).
+-type update_log_payload() :: #update_log_payload{}.
 
 -record(abort_log_payload, {}).
 
@@ -126,6 +123,7 @@
              | noop,
     log_payload :: any_log_payload()
 }).
+-type log_operation() :: #log_operation{}.
 
 -record(op_number, {
     %% TODO 19 undefined is required here, because of the use in inter_dc_log_sender_vnode.
@@ -134,16 +132,17 @@
     global :: undefined | non_neg_integer(),
     local :: undefined | non_neg_integer()
 }).
+-type op_number() :: #op_number{}.
 
 %% The way records are stored in the log.
 -record(log_record, {
-    %% The version of the log record, for backwards compatability
+    %% The version of the log record, for backwards compatibility
     version :: non_neg_integer(),
-    op_number :: #op_number{},
-    bucket_op_number :: #op_number{},
-    log_operation :: #log_operation{}
+    op_number :: op_number(),
+    bucket_op_number :: op_number(),
+    log_operation :: log_operation()
 }).
-
+-type log_record() :: #log_record{}.
 %% Clock SI
 
 %% MIN is Used for generating the timeStamp of a new snapshot
@@ -157,7 +156,13 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify} | {locks, [key()]}].
+-type txn_property() ::
+      {update_clock, boolean()}
+    | {certify, use_default | certify | dont_certify}
+    | {shared_locks, [binary()]}
+    | {exclusive_locks, [binary()]}
+.
+-type txn_properties() :: [txn_property()].
 
 -record(transaction, {
     snapshot_time_local :: clock_time(),
@@ -174,7 +179,7 @@
     last_op_id :: op_num(),
     value :: snapshot()
 }).
-
+-type materialized_snapshot() :: #materialized_snapshot{}.
 %%---------------------------------------------------------------------
 -type actor() :: term().
 -type key() :: term().
@@ -184,8 +189,10 @@
 -type op() :: {op_name(), op_param()}.
 -type effect() :: term().
 
--type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
--type snapshot_time() :: 'undefined' | vectorclock:vectorclock().
+
+%% DC Id is the riak_core ring cluster name
+-type dcid() :: undefined | {term(), term()}.
+-type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
 -type dc_and_commit_time() :: {dcid(), clock_time()}.
 
@@ -214,16 +221,14 @@
 
 -type crdt() :: term().
 -type val() :: term().
--type reason() :: atom().
-%%chash:index_as_int() is the same as riak_core_apl:index().
-%%If it is changed in the future this should be fixed also.
--type index_node() :: {chash:index_as_int(), node()}.
+-type reason() :: term().
+-type index_node() :: {partition_id(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_num() :: non_neg_integer().
 -type op_id() :: {op_num(), node()}.
 -type payload() :: term().
--type partition_id() :: ets:tid() | integer(). % TODO 19 adding integer basically makes the tid type non-opaque, because some places of the code depend on it being an integer. This dependency should be removed, if possible.
+-type partition_id() :: chash:index_as_int().
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
@@ -247,7 +252,10 @@
               bound_object/0,
               module_name/0,
               function_name/0,
-              clocksi_payload/0]).
+              clocksi_payload/0,
+              materialized_snapshot/0,
+              snapshot_get_response/0, log_operation/0, log_record/0, op_number/0,
+              update_log_payload/0, commit_log_payload/0]).
 
 
 %% The record is using during materialization to keep the
@@ -258,9 +266,12 @@
     %% size of ops_list
     number_of_ops :: non_neg_integer(),
     %% the previous snapshot to apply the ops to
-    materialized_snapshot :: #materialized_snapshot{},
+    materialized_snapshot :: materialized_snapshot(),
     %% The version vector time of the snapshot
     snapshot_time :: snapshot_time() | ignore,
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).
+-type snapshot_get_response() :: #snapshot_get_response{}.
+
+-define(STATS(Type), case application:get_env(antidote, stats, true) of true -> gen_server:cast(antidote_stats_collector, Type); _ -> ok end).

@@ -41,7 +41,8 @@
          simple_replication_test/1,
          failure_test/1,
          blocking_test/1,
-         parallel_writes_test/1]).
+         parallel_writes_test/1
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -135,15 +136,7 @@ parallel_writes_test(Config) ->
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time = dict:merge(fun(_K, T1, T2) ->
-                                                  max(T1, T2)
-                                          end,
-                                          CT3, dict:merge(
-                                                 fun(_K, T1, T2) ->
-                                                         max(T1, T2)
-                                                 end,
-                                                 CT1, CT2)),
-
+                        Time = vectorclock:max([CT3, CT1, CT2]),
                         check_read_key(Node1, Key, Type, 15, Time, static, Bucket),
                         check_read_key(Node2, Key, Type, 15, Time, static, Bucket),
                         check_read_key(Node3, Key, Type, 15, Time, static, Bucket),

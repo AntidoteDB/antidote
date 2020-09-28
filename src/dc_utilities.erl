@@ -26,8 +26,13 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
+%% @doc Provides utility functions for data centers.
+%%      Note: This module acts as an adapter for riak_core.
+
 -module(dc_utilities).
+
 -include("antidote.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
   get_my_dc_id/0,
@@ -50,19 +55,13 @@
   check_staleness/0,
   check_registered/1,
   get_scalar_stable_time/0,
-  get_partition_snapshot/1,
   get_stable_snapshot/0,
   check_registered_global/1,
   now_microsec/0,
   now_millisec/0]).
 
+
 %% Returns the ID of the current DC.
-%% This should not be called manually (it is only used the very
-%% first time the DC is started), instead if you need to know
-%% the id of the DC use the following:
-%% dc_meta_data_utilites:get_my_dc_id
-%% The reason is that the dcid can change on fail and restart, but
-%% the original name is stored on disk in the meta_data_utilities
 -spec get_my_dc_id() -> dcid().
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -96,7 +95,7 @@ get_all_partitions() ->
         [I || {I, _} <- Nodes]
     catch
         _Ex:Res ->
-            lager:debug("Error loading partition names: ~p, will retry", [Res]),
+            ?LOG_DEBUG("Error loading partition names: ~p, will retry", [Res]),
             get_all_partitions()
     end.
 
@@ -110,7 +109,7 @@ get_all_partitions_nodes() ->
         chash:nodes(CHash)
     catch
         _Ex:Res ->
-            lager:debug("Error loading partition-node names ~p, will retry", [Res]),
+            ?LOG_DEBUG("Error loading partition-node names ~p, will retry", [Res]),
             get_all_partitions_nodes()
     end.
 
@@ -173,7 +172,8 @@ ensure_all_vnodes_running(VnodeType) ->
     case Partitions == Running of
         true -> ok;
         false ->
-            lager:debug("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            ?LOG_DEBUG("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            %TODO: Extract into configuration constant
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
     end.
@@ -196,7 +196,8 @@ bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
           end,
     case Err of
         true ->
-            lager:debug("Vnode not up retrying, ~p, ~p", [VMaster, P]),
+            ?LOG_DEBUG("Vnode not up retrying, ~p, ~p", [VMaster, P]),
+            %TODO: Extract into configuration constant
             timer:sleep(1000),
             bcast_vnode_check_up(VMaster, Request, [P|Rest]);
         false ->
@@ -204,7 +205,7 @@ bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
     end.
 
 %% Loops until all vnodes of a given type are running
-%% on the local phyical node from which this was funciton called
+%% on the local physical node from which this was funciton called
 -spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
@@ -217,23 +218,23 @@ ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType, {hello}, get_all_partitions()).
 
-%% Prints to the console the staleness between this DC and all
+%% Prints to the logging framework the staleness between this DC and all
 %% other DCs that it is connected to
 -spec check_staleness() -> ok.
 check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
-    dict:fold(fun(DcId, Time, _Acc) ->
-                  io:format("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]),
-                  ok
-              end, ok, SS).
+    PrintFun = fun(DcId, Time) ->
+        ?LOG_DEBUG("~w staleness: ~w ms", [DcId, (Now-Time)/1000]) end,
+    _ = vectorclock:map(PrintFun, SS),
+    ok.
 
 %% Loops until a process with the given name is registered locally
 -spec check_registered(atom()) -> ok.
 check_registered(Name) ->
     case whereis(Name) of
         undefined ->
-            lager:debug("Wait for ~p to register", [Name]),
+            ?LOG_DEBUG("Wait for ~p to register", [Name]),
             timer:sleep(100),
             check_registered(Name);
         _ ->
@@ -245,9 +246,10 @@ check_registered(Name) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
+    case meta_data_sender:get_merged_data(stable_time_functions, vectorclock:new()) of
         undefined ->
-            %% The snapshot isn't realy yet, need to wait for startup
+            %% The snapshot isn't ready yet, need to wait for startup
+            %TODO: Extract into configuration constant
             timer:sleep(10),
             get_stable_snapshot();
         SS ->
@@ -260,43 +262,23 @@ get_stable_snapshot() ->
                     %% For gentlerain use the same format as clocksi
                     %% But, replicate GST to all entries in the dict
                     StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
+                    case vectorclock:size(StableSnapshot) of
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = dict:fold(
-                                         fun(_Key, Value, Acc) ->
-                                                 [Value | Acc ]
-                                         end, [], StableSnapshot),
-                            GST = lists:min(ListTime),
-                            {ok, dict:map(
-                                   fun(_K, _V) ->
-                                           GST
-                                   end,
-                                   StableSnapshot)}
+                            MembersInDc = dc_utilities:get_my_dc_nodes(),
+                            GST = vectorclock:min_clock(StableSnapshot, MembersInDc),
+                            {ok, vectorclock:set_all(GST, StableSnapshot)}
                     end
             end
     end.
 
--spec get_partition_snapshot(partition_id()) -> snapshot_time().
-get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta_dict(stable, Partition) of
-        undefined ->
-            %% The partition isn't ready yet, wait for startup
-            timer:sleep(10),
-            get_partition_snapshot(Partition);
-        SS ->
-            SS
-    end.
-
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
--spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
+-spec get_scalar_stable_time() -> {ok, pos_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-    %% dict:is_empty/1 is not available, hence using dict:size/1
-    %% to check whether it is empty
-    case dict:size(StableSnapshot) of
+    case vectorclock:size(StableSnapshot) of
         0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas
@@ -305,15 +287,9 @@ get_scalar_stable_time() ->
             Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
             {ok, Now, StableSnapshot};
         _ ->
-            %% This is correct only if stablesnapshot has entries for
-            %% all DCs. Inorder to check that we need to configure the
-            %% number of DCs in advance, which is not possible now.
-            ListTime = dict:fold(
-                         fun(_Key, Value, Acc) ->
-                                 [Value | Acc ]
-                         end, [], StableSnapshot),
-            GST = lists:min(ListTime),
-            {ok, GST, StableSnapshot}
+            MembersInDc = dc_utilities:get_my_dc_nodes(),
+            GST = vectorclock:min_clock(StableSnapshot, MembersInDc),
+            {ok, GST, vectorclock:set_all(GST, StableSnapshot)}
     end.
 
 %% Loops until a process with the given name is registered globally

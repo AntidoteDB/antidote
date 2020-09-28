@@ -45,7 +45,7 @@
 
 %% Functions
 
--spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
+-spec from_ops([log_record()], partition_id(), op_number() | none) -> interdc_txn().
 from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
   CommitPld = LastOp#log_record.log_operation,
@@ -60,17 +60,17 @@ from_ops(Ops, Partition, PrevLogOpId) ->
     timestamp = CommitTime
   }.
 
--spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
+-spec ping(partition_id(), op_number() | none, non_neg_integer()) -> interdc_txn().
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
-  dcid = dc_meta_data_utilities:get_my_dc_id(),
+  dcid = dc_utilities:get_my_dc_id(),
   partition = Partition,
   prev_log_opid = PrevLogOpId,
   log_records = [],
-  snapshot = dict:new(),
+  snapshot = vectorclock:new(),
   timestamp = Timestamp
 }.
 
--spec last_log_opid(#interdc_txn{}) -> #op_number{}.
+-spec last_log_opid(interdc_txn()) -> op_number().
 last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
     case is_ping(Txn) of
         true -> LogOpId;
@@ -81,24 +81,24 @@ last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
             LastOp#log_record.op_number
     end.
 
--spec is_local(#interdc_txn{}) -> boolean().
-is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_meta_data_utilities:get_my_dc_id().
+-spec is_local(interdc_txn()) -> boolean().
+is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_utilities:get_my_dc_id().
 
--spec is_ping(#interdc_txn{}) -> boolean().
+-spec is_ping(interdc_txn()) -> boolean().
 is_ping(#interdc_txn{log_records = Ops}) -> Ops == [].
 
--spec ops_by_type(#interdc_txn{}, any()) -> [#log_record{}].
+-spec ops_by_type(interdc_txn(), any()) -> [log_record()].
 ops_by_type(#interdc_txn{log_records = Ops}, Type) ->
   F = fun(Op) -> Type == Op#log_record.log_operation#log_operation.op_type end,
   lists:filter(F, Ops).
 
--spec to_bin(#interdc_txn{}) -> binary().
+-spec to_bin(interdc_txn()) -> binary().
 to_bin(Txn = #interdc_txn{partition = P}) ->
   Prefix = partition_to_bin(P),
   Msg = term_to_binary(Txn),
   <<Prefix/binary, Msg/binary>>.
 
--spec from_bin(binary()) -> #interdc_txn{}.
+-spec from_bin(binary()) -> interdc_txn().
 from_bin(Bin) ->
   L = byte_size(Bin),
   Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
@@ -130,7 +130,7 @@ partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigne
 
 %% These are interdc message ids, as non-neg-integers, encoded as unsigned
 %% They are of a fixed binary size, looping back to zero
-%% once the max size is reached (by triming the bits on the left)
+%% once the max size is reached (by trimming the bits on the left)
 -spec req_id_to_bin(non_neg_integer()) -> binary().
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).

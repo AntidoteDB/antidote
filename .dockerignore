@@ -1,3 +1,2 @@
-*
-!_build/default/rel
-!Dockerfiles
+_build
+test

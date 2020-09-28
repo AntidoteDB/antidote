@@ -58,8 +58,10 @@
 -module(antidote_hooks).
 
 -include("antidote.hrl").
-
+-include_lib("kernel/include/logger.hrl").
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([register_pre_hook/3,
          register_post_hook/3,
@@ -73,22 +75,22 @@
          execute_post_commit_hook/3
         ]).
 
--ifdef(TEST).
+
 -export([test_commit_hook/1,
-         test_increment_hook/2,
+         test_increment_hook/1,
          test_post_hook/1]).
--endif.
+
 
 -define(PREFIX_PRE, {commit_hooks, pre}).
 -define(PREFIX_POST, {commit_hooks, post}).
 
 -spec register_post_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, reason()}.
+      ok | {error, function_not_exported}.
 register_post_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_POST, Bucket, Module, Function).
 
 -spec register_pre_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, reason()}.
+      ok | {error, function_not_exported}.
 register_pre_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_PRE, Bucket, Module, Function).
 
@@ -98,7 +100,7 @@ register_hook(Prefix, Bucket, Module, Function) ->
         orelse erlang:function_exported(Module, Function, 2), % with a transaction parameter
     case IsExported of
         true ->
-            riak_core_metadata:put(Prefix, Bucket, {Module, Function}),
+            stable_meta_data_server:broadcast_meta_data({Prefix, Bucket}, {Module, Function}),
             ok;
         false ->
             {error, function_not_exported}
@@ -106,16 +108,22 @@ register_hook(Prefix, Bucket, Module, Function) ->
 
 -spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.
 unregister_hook(pre_commit, Bucket) ->
-    riak_core_metadata:delete(?PREFIX_PRE, Bucket);
-
+    stable_meta_data_server:broadcast_meta_data({?PREFIX_PRE, Bucket}, undefined);
 unregister_hook(post_commit, Bucket) ->
-    riak_core_metadata:delete(?PREFIX_POST, Bucket).
+    stable_meta_data_server:broadcast_meta_data({?PREFIX_POST, Bucket}, undefined).
 
 get_hooks(pre_commit, Bucket) ->
-    riak_core_metadata:get(?PREFIX_PRE, Bucket);
-
+    R = stable_meta_data_server:read_meta_data({?PREFIX_PRE, Bucket}),
+    case R of
+        {ok, Hooks} -> Hooks;
+        error -> undefined
+    end;
 get_hooks(post_commit, Bucket) ->
-    riak_core_metadata:get(?PREFIX_POST, Bucket).
+    R = stable_meta_data_server:read_meta_data({?PREFIX_POST, Bucket}),
+    case R of
+        {ok, Hooks} -> Hooks;
+        error -> undefined
+    end.
 
 has_hook(PreOrPost, Bucket)
     when is_atom(PreOrPost) ->
@@ -132,7 +140,7 @@ execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
             try Module:Function({{Key, Bucket}, Type, Param}) of
                 {ok, Res} -> Res
             catch
-                _:Reason -> {error, {pre_commit_hook, Reason}}
+                _:Reason -> {error, {pre_commit_hook, {Reason, Module, Function}}}
             end
     end;
 %% The following is kept to be backward compatible with the old
@@ -158,7 +166,7 @@ execute_pre_commit_hook({Key, Bucket}, Type, Param, Transaction) ->
             try Module:Function({{Key, Bucket}, Type, Param}, Transaction) of
                 {ok, Res} -> Res
             catch
-                _:Reason -> {error, {pre_commit_hook, Reason}}
+                _:Reason -> {error, {pre_commit_hook, {Reason, Module, Function}}}
             end
     end;
 execute_pre_commit_hook(Key, Type, Param, _TxId) ->
@@ -189,18 +197,18 @@ execute_post_commit_hook(Updates) when is_list(Updates) ->
         execute_post_commit_hook({Key, Bucket}, Type, Param)
     end, Updates).
 
--ifdef(TEST).
+
 %% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
 
 test_commit_hook(Object) ->
-    lager:info("Executing test commit hook"),
+    ?LOG_INFO("Executing test commit hook"),
     {ok, Object}.
 
-test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}, _Tx) ->
+test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) ->
     {ok, {{Key, Bucket}, antidote_crdt_counter_pn, {increment, 2}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->
     {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter_pn, commitcount}, increment, 1}]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
--endif.
+
