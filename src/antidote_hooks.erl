@@ -125,6 +125,7 @@ get_hooks(post_commit, Bucket) ->
         error -> undefined
     end.
 
+-spec has_hook(pre_commit | post_commit, bucket()) -> boolean().
 has_hook(PreOrPost, Bucket)
     when is_atom(PreOrPost) ->
     get_hooks(PreOrPost, Bucket) =/= undefined.

@@ -63,7 +63,7 @@
     read_function/3, read_function/2,
     write_keys/2, write_keys/1,
     start_transaction/0, commit_transaction/1,
-    get_locks/3, get_locks/4, release_locks/2]).
+    get_locks/3]).
 
 -export([to_atom/1,
     to_list/1,
@@ -205,48 +205,28 @@ commit_transaction(TxId) ->
 %%            Locks             %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_locks(default, Locks, TxId) ->
-    get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
-get_locks(Timeout, Locks, TxId) ->
-    Res = clocksi_interactive_coord:get_locks(Timeout, TxId, Locks),
-    case Res of
-        {ok, _} -> ok;
-        {locks_not_available, Keys} ->
-            ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
-            throw(lists:flatten(ErrorMsg));
-        {locks_in_use, UsedLocks} ->
-            FilterNotThisTx =
-                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedLocks),
-            case FilterNotThisTx of
-                [] -> ok;
-                _ ->
-                    ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
-                    throw(lists:flatten(ErrorMsg))
-            end
-    end.
+% get_locks(default, Locks, TxId) ->
+%     get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
+% get_locks(_Timeout, Locks, TxId) ->
+%     Res = clocksi_interactive_coord:get_locks(TxId, Locks),
+%     case Res of
+%         {ok, _} -> ok;
+%         {locks_not_available, Keys} ->
+%             ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
+%             throw(lists:flatten(ErrorMsg));
+%         {locks_in_use, UsedLocks} ->
+%             FilterNotThisTx =
+%                 lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedLocks),
+%             case FilterNotThisTx of
+%                 [] -> ok;
+%                 _ ->
+%                     ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
+%                     throw(lists:flatten(ErrorMsg))
+%             end
+%     end.
 
-get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
-    get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
-get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
-    Res = clocksi_interactive_coord:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks),
-    case Res of
-        {ok, _} -> ok;
-        {locks_not_available, Keys} ->
-            ErrorMsg = io_lib:format("One or more locks are not available: ~p", [Keys]),
-            throw(lists:flatten(ErrorMsg));
-        {locks_in_use, {UsedExclusive, _UsedShared}} ->
-            FilterNotThisTx =
-                lists:filter(fun({TxId0, _LockList}) -> TxId0 /= TxId end, UsedExclusive),
-            case FilterNotThisTx of
-                [] -> ok;
-                _ ->
-                    ErrorMsg = io_lib:format("One or more exclusive locks are being used by other transactions: ~p", [FilterNotThisTx]),
-                    throw(lists:flatten(ErrorMsg))
-            end
-    end.
-
-release_locks(Type, TxId) ->
-    clocksi_interactive_coord:release_locks(Type, TxId).
+get_locks(SharedLocks, ExclusiveLocks, TxId) ->
+   antidote:get_locks(TxId, SharedLocks, ExclusiveLocks).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%          Utilities           %%

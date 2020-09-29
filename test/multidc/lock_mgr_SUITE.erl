@@ -30,6 +30,7 @@
 %% tests
 -export([simple_transaction_tests_with_locks/1,
     locks_in_sequence_check/1,
+    locks_in_sequence_check_dynamic/1,
     lock_acquisition_test/1,
     get_lock_owned_by_other_dc_one/1,
     get_lock_owned_by_other_dc_two/1,
@@ -85,6 +86,7 @@ end_per_testcase(Name, _) ->
 all() -> [
     simple_transaction_tests_with_locks,
     locks_in_sequence_check,
+    locks_in_sequence_check_dynamic,
     lock_acquisition_test,
     get_lock_owned_by_other_dc_two,
     multi_value_register_test,
@@ -127,12 +129,15 @@ simple_transaction_tests_with_locks(Config) ->
     % checks if the updates were successful
     ?assertEqual([1, 2, 3, 4], Res).
 
+
+
+
 %% test if after a transaction released some lock another transaction on the same node can aquire them
 locks_in_sequence_check(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys}]]),
-    % {error,{error,[{_TxId,Missing_Keys}]}} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks,Keys}]]),
+    % {error,_} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys}]]),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     IncValues = [1, 2, 3, 4],
@@ -153,6 +158,40 @@ locks_in_sequence_check(Config) ->
     {ok, _Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
     {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ok.
+
+
+%% test if after a transaction released some lock another transaction on the same node can aquire them
+locks_in_sequence_check_dynamic(Config) ->
+    [Node | _Nodes] = proplists:get_value(nodes, Config),
+    Keys1 = [lock101, lock102],
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys1}]]),
+    % TODO: This should actually fail:
+    % {ok, _TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys1}]]),
+    Keys2 = [lock103, lock104],
+    Keys3 = [lock105, lock106],
+    {ok, _Clock} = rpc:call(Node, antidote, get_locks, [Keys2, Keys3, TxId]),
+
+    Type = antidote_crdt_counter_pn,
+    Bucket = antidote_bucket,
+    IncValues = [1, 2],
+    Objects = lists:map(fun(Key) ->
+        {Key, Type, Bucket}
+    end, Keys1
+    ),
+    Updates = lists:map(fun({Object, IncVal}) ->
+        {Object, increment, IncVal}
+    end, lists:zip(Objects, IncValues)),
+    %% update objects one by one.
+    txn_seq_update_check(Node, TxId, Updates),
+    %% read objects one by one
+    txn_seq_read_check(Node, TxId, Objects, [1, 2]),
+    {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
+    %% read objects all at once
+    {ok, _Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ok.
+
 
 %% Tests if lock acquisition in multiple dcs of the same locks can propperly acquire
 %% them and the lock_mgr manages the lock data as intendet.

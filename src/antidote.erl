@@ -55,9 +55,7 @@
           get_log_operations/1,
           get_default_txn_properties/0,
           get_txn_property/2,
-          get_locks/3,
-          get_locks/4,
-          release_locks/2
+          get_locks/3
         ]).
 
 %% Public API
@@ -206,21 +204,9 @@ update_objects(Clock, Properties, Updates) ->
             {error, Reason}
     end.
 
--spec get_locks(default | integer(), [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, [{txid(), [key()]}]}.
-get_locks(default, Locks, TxId) ->
-    cure:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TxId, Locks);
-get_locks(Timeout, Locks, TxId) ->
-    cure:get_locks(Timeout, TxId, Locks).
-
--spec get_locks(default | integer(), [key()], [key()], txid()) -> {ok, [snapshot_time()]} | {locks_not_available, [key()]} | {locks_in_use, {[{txid(), [key()]}], [{txid(), [key()]}]}}.
-get_locks(default, SharedLocks, ExclusiveLocks, TxId) ->
-    cure:get_locks(?How_LONG_TO_WAIT_FOR_LOCKS_ES, TxId, SharedLocks, ExclusiveLocks);
-get_locks(Timeout, SharedLocks, ExclusiveLocks, TxId) ->
-    cure:get_locks(Timeout, TxId, SharedLocks, ExclusiveLocks).
-
--spec release_locks(antidote_locks:lock_kind(), txid()) -> ok.
-release_locks(Type, TxId) ->
-    cure:release_locks(Type, TxId).
+-spec get_locks([key()], [key()], txid()) -> {ok, snapshot_time()} | {error | any()}.
+get_locks(SharedLocks, ExclusiveLocks, TxId) ->
+    cure:get_locks(SharedLocks, ExclusiveLocks,TxId).
 
 %%% Internal function %%
 %%% ================= %%

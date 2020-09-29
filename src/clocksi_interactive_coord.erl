@@ -348,7 +348,7 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% internal state timeout
--spec execute_op({call, gen_statem:from()}, {update | update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
+-spec execute_op({call, gen_statem:from()}, {update | update_objects | read_objects | read | abort | prepare | get_locks, list()}, state()) -> gen_statem:event_handler_result(state()).
 
 %% update kept for backwards compatibility with tests.
 execute_op({call, Sender}, {update, Args}, State) ->
@@ -711,8 +711,21 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
             {next_state, receive_logging_responses, LoggingState};
         false ->
             {next_state, receive_logging_responses, LoggingState, [{state_timeout, 0, timeout}]}
-    end.
+    end;
 
+
+execute_command(get_locks, {SharedLocks, ExclusiveLocks}, Sender,
+    State = #state{locks = Locks, transaction = #transaction{vec_snapshot_time = SnapshotTime}}) ->
+    NewLocks = ordsets:from_list([{Lock, exclusive} || Lock <- ExclusiveLocks] ++  [{Lock, shared} || Lock <- SharedLocks]),
+
+    case antidote_locks:obtain_locks(SnapshotTime, NewLocks) of
+        {ok, SnapshotTime} ->
+            %TODO: Do we need to push the clock? Is any clock value ok?
+            %Add locks to the transaction record
+            {next_state, execute_op, State#state{locks = Locks ++ NewLocks}, {reply, Sender, {ok, SnapshotTime}}};
+        X ->
+            {next_state, execute_op, State, {reply, Sender, X}}
+    end.
 
 
 

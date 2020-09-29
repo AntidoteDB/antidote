@@ -53,7 +53,8 @@
          obtain_objects/4,
          %% Following functions should be only used for testing
          clocksi_iprepare/1,
-         clocksi_icommit/1
+         clocksi_icommit/1,
+         get_locks/3
         ]).
 
 
@@ -276,4 +277,7 @@ clocksi_icommit(TxId)->
     gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).
 
 
--spec get_locks()
+-spec get_locks([key()], [key()], txid()) -> {ok, [snapshot_time()]} | {error, any()}.
+get_locks(SharedLocks, ExclusiveLocks, TxId) ->
+    gen_statem:call(TxId#tx_id.server_pid, {get_locks, {SharedLocks, ExclusiveLocks}}).
+

@@ -54,14 +54,14 @@ create_index_hooks(Updates, _TxId) when is_list(Updates) ->
         ?OBJECT_UPDATE(Key, Type, Bucket, _Op, _Param) = ObjUpdate,
         case update_type({Key, Type, Bucket}) of
             ?TABLE_UPD_TYPE ->
-                case antidote_hooks:has_hook(pre_commit, Bucket) of
+                ok = case antidote_hooks:has_hook(pre_commit, Bucket) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
 
                 lists:append(UpdAcc, []);
             ?RECORD_UPD_TYPE ->
-                case antidote_hooks:has_hook(pre_commit, Bucket) of
+                ok = case antidote_hooks:has_hook(pre_commit, Bucket) of
                     true -> ok;
                     false -> antidote_hooks:register_pre_hook(Bucket, ?MODULE, index_update_hook)
                 end,
