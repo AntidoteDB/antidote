@@ -137,7 +137,6 @@ locks_in_sequence_check(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
     Keys = [lock5, lock6, lock7, lock8],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys}]]),
-    % {error,_} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys}]]),
     Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     IncValues = [1, 2, 3, 4],
@@ -165,8 +164,6 @@ locks_in_sequence_check_dynamic(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
     Keys1 = [lock101, lock102],
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys1}]]),
-    % TODO: This should actually fail:
-    % {ok, _TxId} = rpc:call(Node, antidote, start_transaction, [ignore, [{exclusive_locks, Keys1}]]),
     Keys2 = [lock103, lock104],
     Keys3 = [lock105, lock106],
     {ok, _Clock} = rpc:call(Node, antidote, get_locks, [Keys2, Keys3, TxId]),

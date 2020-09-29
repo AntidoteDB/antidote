@@ -206,7 +206,7 @@ update_objects(Clock, Properties, Updates) ->
 
 -spec get_locks([key()], [key()], txid()) -> {ok, snapshot_time()} | {error | any()}.
 get_locks(SharedLocks, ExclusiveLocks, TxId) ->
-    cure:get_locks(SharedLocks, ExclusiveLocks,TxId).
+    cure:get_locks(SharedLocks, ExclusiveLocks, TxId).
 
 %%% Internal function %%
 %%% ================= %%
