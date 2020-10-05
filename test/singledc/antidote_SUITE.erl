@@ -48,7 +48,8 @@
          static_txn_multi_objects/1,
          static_txn_multi_objects_clock/1,
          interactive_txn/1,
-         interactive_txn_abort/1
+         interactive_txn_abort/1,
+         list_known_keys/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -80,7 +81,8 @@ all() ->
      static_txn_multi_objects,
      static_txn_multi_objects_clock,
      interactive_txn,
-     interactive_txn_abort
+     interactive_txn_abort,
+     list_known_keys
     ].
 
 
@@ -198,6 +200,40 @@ interactive_txn_abort(Config) ->
     {ok, Res} = rpc:call(Node, antidote, read_objects, [[Object], TxId2]),
     {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ?assertEqual([0], Res). % prev txn is aborted so read returns 0
+
+
+list_known_keys(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Type = antidote_crdt_counter_pn,
+    Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
+    IncValues = [1, 2, 3, 4],
+    Objects = lists:map(fun(Key) -> {Key, Type, Bucket} end, Keys),
+    Updates = lists:map(fun({Object, IncVal}) ->
+        {Object, increment, IncVal}
+                        end, lists:zip(Objects, IncValues)),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    %% update objects one by one.
+    txn_seq_update_check(Node, TxId, Updates),
+    %% read objects one by one
+    txn_seq_read_check(Node, TxId, Objects, [1, 2, 3, 4]),
+    {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
+    %% read objects all at once
+    {ok, Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ?assertEqual([1, 2, 3, 4], Res),
+
+    %% list known keys
+    %% these keys will contain all keys from the previous tests in this suite, too
+    {ok, AllKeys} = rpc:call(Node, antidote, all_keys, [ignore]),
+%%    ct:pal("Keys: ~p", [AllKeys]),
+    %% at least 4 keys
+    ?assertEqual(true, length(AllKeys) >= 4),
+    %% be able to find keys
+    BoundKey = {antidote_int_m1, Type, Bucket},
+    true = lists:member(BoundKey, AllKeys).
 
 
 txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->
