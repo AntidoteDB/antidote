@@ -62,7 +62,7 @@ new() ->
 
 -spec value(antidote_crdt_map_go()) -> [{{Key::term(), Type::atom()}, Value::term()}].
 value(Map) ->
-    lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
+    lists:sort([{{Key, Type}, antidote_crdt:value(Type, Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
 -spec require_state_downstream(antidote_crdt_map_go_op()) -> boolean().
 require_state_downstream(_Op) ->
@@ -74,9 +74,9 @@ downstream({update, {{Key, Type}, Op}}, CurrentMap) ->
     % TODO could be optimized for some types
     CurrentValue = case dict:is_key({Key, Type}, CurrentMap) of
         true -> dict:fetch({Key, Type}, CurrentMap);
-        false -> Type:new()
+        false -> antidote_crdt:new(Type)
     end,
-    {ok, DownstreamOp} = Type:downstream(Op, CurrentValue),
+    {ok, DownstreamOp} = antidote_crdt:downstream(Type, Op, CurrentValue),
     {ok, {update, {{Key, Type}, DownstreamOp}}};
 downstream({update, Ops}, CurrentMap) when is_list(Ops) ->
     {ok, {update, lists:map(fun(Op) -> {ok, DSOp} = downstream({update, Op}, CurrentMap), DSOp end, Ops)}}.
@@ -84,9 +84,9 @@ downstream({update, Ops}, CurrentMap) when is_list(Ops) ->
 -spec update(antidote_crdt_map_go_effect(), antidote_crdt_map_go()) -> {ok, antidote_crdt_map_go()}.
 update({update, {{Key, Type}, Op}}, Map) ->
     case dict:is_key({Key, Type}, Map) of
-        true -> {ok, dict:update({Key, Type}, fun(V) -> {ok, Value} = Type:update(Op, V), Value end, Map)};
-        false -> NewValue = Type:new(),
-                 {ok, NewValueUpdated} = Type:update(Op, NewValue),
+        true -> {ok, dict:update({Key, Type}, fun(V) -> {ok, Value} = antidote_crdt:update(Type, Op, V), Value end, Map)};
+        false -> NewValue = antidote_crdt:new(Type),
+                 {ok, NewValueUpdated} = antidote_crdt:update(Type, Op, NewValue),
                  {ok, dict:store({Key, Type}, NewValueUpdated, Map)}
     end;
 update({update, Ops}, Map) ->
@@ -118,8 +118,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 is_operation(Operation) ->
     case Operation of
         {update, {{_Key, Type}, Op}} ->
-            antidote_crdt:is_type(Type)
-                andalso Type:is_operation(Op);
+            antidote_crdt:is_type(Type) andalso antidote_crdt:is_operation(Type, Op);
         {update, Ops} when is_list(Ops) ->
             distinct([Key || {Key, _} <- Ops])
                 andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
@@ -155,5 +154,3 @@ update2_test() ->
     ?assertEqual([{{a, antidote_crdt_set_aw}, [a]}], value(Map2)).
 
 -endif.
-
-
