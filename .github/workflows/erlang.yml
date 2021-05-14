@@ -21,16 +21,6 @@ jobs:
     - uses: actions/checkout@v2
     - run: make compile
 
-  doc:
-    runs-on: ubuntu-latest
-
-    container:
-      image: erlang:23
-
-    steps:
-    - uses: actions/checkout@v2
-    - run: make docs
-
   lint:
     runs-on: ubuntu-latest
     strategy: 
