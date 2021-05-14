@@ -7,6 +7,44 @@ on:
     branches: [ master ]
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy: 
+      fail-fast: false
+      matrix:
+        erlang: [ 21,22,23 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: make compile
+
+  doc:
+    runs-on: ubuntu-latest
+
+    container:
+      image: erlang:23
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: make doc
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy: 
+      fail-fast: false
+      matrix:
+        erlang: [ 21,22,23 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: make lint
+
   verify:
     runs-on: ubuntu-latest
     strategy: 
@@ -19,16 +57,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Compile
-      run: make compile
-    - name: Dialyzer
-      run: make dialyzer
-    - name: Lint
-      run: make lint
-    - name: XRef
-      run: make xref
-    - name: Documentation
-      run: make docs
+    - run: make dialyzer
+    - run: make xref
 
   test:
     runs-on: ubuntu-latest
@@ -42,8 +72,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Compile
-      run: make compile
     - name: Unit Tests
       run: make test
     - name: Release Tests
