@@ -1,0 +1,62 @@
+name: Erlang CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy: 
+      fail-fast: false
+      matrix:
+        erlang: [ 21,22,23 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Compile
+      run: make compile
+    - name: Format
+      run: make format
+    - name: Dialyzer
+      run: make dialyzer
+    - name: Lint
+      run: make lint
+    - name: XRef
+      run: make xref
+    - name: Documentation
+      run: make docs
+
+  test:
+    runs-on: ubuntu-latest
+    strategy: 
+      fail-fast: false
+      matrix:
+        erlang: [ 21,22,23 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Compile
+      run: make compile
+    - name: Unit Tests
+      run: make test
+    - name: Release Tests
+      run: make reltest
+    - name: Single DC Tests
+      run: make singledc
+    - name: Multi DC Tests
+      run: make multidc
+    - name: Coverage
+      run: make coverage
+    - name: Send Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: ./rebar3 as test coveralls send
