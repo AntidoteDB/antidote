@@ -72,6 +72,8 @@ jobs:
       run: make multidc
     - name: Coverage
       run: make coverage
+    - name: ls
+      run: ls _build/test/cover
     - name: Send Coverage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
