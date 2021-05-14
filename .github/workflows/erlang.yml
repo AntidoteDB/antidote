@@ -58,7 +58,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: make dialyzer
-    - run: make xref
+    #- run: make xref
 
   test:
     runs-on: ubuntu-latest
