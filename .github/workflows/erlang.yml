@@ -64,12 +64,8 @@ jobs:
     - uses: actions/checkout@v2
     - name: Unit Tests
       run: make test
-    - name: Release Tests
-      run: make reltest
-    - name: Single DC Tests
-      run: make singledc
-    - name: Multi DC Tests
-      run: make multidc
+    - name: Proper Tests
+      run: make proper
     - name: Coverage
       run: make coverage
     - name: ls
