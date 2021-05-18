@@ -16,7 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-erlang@v1
+    - uses: gleam-lang/setup-erlang@v1.1.2
       with:
         otp-version: ${{ matrix.erlang }}
     - run: make compile
@@ -30,7 +30,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-erlang@v1
+    - uses: gleam-lang/setup-erlang@v1.1.2
       with:
         otp-version: ${{ matrix.erlang }}
     - run: make lint
@@ -44,7 +44,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-erlang@v1
+    - uses: gleam-lang/setup-erlang@v1.1.2
       with:
         otp-version: ${{ matrix.erlang }}
     - run: make dialyzer
@@ -59,7 +59,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-erlang@v1
+    - uses: gleam-lang/setup-erlang@v1.1.2
       with:
         otp-version: ${{ matrix.erlang }}
 
