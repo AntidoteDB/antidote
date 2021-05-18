@@ -1,7 +1,7 @@
 {application, antidote_crdt,
  [
   {description, "An Erlang CRDT library"},
-  {vsn, "0.1.2"},
+  {vsn, "0.1.3"},
   {modules, [
              antidote_crdt
             ]},
