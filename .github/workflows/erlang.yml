@@ -6,76 +6,17 @@ on:
   pull_request:
     branches: [ master ]
 
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy: 
-      fail-fast: false
-      matrix:
-        erlang: [ 21.3,22.3,23.3 ]
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: gleam-lang/setup-erlang@v1.1.2
-      with:
-        otp-version: ${{ matrix.erlang }}
-    - run: make compile
-
-  lint:
-    runs-on: ubuntu-latest
-    strategy: 
-      fail-fast: false
-      matrix:
-        erlang: [ 21.3,22.3,23.3 ]
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: gleam-lang/setup-erlang@v1.1.2
-      with:
-        otp-version: ${{ matrix.erlang }}
-    - run: make lint
-
-  verify:
-    runs-on: ubuntu-latest
-    strategy: 
-      fail-fast: false
-      matrix:
-        erlang: [ 21.3,22.3,23.3 ]
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: gleam-lang/setup-erlang@v1.1.2
-      with:
-        otp-version: ${{ matrix.erlang }}
-    - run: make dialyzer
-    #- run: make xref
-
   test:
     runs-on: ubuntu-latest
-    strategy: 
-      fail-fast: false
+    name: OTP ${{matrix.otp}}
+    strategy:
       matrix:
-        erlang: [ 21.3,22.3,23.3 ]
-
+        otp: [23.1, 23.2]
     steps:
-    - uses: actions/checkout@v2
-    - uses: gleam-lang/setup-erlang@v1.1.2
-      with:
-        otp-version: ${{ matrix.erlang }}
-
-    - name: Unit Tests
-      run: make test
-    - name: Release Tests
-      run: make reltest
-    - name: Single DC Tests
-      run: make singledc
-    - name: Multi DC Tests
-      run: make multidc
-    - name: Coverage
-      run: make coverage
-    - name: ls
-      run: ls _build/test/cover
-    - name: Send Coverage
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: ./rebar3 as test coveralls send
+      - uses: actions/checkout@v2
+      - uses: gleam-lang/setup-erlang@v1.1.2
+        with:
+          otp-version: ${{matrix.otp}}
+      - run: make test
