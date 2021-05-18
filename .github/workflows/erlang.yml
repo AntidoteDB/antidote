@@ -57,11 +57,12 @@ jobs:
       matrix:
         erlang: [ 21,22,23 ]
 
-    container:
-      image: erlang:${{ matrix.erlang }}
-
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-erlang@v1
+      with:
+        otp-version: ${{ matrix.erlang }}
+
     - name: Unit Tests
       run: make test
     - name: Release Tests
