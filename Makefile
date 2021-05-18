@@ -58,10 +58,15 @@ test:
 	${REBAR} eunit
 
 coverage:
-	# copy the coverdata files with a wildcard filter
-	# won't work if there are multiple folders (multiple systests)
-	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
-	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
+	# copy the coverdata files to the appropriate folder 
+	# for rebar coveralls to find
+	n=0 ; \
+	find logs -name "*.coverdata"|while read fname; do \
+	  ((n++))              ;\
+		base=`basename $$fname` ;\
+		echo cp $$fname ${COVERPATH}/$$n-$$base ;\
+		cp $$fname ${COVERPATH}/$$n-$$base ;\
+	done
 	${REBAR} cover --verbose
 
 singledc: compile-utils rel
