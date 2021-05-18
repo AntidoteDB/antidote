@@ -30,9 +30,10 @@
 %% This counter is able to maintain a non-negative value by
 %% explicitly exchanging permissions to execute decrement operations.
 %% All operations on this CRDT are monotonic and do not keep extra tombstones.
-%% In the code the variable V is used for a positive integer.
-%% In the code the variable P is used for transfers() which is a defined type.
-%% In the code the variable D is used for decrements() which is a defined type.
+%%
+%% In the code, the variable `V' is used for a positive integer.
+%% In the code, the variable `P' is used for `transfers()' which is a defined type.
+%% In the code, the variable `D' is used for `decrements()' which is a defined type.
 %% @end
 
 -module(antidote_crdt_counter_b).
@@ -136,7 +137,7 @@ value(Counter) -> Counter.
 %% The second parameter is an `actor()' who identifies the source replica,
 %% and the third parameter is a `antidote_crdt_counter_b()' which holds the current snapshot.
 %%
-%% Return a tuple containing the operation and source replica.
+%% Returns a tuple containing the operation and source replica.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).

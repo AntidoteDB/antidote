@@ -5,3 +5,4 @@ TEST-*.xml
 src/*.swp
 test/*.swp
 *.beam
+doc/

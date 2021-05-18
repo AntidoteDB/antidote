@@ -125,14 +125,14 @@ alias(Type)                              -> Type.
 % Returns the initial CRDT state for the given Type
 -spec new(typ()) -> crdt().
 new(Type) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     T:new().
 
 % Reads the value from a CRDT state
 -spec value(typ(), crdt()) -> any().
 value(Type, State) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     T:value(State).
 
@@ -143,7 +143,7 @@ value(Type, State) ->
 % and the atom 'ignore' can be passed instead (see function require_state_downstream).
 -spec downstream(typ(), update(), crdt() | ignore) -> {ok, effect()} | {error, reason()}.
 downstream(Type, Update, State) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     true = T:is_operation(Update),
     T:downstream(Update, State).
@@ -155,7 +155,7 @@ downstream(Type, Update, State) ->
 % then Eff1 has to be applied before Eff2 on all replicas.
 -spec update(typ(), effect(), crdt()) -> {ok, crdt()}.
 update(Type, Effect, State) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     T:update(Effect, State).
 
@@ -163,14 +163,14 @@ update(Type, Effect, State) ->
 % for a specific type and update operation
 -spec require_state_downstream(typ(), update()) -> boolean().
 require_state_downstream(Type, Update) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     T:require_state_downstream(Update).
 
 % Checks whether the given update operation is valid for the given type
 -spec is_operation(typ(), update()) -> boolean().
 is_operation(Type, Update) ->
-    T = alias(Type),
+    T = antidote_crdt:alias(Type),
     true = is_type(T),
     T:is_operation(Update).
 

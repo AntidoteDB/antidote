@@ -157,7 +157,6 @@ require_state_downstream(Op) ->
 new_test() ->
     ?assertEqual(0, value(new())).
 
-%% @doc test the correctness of increment without parameter.
 update_increment_test() ->
     FatCnt0 = new(),
     {ok, Increment1} = downstream({increment, 5}, FatCnt0),

@@ -73,13 +73,13 @@ value({_, Value}) when is_integer(Value) ->
 
 %% @doc Generate a downstream operation.
 %%
-%% The first parameter is a tuple of the form `{increment, {integer(), pos_integer()}}`.
+%% The first parameter is a tuple of the form `{increment, {integer(), pos_integer()}}'.
 %% Where the first integer represents the encrypted delta value by which the counter
 %% will be incremented. The second integer represents the N squared value calculated
 %% during the key generation phase of the Paillier cryptosystem.
 %%
 %% The value of N is part of the user's public key, it is ok for the server to know this
-%% value. Invalid `NSquare` values (less than or equal to zero) are rejected, and a
+%% value. Invalid `NSquare' values (less than or equal to zero) are rejected, and a
 %% downstream effect is not generated.
 %%
 %% The second parameter is the secure pn-counter, this parameter is not actually used.
@@ -135,7 +135,6 @@ require_state_downstream(_) ->
 %% ===================================================================
 -ifdef(TEST).
 
-%% @priv
 prepare_and_effect(Op, PNCounter) ->
     {ok, Downstream} = downstream(Op, PNCounter),
     update(Downstream, PNCounter).
@@ -147,7 +146,6 @@ value_test() ->
     ?assertEqual(0, value({fresh, 0})),
     ?assertEqual(4, value({spoiled, 4})).
 
-%% @doc Tests whether the secure pn-counter is correctly updated.
 update_test() ->
     Counter = new(),
     % Fresh counter becomes spoiled.
@@ -157,7 +155,6 @@ update_test() ->
     {ok, Counter2} = prepare_and_effect({increment, {3, 36}}, Counter1),
     ?assertEqual({spoiled, 6}, Counter2).
 
-%% @doc Updates should only accept positive N square values.
 reject_invalid_nsquare_test() ->
     Counter = new(),
     Operation1 = {increment, {1,  0}},

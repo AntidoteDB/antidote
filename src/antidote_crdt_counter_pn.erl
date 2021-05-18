@@ -130,7 +130,6 @@ require_state_downstream(_) ->
 %% ===================================================================
 -ifdef(TEST).
 
-%% @priv
 prepare_and_effect(Op, PNCounter) ->
     {ok, Downstream} = downstream(Op, PNCounter),
     update(Downstream, PNCounter).
@@ -138,12 +137,10 @@ prepare_and_effect(Op, PNCounter) ->
 new_test() ->
     ?assertEqual(0, new()).
 
-%% @doc test the correctness of `value()' function
 value_test() ->
     PNCnt = 4,
     ?assertEqual(4, value(PNCnt)).
 
-%% @doc test the correctness of increment without parameter.
 update_increment_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = prepare_and_effect({increment, 1}, PNCnt0),
@@ -151,13 +148,11 @@ update_increment_test() ->
     {ok, PNCnt3} = prepare_and_effect({increment, 1}, PNCnt2),
     ?assertEqual(4, value(PNCnt3)).
 
-%% @doc test the correctness of increment by some numbers.
 update_increment_by_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = prepare_and_effect({increment, 7}, PNCnt0),
     ?assertEqual(7, value(PNCnt1)).
 
-%% @doc test the correctness of decrement.
 update_decrement_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = prepare_and_effect({increment, 1}, PNCnt0),

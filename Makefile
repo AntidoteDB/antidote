@@ -28,7 +28,7 @@ shell:
 	${REBAR} shell --apps antidote_crdt
 
 docs:
-	${REBAR} doc
+	${REBAR} edoc
 
 xref:
 	${REBAR} xref
