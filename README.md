@@ -1,5 +1,7 @@
 # Antidote CRDT library
-[![Build Status](https://travis-ci.org/AntidoteDB/antidote_crdt.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote_crdt)
+
+[![Hex pm](https://img.shields.io/hexpm/v/antidote_crdt.svg)](https://hex.pm/packages/antidote_crdt)
+![Erlang CI](https://github.com/AntidoteDB/antidote_crdt/workflows/Erlang%20CI/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/AntidoteDB/antidote_crdt/badge.svg?branch=master)](https://coveralls.io/github/AntidoteDB/antidote_crdt?branch=master)
 
 Operation based CRDT implementations to use with Antidote.
