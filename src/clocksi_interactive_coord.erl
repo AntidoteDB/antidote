@@ -954,23 +954,23 @@ meck_load() ->
 
     meck:expect(vectorclock, get, fun(_, _) -> 0 end),
 
-    meck:expect(log_utilities, get_key_partition, fun(_) -> mock_partition:get_key_partition() end),
-    meck:expect(log_utilities, get_logid_from_key, fun(_) -> mock_partition:get_logid_from_key() end),
+    meck:expect(log_utilities, get_key_partition, fun(A) -> mock_partition:get_key_partition(A) end),
+    meck:expect(log_utilities, get_logid_from_key, fun(A) -> mock_partition:get_logid_from_key(A) end),
 
     % this is not implemented in mock_partition!
     % meck:expect(clocksi_vnode, single_commit_sync, fun(_,_) -> 0 end),
     meck:expect(clocksi_vnode, commit, fun(_, _, _) -> ok end),
-    meck:expect(clocksi_vnode, read_data_item, fun(_, _, K, _, _) -> mock_partition:read_data_item(K) end),
-    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, _) -> mock_partition:prepare(UpdatedPartition) end),
-    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, _) -> mock_partition:single_commit(UpdatedPartition) end),
-    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, _) -> mock_partition:abort(UpdatedPartition) end),
+    meck:expect(clocksi_vnode, read_data_item, fun(A, B, K, C, D) -> mock_partition:read_data_item(A, B, K, C, D) end),
+    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, A) -> mock_partition:prepare(UpdatedPartition, A) end),
+    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, A) -> mock_partition:single_commit(UpdatedPartition, A) end),
+    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, A) -> mock_partition:abort(UpdatedPartition, A) end),
 
-    meck:expect(clocksi_downstream, generate_downstream_op, fun(_, _, Key, _, _, _) -> mock_partition:generate_downstream_op(Key) end),
+    meck:expect(clocksi_downstream, generate_downstream_op, fun(A, B, Key, C, D, E) -> mock_partition:generate_downstream_op(A, B, Key, C, D, E) end),
 
     meck:expect(logging_vnode, append, fun(_, _, _) -> {ok, {0, node}} end),
-    meck:expect(logging_vnode, asyn_append, fun(_, _, _, ReplyTo) -> mock_partition:asyn_append(ReplyTo) end).
+    meck:expect(logging_vnode, asyn_append, fun(A, B, C, ReplyTo) -> mock_partition:asyn_append(A, B, C, ReplyTo) end).
 
-meck_undload() ->
+meck_unload() ->
     meck:unload(dc_utilities),
     meck:unload(vectorclock),
     meck:unload(log_utilities),
@@ -986,17 +986,17 @@ top_setup() ->
     Pid.
 
 top_cleanup(Pid) ->
-    clocksi_interactive_coord:stop(Pid),
-    meck_undload().
+    case process_info(Pid) of undefined -> io:format("Already crashed");
+        _ -> clocksi_interactive_coord:stop(Pid) end,
+    meck_unload().
 
 t_test_() ->
-    {setup,
+    {foreach,
      fun top_setup/0,
      fun top_cleanup/1,
      [
         fun empty_prepare_/0,
         fun timeout_/0,
-
         fun update_single_abort_/0,
         fun update_single_success_/0,
         fun update_multi_abort1_/0,
@@ -1018,91 +1018,70 @@ empty_prepare_() ->
 
 timeout_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_single_abort_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_single_success_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_abort1_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_abort2_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_success_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 read_single_fail_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertEqual({error, mock_read_fail},
-            gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity))
-    end.
+    ?assertEqual({error, mock_read_fail},
+        gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity)).
 
 read_success_() ->
     Pid = whereis(srv),
-    fun() ->
-        {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
-        ?assertEqual({ok, 2},
-            {ok, antidote_crdt_counter_pn:value(State)}),
-        ?assertEqual({ok, [a]},
-            gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
-        ?assertEqual({ok, mock_value},
-            gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+    {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
+    ?assertEqual({ok, 2},
+        {ok, antidote_crdt_counter_pn:value(State)}),
+    ?assertEqual({ok, [a]},
+        gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
+    ?assertEqual({ok, mock_value},
+        gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 downstream_fail_() ->
     Pid = whereis(srv),
-    fun() ->
-        ?assertMatch({error, _},
-            gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
-    end.
+    ?assertMatch({error, _},
+        gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity)).
 
 get_snapshot_time_() ->
-    fun() ->
-        {ok, SnapshotTime} = get_snapshot_time(),
-        ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime))
-    end.
+    {ok, SnapshotTime} = get_snapshot_time(),
+    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
 
 wait_for_clock_() ->
-    fun() ->
-        {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
-        ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
-        VecClock = dc_utilities:now_microsec(),
-        {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
-        ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2))
-    end.
+    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
+    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
+    VecClock = dc_utilities:now_microsec(),
+    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
+    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2)).
+
 
 -endif.
