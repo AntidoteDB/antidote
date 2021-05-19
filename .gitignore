@@ -34,3 +34,4 @@ antidote.iml
 edoc/
 #docker local builds uses a tmp dir to fetch build scripts
 docker-tmpdir*
+*.coverdata

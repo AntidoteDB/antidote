@@ -44,7 +44,7 @@ stage :
 	$(REBAR) release -d
 
 test:
-	${REBAR} as mocktest eunit
+	${REBAR} eunit
 
 coverage:
 	${REBAR} cover --verbose
