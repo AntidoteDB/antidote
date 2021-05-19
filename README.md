@@ -1,7 +1,7 @@
 AntidoteDB
 ============
 
-[![Build Status](https://travis-ci.com/AntidoteDB/antidote.svg?branch=master)](https://travis-ci.com/AntidoteDB/antidote)
+![Erlang CI](https://github.com/AntidoteDB/antidote/workflows/Erlang%20CI/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/AntidoteDB/antidote/badge.svg?branch=master)](https://coveralls.io/github/AntidoteDB/antidote?branch=master)
 
 Welcome to the Antidote repository, the reference platform of the [SyncFree European Project](https://syncfree.lip6.fr/) and the [LightKone European Project](https://www.lightkone.eu/).
