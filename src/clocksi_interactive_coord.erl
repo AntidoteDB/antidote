@@ -941,29 +941,6 @@ execute_post_commit_hooks(Ops) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-main_test_() ->
-    {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            fun empty_prepare_test/0,
-            fun timeout_test/0,
-
-            fun update_single_abort_test/0,
-            fun update_single_success_test/0,
-            fun update_multi_abort_test1/0,
-            fun update_multi_abort_test2/0,
-            fun update_multi_success_test/0,
-
-            fun read_single_fail_test/0,
-            fun read_success_test/0,
-
-            fun downstream_fail_test/0,
-            fun get_snapshot_time_test/0,
-            fun wait_for_clock_test/0
-        ]}.
-
-
 meck_load() ->
     meck:new(dc_utilities, [passthrough]),
     meck:new(vectorclock, [passthrough]),
@@ -1001,48 +978,66 @@ meck_undload() ->
     meck:unload(clocksi_downstream),
     meck:unload(clocksi_vnode).
 
-% Setup and Cleanup
-setup() ->
+top_setup() ->
     meck_load(),
-
     {ok, Pid} = clocksi_interactive_coord:start_link(),
     {ok, _Tx} = gen_statem:call(Pid, {start_tx, ignore, []}),
     register(srv, Pid),
     Pid.
 
-cleanup(Pid) ->
-    case process_info(Pid) of undefined -> io:format("Already cleaned");
-        _ -> clocksi_interactive_coord:stop(Pid) end,
+top_cleanup(Pid) ->
+    clocksi_interactive_coord:stop(Pid),
     meck_undload().
 
-empty_prepare_test() ->
-    Pid = whereis(srv),
-    fun() ->
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+t_test_() ->
+    {setup,
+     fun top_setup/0,
+     fun top_cleanup/1,
+     [
+        fun empty_prepare_/0,
+        fun timeout_/0,
 
-timeout_test() ->
+        fun update_single_abort_/0,
+        fun update_single_success_/0,
+        fun update_multi_abort1_/0,
+        fun update_multi_abort2_/0,
+        fun update_multi_success_/0,
+
+        fun read_single_fail_/0,
+        fun read_success_/0,
+
+        fun downstream_fail_/0,
+        fun get_snapshot_time_/0,
+        fun wait_for_clock_/0
+    ]}.
+
+
+empty_prepare_() ->
+    Pid = whereis(srv),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+timeout_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
         ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-update_single_abort_test() ->
+update_single_abort_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
         ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-update_single_success_test() ->
+update_single_success_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
         ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-update_multi_abort_test1() ->
+update_multi_abort1_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
@@ -1051,7 +1046,7 @@ update_multi_abort_test1() ->
         ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-update_multi_abort_test2() ->
+update_multi_abort2_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
@@ -1060,7 +1055,7 @@ update_multi_abort_test2() ->
         ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-update_multi_success_test() ->
+update_multi_success_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
@@ -1068,14 +1063,14 @@ update_multi_success_test() ->
         ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-read_single_fail_test() ->
+read_single_fail_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertEqual({error, mock_read_fail},
             gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity))
     end.
 
-read_success_test() ->
+read_success_() ->
     Pid = whereis(srv),
     fun() ->
         {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
@@ -1088,20 +1083,20 @@ read_success_test() ->
         ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
     end.
 
-downstream_fail_test() ->
+downstream_fail_() ->
     Pid = whereis(srv),
     fun() ->
         ?assertMatch({error, _},
             gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
-get_snapshot_time_test() ->
+get_snapshot_time_() ->
     fun() ->
         {ok, SnapshotTime} = get_snapshot_time(),
         ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime))
     end.
 
-wait_for_clock_test() ->
+wait_for_clock_() ->
     fun() ->
         {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
         ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
