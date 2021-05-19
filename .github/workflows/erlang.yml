@@ -30,6 +30,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - run: make compile
     - name: Run epmd
       run: epmd -daemon
     - name: Unit Tests
