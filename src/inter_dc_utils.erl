@@ -36,9 +36,7 @@
     get_address_list/1,
     close_socket/1,
     get_my_partitions/0,
-    generate_random_id/0,
-    get_node_list/0,
-    get_node_and_partition_list/0
+    generate_random_id/0
 ]).
 
 %% Provides utility functions for binary inter_dc messages.
@@ -117,25 +115,3 @@ check_message_version(<<Version:?VERSION_BYTES/binary, Rest/binary>>) ->
 check_version_and_req_id(Binary) ->
     <<ReqId:?REQUEST_ID_BYTE_LENGTH/binary, Rest/binary>> = check_message_version(Binary),
     {ReqId, Rest}.
-
-
--spec get_node_list() -> [node()].
-get_node_list() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    get_node_list(Ring).
-
-get_node_list(Ring) ->
-    MyNode = node(),
-    lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
-
--spec get_node_and_partition_list() -> {[node()], [partition_id()], true}.
-get_node_and_partition_list() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    NodeList = get_node_list(Ring),
-    PartitionList = riak_core_ring:my_indices(Ring),
-    %% TODO Deciding if the nodes might change by checking the is_resizing function is not
-    %% safe can cause inconsistencies under concurrency, so this should
-    %% be done differently
-    %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
-    Resize = true,
-    {NodeList, PartitionList, Resize}.

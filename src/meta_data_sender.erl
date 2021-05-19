@@ -30,11 +30,20 @@
 -behaviour(gen_statem).
 
 -include("antidote.hrl").
-
+-ifdef(EUNIT).
+-include_lib("eunit/include/eunit.hrl").
+-define(GET_NODE_LIST(), get_node_list_t()).
+-define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list_t()).
+-else.
+-define(GET_NODE_LIST(), get_node_list()).
+-define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list()).
+-endif.
 
 -export([start_link/1,
     start/1,
     put_meta/3,
+    get_node_list/0,
+    get_node_and_partition_list/0,
     get_merged_data/2,
     remove_partition/2,
     send_meta_data/3,
@@ -136,7 +145,7 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        name = Name,
                                        should_check_nodes = CheckNodes}) ->
     {WillChange, Data} = get_merged_meta_data(Name, CheckNodes),
-    NodeList = inter_dc_utils:get_node_list(),
+    NodeList = ?GET_NODE_LIST(),
     LocalMerged = maps:get(local_merged, Data),
     MyNode = node(),
     ok = lists:foreach(fun(Node) ->
@@ -199,7 +208,7 @@ get_merged_meta_data(Name, CheckNodes) ->
         false ->
             not_ready;
         true ->
-            {NodeList, PartitionList, WillChange} = inter_dc_utils:get_node_and_partition_list(),
+            {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
             Remote = antidote_ets_meta_data:get_remote_meta_data_as_map(Name),
             Local = antidote_ets_meta_data:get_meta_data_as_map(Name),
             %% Be sure that you are only checking active nodes
@@ -231,3 +240,170 @@ update_stable(LastResult, NewData, Name) ->
                   end
               end, {false, LastResult}, NewData).
 
+%% @private
+-spec get_node_list() -> [node()].
+get_node_list() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    get_node_list(Ring).
+
+%% @private
+get_node_list(Ring) ->
+    MyNode = node(),
+    lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
+
+%% @private
+-spec get_node_and_partition_list() -> {[node()], [partition_id()], true}.
+get_node_and_partition_list() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    NodeList = get_node_list(Ring),
+    PartitionList = riak_core_ring:my_indices(Ring),
+    %% TODO Deciding if the nodes might change by checking the is_resizing function is not
+    %% safe can cause inconsistencies under concurrency, so this should
+    %% be done differently
+    %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
+    Resize = true,
+    {NodeList, PartitionList, Resize}.
+
+
+-ifdef(EUNIT).
+
+meta_data_sender_test_() ->
+    {foreach,
+     fun start/0,
+     fun stop/1,
+     [
+        fun empty_test_/1,
+        fun merge_test_/1,
+        fun merge_additional_test_/1,
+        fun missing_test_/1,
+        fun merge_node_change_test_/1,
+        fun merge_node_change_additional_test_/1,
+        fun merge_node_delete_test_/1,
+        fun merge_node_delete_another_test_/1
+    ]
+    }.
+
+start() ->
+    MetaType = stable_time_functions,
+    _Table  = antidote_ets_meta_data:create_meta_data_sender_table(MetaType),
+    _Table2 = antidote_ets_meta_data:create_meta_data_table(MetaType),
+    _Table3 = ets:new(node_table, [set, named_table, public]),
+    _Table4 = antidote_ets_meta_data:create_remote_meta_data_table(MetaType),
+    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(MetaType, MetaType:initial_merged()),
+    MetaType.
+
+stop(MetaType) ->
+    true = antidote_ets_meta_data:delete_meta_data_table(MetaType),
+    true = antidote_ets_meta_data:delete_meta_data_sender_table(MetaType),
+    true = ets:delete(node_table),
+    true = antidote_ets_meta_data:delete_remote_meta_data_table(MetaType),
+    ok.
+
+-spec set_nodes_and_partitions_and_willchange([node()], [partition_id()], boolean()) -> ok.
+set_nodes_and_partitions_and_willchange(Nodes, Partitions, WillChange) ->
+    true = ets:insert(node_table, {nodes, Nodes}),
+    true = ets:insert(node_table, {partitions, Partitions}),
+    true = ets:insert(node_table, {willchange, WillChange}),
+    ok.
+
+%% Basic empty test
+empty_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
+
+    put_meta(MetaType, p1, vectorclock:new()),
+    put_meta(MetaType, p2, vectorclock:new()),
+    put_meta(MetaType, p3, vectorclock:new()),
+
+    {false, Meta} = get_merged_meta_data(MetaType, false),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual([], vectorclock:to_list(LocalMerged)).
+
+
+%% This test checks to make sure that merging is done correctly for multiple partitions
+merge_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2], false),
+    %ets:delete_all_objects(get_table_name(MetaType, ?META_TABLE_NAME)),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    {false, Meta} = get_merged_meta_data(MetaType, false),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+
+merge_additional_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1, n2], [p1, p2, p3], false),
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
+    {false, Meta} = get_merged_meta_data(MetaType, false),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+
+%% Be sure that when you are missing a partition in your meta_data that you get a 0 value for the vectorclock.
+missing_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2, p3], false),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 10}])),
+    remove_partition(MetaType, p2),
+
+    {false, Meta} = get_merged_meta_data(MetaType, true),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([]), LocalMerged).
+
+%% This test checks to make sure that merging is done correctly for multiple partitions
+%% when you have a node that is removed from the cluster.
+merge_node_change_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+
+    {true, Meta} = get_merged_meta_data(MetaType, false),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged).
+
+merge_node_change_additional_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1, n2], [p1, p3], true),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 10}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 5}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 20}, {dc2, 20}])),
+    {true, Meta} = get_merged_meta_data(MetaType, true),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([{dc1, 10}, {dc2, 10}]), LocalMerged).
+
+merge_node_delete_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
+
+    {true, Meta} = get_merged_meta_data(MetaType, false),
+    LocalMerged = maps:get(local_merged, Meta),
+    ?_assertEqual(vectorclock:from_list([]), LocalMerged).
+
+
+merge_node_delete_another_test_(MetaType) ->
+    set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
+
+    put_meta(MetaType, p1, vectorclock:from_list([{dc1, 10}, {dc2, 5}])),
+    put_meta(MetaType, p2, vectorclock:from_list([{dc1, 5}, {dc2, 10}])),
+    put_meta(MetaType, p3, vectorclock:from_list([{dc1, 0}, {dc2, 0}])),
+
+    {true, Meta2} = get_merged_meta_data(MetaType, true),
+    LocalMerged2 = maps:get(local_merged, Meta2),
+    ?_assertEqual( vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
+
+get_node_list_t() ->
+    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+    Nodes.
+
+get_node_and_partition_list_t() ->
+    [{willchange, WillChange}] = ets:lookup(node_table, willchange),
+    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+    [{partitions, Partitions}] = ets:lookup(node_table, partitions),
+    {Nodes, Partitions, WillChange}.
+
+-endif.
