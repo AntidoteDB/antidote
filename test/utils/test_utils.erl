@@ -28,11 +28,6 @@
 
 -module(test_utils).
 
--include_lib("eunit/include/eunit.hrl").
-
--define(FORCE_KILL_TIMER, 1500).
--define(RIAK_SLEEP, 5000).
-
 -export([
     at_init_testsuite/0,
     pmap/2,
@@ -99,25 +94,14 @@ at_init_testsuite() ->
 %% ===========================================
 
 start_node(Name, Config) ->
-    %% code path for compiled dependencies (ebin folders)
-    CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
-    ct:log("Starting node ~p", [Name]),
-
-    {ok, Cwd} = file:get_cwd(),
-    AntidoteFolder = filename:dirname(filename:dirname(Cwd)),
-    PrivDir = proplists:get_value(priv_dir, Config),
-    NodeDir = filename:join([PrivDir, Name]) ++ "/",
-    filelib:ensure_dir(NodeDir),
-
     %% have the slave nodes monitor the runner node, so they can't outlive it
-    NodeConfig = [
-        %% have the slave nodes monitor the runner node, so they can't outlive it
-        {monitor_master, true},
-
-        %% set code path for dependencies
-        {startup_functions, [ {code, set_path, [CodePath]} ]}],
+    NodeConfig = [{monitor_master, true}],
     case ct_slave:start(Name, NodeConfig) of
         {ok, Node} ->
+            %% code path for compiled dependencies
+            CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()) ,
+            lists:foreach(fun(P) -> rpc:call(Node, code, add_patha, [P]) end, CodePath),
+
             % load application to allow for configuring the environment before starting
             ok = rpc:call(Node, application, load, [riak_core]),
             ok = rpc:call(Node, application, load, [antidote_stats]),
@@ -131,7 +115,6 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [antidote, data_dir, filename:join([NodeWorkingDir, Node, "antidote-data"])]),
             ok = rpc:call(Node, application, set_env, [riak_core, ring_state_dir, filename:join([NodeWorkingDir, Node, "data"])]),
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, filename:join([NodeWorkingDir, Node, "data"])]),
-            ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, [AntidoteFolder ++ "/_build/default/rel/antidote/lib/"]]),
 
 
             %% PORTS
