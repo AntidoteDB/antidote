@@ -30,7 +30,7 @@
 -behaviour(gen_statem).
 
 -include("antidote.hrl").
--ifdef(TEST).
+-ifdef(EUNIT).
 -include_lib("eunit/include/eunit.hrl").
 -define(GET_NODE_LIST(), get_node_list_t()).
 -define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list_t()).
@@ -265,7 +265,7 @@ get_node_and_partition_list() ->
     {NodeList, PartitionList, Resize}.
 
 
--ifdef(TEST).
+-ifdef(EUNIT).
 
 meta_data_sender_test_() ->
     {foreach,

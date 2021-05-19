@@ -330,7 +330,7 @@ materializer_missing_op_test() ->
 
     SS2 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
-    {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
+    {ok, PNCounter3, 4, CommitTime3, _SsSave2, _} = materialize(Type,
                                                             ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS2),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).
@@ -358,26 +358,26 @@ materializer_missing_dc_test() ->
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
-    {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave, _} = materialize(Type,
+    {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave1, _} = materialize(Type,
                                                                   ignore, vectorclock:from_list([{1, 3}]),
                                                                   SS),
     ?assertEqual({3, vectorclock:from_list([{1, 3}])}, {Type:value(PNCounterA), CommitTimeA}),
 
     SS2 = #snapshot_get_response{snapshot_time = CommitTimeA, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOpA, value = PNCounterA}},
-    {ok, PNCounterB, 4, CommitTimeB, _SsSave, _} = materialize(Type,
+    {ok, PNCounterB, 4, CommitTimeB, _SsSave2, _} = materialize(Type,
                                                             ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS2),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounterB), CommitTimeB}),
 
-    {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
+    {ok, PNCounter2, LastOp, CommitTime2, _SsSave3, _} = materialize(Type,
                                                                  ignore, vectorclock:from_list([{1, 3}, {2, 1}]),
                                                                  SS),
     ?assertEqual({3, vectorclock:from_list([{1, 3}])}, {Type:value(PNCounter2), CommitTime2}),
 
     SS3 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
-    {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
+    {ok, PNCounter3, 4, CommitTime3, _SsSave4, _} = materialize(Type,
                                                             ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS3),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).

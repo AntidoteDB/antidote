@@ -39,26 +39,6 @@
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--define(DC_META_UTIL, mock_partition).
--define(DC_UTIL, mock_partition).
--define(VECTORCLOCK, mock_partition).
--define(LOG_UTIL, mock_partition).
--define(CLOCKSI_VNODE, mock_partition).
--define(CLOCKSI_DOWNSTREAM, mock_partition).
--define(LOGGING_VNODE, mock_partition).
-
--else.
--define(DC_META_UTIL, dc_utilities).
--define(DC_UTIL, dc_utilities).
--define(VECTORCLOCK, vectorclock).
--define(LOG_UTIL, log_utilities).
--define(CLOCKSI_VNODE, clocksi_vnode).
--define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
--define(LOGGING_VNODE, logging_vnode).
--endif.
-
 
 %% API
 -export([
@@ -127,17 +107,18 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
             {ok, Snapshot, CommitTime}
     end.
 
+
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
-    Partition = ?LOG_UTIL:get_key_partition(Key),
+    Partition = log_utilities:get_key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, []) of
+            case clocksi_downstream:generate_downstream_op(Transaction, Partition, Key, Type, Params1, []) of
                 {ok, DownstreamRecord} ->
                     UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
@@ -146,10 +127,10 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                         op_type=update,
                         log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
                     },
-                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-                    case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
+                    LogId = log_utilities:get_logid_from_key(Key),
+                    case logging_vnode:append(Partition, LogId, LogRecord) of
                         {ok, _} ->
-                            case ?CLOCKSI_VNODE:single_commit_sync(UpdatedPartitions, Transaction) of
+                            case clocksi_vnode:single_commit_sync(UpdatedPartitions, Transaction) of
                                 {committed, CommitTime} ->
 
                                     %% Execute post commit hook
@@ -161,9 +142,9 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     end,
 
                                     TxId = Transaction#transaction.txn_id,
-                                    DcId = ?DC_META_UTIL:get_my_dc_id(),
+                                    DcId = dc_utilities:get_my_dc_id(),
 
-                                    CausalClock = ?VECTORCLOCK:set(
+                                    CausalClock = vectorclock:set(
                                         DcId,
                                         CommitTime,
                                         Transaction#transaction.vec_snapshot_time
@@ -301,7 +282,7 @@ committing({call, Sender}, commit, State = #state{transaction = Transaction,
         0 ->
             reply_to_client(State#state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, Commit_time),
+            ok = clocksi_vnode:commit(UpdatedPartitions, Transaction, Commit_time),
             {next_state, receive_committed,
                 State#state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -534,8 +515,8 @@ create_transaction_record(ClientClock, _IsStatic, Properties) ->
                                          {ok, ClientClock}
                                  end
                          end,
-    DcId = ?DC_META_UTIL:get_my_dc_id(),
-    LocalClock = ?VECTORCLOCK:get(DcId, SnapshotTime),
+    DcId = dc_utilities:get_my_dc_id(),
+    LocalClock = vectorclock:get(DcId, SnapshotTime),
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = self()},
     #transaction{snapshot_time_local = LocalClock,
         vec_snapshot_time = SnapshotTime,
@@ -569,7 +550,7 @@ execute_command(read, {Key, Type}, Sender, State = #state{
 execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
         ?STATS(operation_read_async),
-        Partition = ?LOG_UTIL:get_key_partition(Key),
+        Partition = log_utilities:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
         AccState#state{return_accumulator=[Key | ReadKeys]}
@@ -649,8 +630,8 @@ reply_to_client(State = #state{
                             %% Execute post_commit_hooks
                             _Result = execute_post_commit_hooks(ClientOps),
                             %% TODO: What happens if commit hook fails?
-                            DcId = ?DC_META_UTIL:get_my_dc_id(),
-                            CausalClock = ?VECTORCLOCK:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                            DcId = dc_utilities:get_my_dc_id(),
+                            CausalClock = vectorclock:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                             case IsStatic of
                                 false ->
                                     {ok, {TxId, CausalClock}};
@@ -685,7 +666,7 @@ reply_to_client(State = #state{
 %% transaction, to the result returned by a read.
 -spec apply_tx_updates_to_snapshot(key(), state(), type(), snapshot()) -> snapshot().
 apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
-    Partition = ?LOG_UTIL:get_key_partition(Key),
+    Partition = log_utilities:get_key_partition(Key),
     Found = lists:keyfind(Partition, 1, CoordState#state.updated_partitions),
 
     case Found of
@@ -710,8 +691,8 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
-    {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-    DcId = ?DC_META_UTIL:get_my_dc_id(),
+    {ok, VecSnapshotTime} = dc_utilities:get_stable_snapshot(),
+    DcId = dc_utilities:get_my_dc_id(),
     SnapshotTime = vectorclock:set(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
@@ -745,7 +726,7 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     ?STATS(operation_read),
-    Partition = ?LOG_UTIL:get_key_partition(Key),
+    Partition = log_utilities:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
                    false ->
@@ -754,7 +735,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
                        WS
                end,
 
-    case ?CLOCKSI_VNODE:read_data_item(Partition, Transaction, Key, Type, WriteSet) of
+    case clocksi_vnode:read_data_item(Partition, Transaction, Key, Type, WriteSet) of
         {ok, Snapshot} ->
             Snapshot;
 
@@ -767,7 +748,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     ?STATS(operation_update),
     {Key, Type, Update} = Op,
-    Partition = ?LOG_UTIL:get_key_partition(Key),
+    Partition = log_utilities:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
                    false ->
@@ -785,7 +766,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
         {Key, Type, PostHookUpdate} ->
 
             %% Generate the appropriate state operations based on older snapshots
-            GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
+            GenerateResult = clocksi_downstream:generate_downstream_op(
                 Transaction,
                 Partition,
                 Key,
@@ -836,8 +817,8 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
         log_payload=#update_log_payload{key=Key, type=Type, op=Record}
     },
 
-    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-    ?LOGGING_VNODE:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
+    LogId = log_utilities:get_logid_from_key(Key),
+    logging_vnode:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
 
 %% @doc this function sends a prepare message to all updated partitions and goes
@@ -869,7 +850,7 @@ prepare(State = #state{
         [_] when CommitProtocol /= two_phase ->
             prepare_done(State, single_committing);
         [_|_] ->
-            ok = ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
+            ok = clocksi_vnode:prepare(UpdatedPartitions, Transaction),
             Num_to_ack = length(UpdatedPartitions),
             {next_state, receive_prepared, State#state{num_to_ack = Num_to_ack, state = prepared}}
     end.
@@ -888,7 +869,7 @@ prepare_done(State, Action) ->
         single_committing ->
             UpdatedPartitions = State#state.updated_partitions,
             Transaction = State#state.transaction,
-            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
+            ok = clocksi_vnode:single_commit(UpdatedPartitions, Transaction),
             {next_state, single_committing, State#state{state = committing, num_to_ack = 1}};
         commit_read_only ->
             reply_to_client(State#state{state = committed_read_only});
@@ -901,7 +882,7 @@ prepare_done(State, Action) ->
         {normal_commit, MaxPrepareTime} ->
             UpdatedPartitions = State#state.updated_partitions,
             Transaction = State#state.transaction,
-                        ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
+                        ok = clocksi_vnode:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
             {next_state, receive_committed,
                             State#state{
                                 num_to_ack = length(UpdatedPartitions),
@@ -939,7 +920,7 @@ abort(State = #state{transaction = Transaction,
         0 ->
             reply_to_client(State#state{state = aborted});
         _ ->
-            ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+            ok = clocksi_vnode:abort(UpdatedPartitions, Transaction),
             {next_state, receive_aborted, State#state{num_to_ack = NumToAck, state = aborted}}
     end.
 
@@ -958,119 +939,149 @@ execute_post_commit_hooks(Ops) ->
 %%%===================================================================
 
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
 
-main_test_() ->
-    {foreach,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            fun empty_prepare_test/1,
-            fun timeout_test/1,
+meck_load() ->
+    meck:new(dc_utilities, [passthrough]),
+    meck:new(vectorclock, [passthrough]),
+    meck:new(log_utilities),
+    meck:new(logging_vnode),
+    meck:new(clocksi_downstream),
+    meck:new(clocksi_vnode),
 
-            fun update_single_abort_test/1,
-            fun update_single_success_test/1,
-            fun update_multi_abort_test1/1,
-            fun update_multi_abort_test2/1,
-            fun update_multi_success_test/1,
+    meck:expect(dc_utilities, get_my_dc_id, fun() -> mock_dc end),
+    meck:expect(dc_utilities, get_stable_snapshot, fun() -> {ok, vectorclock:new()} end),
 
-            fun read_single_fail_test/1,
-            fun read_success_test/1,
+    meck:expect(vectorclock, get, fun(_, _) -> 0 end),
 
-            fun downstream_fail_test/1,
-            fun get_snapshot_time_test/0,
-            fun wait_for_clock_test/0
-        ]}.
+    meck:expect(log_utilities, get_key_partition, fun(A) -> mock_partition:get_key_partition(A) end),
+    meck:expect(log_utilities, get_logid_from_key, fun(A) -> mock_partition:get_logid_from_key(A) end),
 
-% Setup and Cleanup
-setup() ->
+    % this is not implemented in mock_partition!
+    % meck:expect(clocksi_vnode, single_commit_sync, fun(_,_) -> 0 end),
+    meck:expect(clocksi_vnode, commit, fun(_, _, _) -> ok end),
+    meck:expect(clocksi_vnode, read_data_item, fun(A, B, K, C, D) -> mock_partition:read_data_item(A, B, K, C, D) end),
+    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, A) -> mock_partition:prepare(UpdatedPartition, A) end),
+    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, A) -> mock_partition:single_commit(UpdatedPartition, A) end),
+    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, A) -> mock_partition:abort(UpdatedPartition, A) end),
+
+    meck:expect(clocksi_downstream, generate_downstream_op, fun(A, B, Key, C, D, E) -> mock_partition:generate_downstream_op(A, B, Key, C, D, E) end),
+
+    meck:expect(logging_vnode, append, fun(_, _, _) -> {ok, {0, node}} end),
+    meck:expect(logging_vnode, asyn_append, fun(A, B, C, ReplyTo) -> mock_partition:asyn_append(A, B, C, ReplyTo) end).
+
+meck_unload() ->
+    meck:unload(dc_utilities),
+    meck:unload(vectorclock),
+    meck:unload(log_utilities),
+    meck:unload(logging_vnode),
+    meck:unload(clocksi_downstream),
+    meck:unload(clocksi_vnode).
+
+top_setup() ->
+    meck_load(),
     {ok, Pid} = clocksi_interactive_coord:start_link(),
     {ok, _Tx} = gen_statem:call(Pid, {start_tx, ignore, []}),
+    register(srv, Pid),
     Pid.
 
-cleanup(Pid) ->
-    case process_info(Pid) of undefined -> io:format("Already cleaned");
-        _ -> clocksi_interactive_coord:stop(Pid) end.
+top_cleanup(Pid) ->
+    case process_info(Pid) of undefined -> io:format("Already crashed");
+        _ -> clocksi_interactive_coord:stop(Pid) end,
+    meck_unload().
 
-empty_prepare_test(Pid) ->
-    fun() ->
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+t_test_() ->
+    {foreach,
+     fun top_setup/0,
+     fun top_cleanup/1,
+     [
+        fun empty_prepare_/0,
+        fun timeout_/0,
+        fun update_single_abort_/0,
+        fun update_single_success_/0,
+        fun update_multi_abort1_/0,
+        fun update_multi_abort2_/0,
+        fun update_multi_success_/0,
 
-timeout_test(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
+        fun read_single_fail_/0,
+        fun read_success_/0,
 
-update_single_abort_test(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-update_single_success_test(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-update_multi_abort_test1(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-update_multi_abort_test2(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-update_multi_success_test(Pid) ->
-    fun() ->
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-read_single_fail_test(Pid) ->
-    fun() ->
-        ?assertEqual({error, mock_read_fail},
-            gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity))
-    end.
-
-read_success_test(Pid) ->
-    fun() ->
-        {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
-        ?assertEqual({ok, 2},
-            {ok, antidote_crdt_counter_pn:value(State)}),
-        ?assertEqual({ok, [a]},
-            gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
-        ?assertEqual({ok, mock_value},
-            gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
-        ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity))
-    end.
-
-downstream_fail_test(Pid) ->
-    fun() ->
-        ?assertMatch({error, _},
-            gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
-    end.
+        fun downstream_fail_/0,
+        fun get_snapshot_time_/0,
+        fun wait_for_clock_/0
+    ]}.
 
 
-get_snapshot_time_test() ->
+empty_prepare_() ->
+    Pid = whereis(srv),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+timeout_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+update_single_abort_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+update_single_success_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+update_multi_abort1_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+update_multi_abort2_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+update_multi_success_() ->
+    Pid = whereis(srv),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+read_single_fail_() ->
+    Pid = whereis(srv),
+    ?assertEqual({error, mock_read_fail},
+        gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity)).
+
+read_success_() ->
+    Pid = whereis(srv),
+    {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
+    ?assertEqual({ok, 2},
+        {ok, antidote_crdt_counter_pn:value(State)}),
+    ?assertEqual({ok, [a]},
+        gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
+    ?assertEqual({ok, mock_value},
+        gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+    ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+downstream_fail_() ->
+    Pid = whereis(srv),
+    ?assertMatch({error, _},
+        gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity)).
+
+get_snapshot_time_() ->
     {ok, SnapshotTime} = get_snapshot_time(),
     ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
 
-wait_for_clock_test() ->
+wait_for_clock_() ->
     {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
     ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
     VecClock = dc_utilities:now_microsec(),
     {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
     ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2)).
+
 
 -endif.

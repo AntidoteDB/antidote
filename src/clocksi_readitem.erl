@@ -59,9 +59,11 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {f
     spawn_link(Node, fun() -> {
         case perform_read_internal(Key, Type, Transaction, PropertyList, Partition) of
             {ok, Snapshot} ->
-                gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}});
-            {error, Reason} ->
-                gen_statem:cast(Sender, {error, Reason})
+                gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}})
+            % TODO dialyzer says this can never happen (it's true)
+            %      Fix spec annotations in this chain
+            % {error, Reason} ->
+            %     gen_statem:cast(Sender, {error, Reason})
         end
     } end),
     ok.

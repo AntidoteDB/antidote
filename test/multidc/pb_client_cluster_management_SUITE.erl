@@ -121,7 +121,7 @@ setup_single_dc_handoff_test(Config) ->
     ?assertMatch(true, antidotec_counter:is_type(Counter)),
     ?assertEqual(4242, antidotec_counter:value(Counter)),
 
-    _Disconnected3 = antidotec_pb_socket:stop(Pb2).
+    _Disconnected4 = antidotec_pb_socket:stop(Pb2).
 
 setup_cluster_test(Config) ->
     NodeNames = [clusterdev1, clusterdev2, clusterdev3, clusterdev4],
@@ -181,7 +181,7 @@ setup_cluster_test(Config) ->
     ?assertEqual(4711, antidotec_counter:value(Counter)),
 
     _Disconnected1 = antidotec_pb_socket:stop(Pb1),
-    _Disconnected3 = antidotec_pb_socket:stop(Pb3),
+    _Disconnected2 = antidotec_pb_socket:stop(Pb3),
     _Disconnected3 = antidotec_pb_socket:stop(Pb4).
 
 

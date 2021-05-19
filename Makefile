@@ -13,12 +13,6 @@ clean:
 distclean: clean relclean
 	$(REBAR) clean --all
 
-cleantests:
-	rm -f test/utils/*.beam
-	rm -f test/singledc/*.beam
-	rm -f test/multidc/*.beam
-	rm -rf logs/
-
 shell: rel
 	export NODE_NAME=antidote@127.0.0.1 ; \
 	export COOKIE=antidote ; \
@@ -38,48 +32,36 @@ reltest: rel
 lint:
 	${REBAR} lint
 
-check: distclean cleantests test reltest dialyzer lint
+check: distclean test reltest dialyzer lint
 
 relgentlerain: export TXN_PROTOCOL=gentlerain
-relgentlerain: relclean cleantests rel
+relgentlerain: relclean rel
 
 relnocert: export NO_CERTIFICATION=true
-relnocert: relclean cleantests rel
+relnocert: relclean rel
 
 stage :
 	$(REBAR) release -d
-
-compile-utils: compile
-	for filename in "test/utils/*.erl" ; do \
-		erlc -o test/utils $$filename ; \
-	done
 
 test:
 	${REBAR} eunit
 
 coverage:
-	# copy the coverdata files with a wildcard filter
-	# won't work if there are multiple folders (multiple systests)
-	cp logs/*/*singledc*/../all.coverdata ${COVERPATH}/singledc.coverdata ; \
-	cp logs/*/*multidc*/../all.coverdata ${COVERPATH}/multidc.coverdata ; \
 	${REBAR} cover --verbose
 
-singledc: compile-utils rel
-	rm -f test/singledc/*.beam
-	mkdir -p logs
+singledc:
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/singledc/${SUITE} -cover test/antidote.coverspec
+	${REBAR} ct --dir test/singledc --suite ${SUITE}
 else
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/singledc -cover test/antidote.coverspec
+	${REBAR} ct --dir test/singledc --cover_export_name=singledc
 endif
 
-multidc: compile-utils rel
-	rm -f test/multidc/*.beam
-	mkdir -p logs
+multidc: 
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -suite test/multidc/${SUITE} -cover test/antidote.coverspec
+	${REBAR} ct --dir test/multidc --suite ${SUITE}
 else
-	ct_run -pa ./_build/default/lib/*/ebin test/utils/ -logdir logs -dir test/multidc -cover test/antidote.coverspec
+	${REBAR} ct --dir test/multidc --cover_export_name=multidc
+
 endif
 
 systests: singledc multidc
