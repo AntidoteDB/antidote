@@ -975,26 +975,23 @@ meck_load() ->
     meck:expect(dc_utilities, get_my_dc_id, fun() -> mock_dc end),
     meck:expect(dc_utilities, get_stable_snapshot, fun() -> {ok, vectorclock:new()} end),
 
-    meck:expect(vectorclock, get, fun(_,_) -> 0 end),
+    meck:expect(vectorclock, get, fun(_, _) -> 0 end),
 
     meck:expect(log_utilities, get_key_partition, fun(_) -> mock_partition:get_key_partition() end),
     meck:expect(log_utilities, get_logid_from_key, fun(_) -> mock_partition:get_logid_from_key() end),
-    
-    
+
     % this is not implemented in mock_partition!
     % meck:expect(clocksi_vnode, single_commit_sync, fun(_,_) -> 0 end),
-    meck:expect(clocksi_vnode, commit, fun(_,_,_) -> ok end),
-    meck:expect(clocksi_vnode, read_data_item, fun(_,_,K,_,_) -> mock_partition:read_data_item(K) end),
-    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition,_) -> mock_partition:prepare(UpdatedPartition) end),
-    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition,_) -> mock_partition:single_commit(UpdatedPartition) end),
-    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition,_) -> mock_partition:abort(UpdatedPartition) end),
+    meck:expect(clocksi_vnode, commit, fun(_, _, _) -> ok end),
+    meck:expect(clocksi_vnode, read_data_item, fun(_, _, K, _, _) -> mock_partition:read_data_item(K) end),
+    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, _) -> mock_partition:prepare(UpdatedPartition) end),
+    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, _) -> mock_partition:single_commit(UpdatedPartition) end),
+    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, _) -> mock_partition:abort(UpdatedPartition) end),
 
-    meck:expect(clocksi_downstream, generate_downstream_op, fun(_,_,Key,_,_,_) -> mock_partition:generate_downstream_op(Key) end),
+    meck:expect(clocksi_downstream, generate_downstream_op, fun(_, _, Key, _, _, _) -> mock_partition:generate_downstream_op(Key) end),
 
-    meck:expect(logging_vnode, append, fun(_,_,_) -> {ok, {0, node}} end),
-    meck:expect(logging_vnode, asyn_append, fun(_,_,_,ReplyTo) -> mock_partition:asyn_append(ReplyTo) end)
-
-.
+    meck:expect(logging_vnode, append, fun(_, _, _) -> {ok, {0, node}} end),
+    meck:expect(logging_vnode, asyn_append, fun(_, _, _, ReplyTo) -> mock_partition:asyn_append(ReplyTo) end).
 
 meck_undload() ->
     meck:unload(dc_utilities),
@@ -1098,7 +1095,6 @@ downstream_fail_test() ->
             gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
-
 get_snapshot_time_test() ->
     fun() ->
         {ok, SnapshotTime} = get_snapshot_time(),
@@ -1113,5 +1109,5 @@ wait_for_clock_test() ->
         {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
         ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2))
     end.
-    
+
 -endif.
