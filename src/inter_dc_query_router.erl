@@ -210,9 +210,9 @@ request_log_entries() ->
     Self = self(),
 
     meck:expect(inter_dc_sub_vnode, deliver_log_reader_resp, fun(BinaryRep) ->
-        <<_Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
+        <<Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
         %% check if everything is delivered properly
-        {{_DCID = dcid, _Partition = 0}, _Txns = [1, 2, 3, 4]} = binary_to_term(RestBinary),
+        {{_DCID = dcid, Partition = 0}, _Txns = [1, 2, 3, 4]} = binary_to_term(RestBinary),
         Self ! finish
                                                              end),
 

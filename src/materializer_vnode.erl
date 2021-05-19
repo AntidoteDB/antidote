@@ -276,7 +276,7 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCach
         delete_cache(OpsCache),
         delete_cache(SnapshotCache)
     catch
-        _:_Reason->
+        _:_Reason2->
             ok
     end,
     ok.
