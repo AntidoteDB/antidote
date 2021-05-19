@@ -53,14 +53,15 @@ singledc:
 ifdef SUITE
 	${REBAR} ct --dir test/singledc --suite ${SUITE}
 else
-	${REBAR} ct --dir test/singledc
+	${REBAR} ct --dir test/singledc --cover_export_name=singledc
 endif
 
 multidc: 
 ifdef SUITE
 	${REBAR} ct --dir test/multidc --suite ${SUITE}
 else
-	${REBAR} ct --dir test/multidc
+	${REBAR} ct --dir test/multidc --cover_export_name=multidc
+
 endif
 
 systests: singledc multidc
