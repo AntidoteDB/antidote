@@ -31,15 +31,10 @@
 
 -include("antidote.hrl").
 
--define(GET_NODE_LIST(), get_node_list()).
--define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list()).
-
 
 -export([start_link/1,
     start/1,
     put_meta/3,
-    get_node_list/0,
-    get_node_and_partition_list/0,
     get_merged_data/2,
     remove_partition/2,
     send_meta_data/3,
@@ -141,7 +136,7 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        name = Name,
                                        should_check_nodes = CheckNodes}) ->
     {WillChange, Data} = get_merged_meta_data(Name, CheckNodes),
-    NodeList = ?GET_NODE_LIST(),
+    NodeList = inter_dc_utils:get_node_list(),
     LocalMerged = maps:get(local_merged, Data),
     MyNode = node(),
     ok = lists:foreach(fun(Node) ->
@@ -204,7 +199,7 @@ get_merged_meta_data(Name, CheckNodes) ->
         false ->
             not_ready;
         true ->
-            {NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
+            {NodeList, PartitionList, WillChange} = inter_dc_utils:get_node_and_partition_list(),
             Remote = antidote_ets_meta_data:get_remote_meta_data_as_map(Name),
             Local = antidote_ets_meta_data:get_meta_data_as_map(Name),
             %% Be sure that you are only checking active nodes
@@ -236,26 +231,3 @@ update_stable(LastResult, NewData, Name) ->
                   end
               end, {false, LastResult}, NewData).
 
-%% @private
--spec get_node_list() -> [node()].
-get_node_list() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    get_node_list(Ring).
-
-%% @private
-get_node_list(Ring) ->
-    MyNode = node(),
-    lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
-
-%% @private
--spec get_node_and_partition_list() -> {[node()], [partition_id()], true}.
-get_node_and_partition_list() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    NodeList = get_node_list(Ring),
-    PartitionList = riak_core_ring:my_indices(Ring),
-    %% TODO Deciding if the nodes might change by checking the is_resizing function is not
-    %% safe can cause inconsistencies under concurrency, so this should
-    %% be done differently
-    %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
-    Resize = true,
-    {NodeList, PartitionList, Resize}.
