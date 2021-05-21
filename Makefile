@@ -1,6 +1,6 @@
 REBAR = $(shell pwd)/rebar3
 COVERPATH = $(shell pwd)/_build/test/cover
-.PHONY: rel test relgentlerain docker-build docker-run
+.PHONY: rel test docker-build docker-run
 
 all: compile
 
@@ -33,9 +33,6 @@ lint:
 	${REBAR} lint
 
 check: distclean test reltest dialyzer lint
-
-relgentlerain: export TXN_PROTOCOL=gentlerain
-relgentlerain: relclean rel
 
 relnocert: export NO_CERTIFICATION=true
 relnocert: relclean rel
