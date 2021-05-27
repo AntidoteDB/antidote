@@ -48,34 +48,21 @@ create_snapshot(Type) ->
 
 %% @doc Applies an downstream effect to a snapshot of a crdt.
 %%      This function yields an error if the crdt does not have a corresponding update operation.
--spec update_snapshot(type(), snapshot(), effect()) -> {ok, snapshot()} | {error, reason()}.
+-spec update_snapshot(type(), snapshot(), effect()) -> snapshot().
 update_snapshot(Type, Snapshot, Op) ->
-    try
-        antidote_crdt:update(Type, Op, Snapshot)
-    catch
-        _:_ ->
-            {error, {unexpected_operation, Op, Type}}
-    end.
+    {ok, Result} = antidote_crdt:update(Type, Op, Snapshot),
+    Result.
 
 %% @doc Applies updates in given order without any checks, errors are simply propagated.
--spec materialize_eager(type(), snapshot(), [effect()]) -> snapshot() | {error, {unexpected_operation, effect(), type()}}.
-materialize_eager(_Type, Snapshot, []) ->
-    Snapshot;
-materialize_eager(Type, Snapshot, [Effect | Rest]) ->
-    case update_snapshot(Type, Snapshot, Effect) of
-        {error, Reason} ->
-            {error, Reason};
-        {ok, Result} ->
-            materialize_eager(Type, Result, Rest)
-    end.
-
-
+-spec materialize_eager(type(), snapshot(), [effect()]) -> snapshot().
+materialize_eager(Type, InitialSnapshot, Effects) ->
+    lists:foldl(fun (Effect, Snapshot) -> update_snapshot(Type, Snapshot, Effect) end, InitialSnapshot, Effects).
 
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
 -spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
-belongs_to_snapshot_op(ignore, {_OpDc, _OpCommitTime}, _OpSs) ->
+belongs_to_snapshot_op(ignore, _, _) ->
     true;
 belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
     OpSs1 = vectorclock:set(OpDc, OpCommitTime, OpSs),
@@ -83,14 +70,13 @@ belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
 
 
 -ifdef(TEST).
-
 %% Testing update with pn_counter.
 update_pncounter_test() ->
     Type = antidote_crdt_counter_pn,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Op = 1,
-    {ok, Counter2} = update_snapshot(Type, Counter, Op),
+    Counter2 = update_snapshot(Type, Counter, Op),
     ?assertEqual(1, Type:value(Counter2)).
 
 %% Testing pn_counter with update log
@@ -118,18 +104,6 @@ materializer_counter_emptylog_test() ->
 %% Testing non-existing crdt
 materializer_error_nocreate_test() ->
     ?assertException(error, {badmatch, false}, create_snapshot(bla)).
-
-%% Testing crdt with invalid update operation
-materializer_error_invalidupdate_test() ->
-    Type = antidote_crdt_counter_pn,
-    Counter = create_snapshot(Type),
-    ?assertEqual(0, Type:value(Counter)),
-    Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
-    ?assertEqual({error, {unexpected_operation,
-                    {non_existing_op_type, {non_existing_op, actor1}},
-                    antidote_crdt_counter_pn}},
-                 materialize_eager(Type, Counter, Ops)).
-
 
 %% Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time

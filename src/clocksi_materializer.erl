@@ -93,13 +93,14 @@ materialize(Type, TxId, MinSnapshotTime,
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
         materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, MinSnapshotTime,
                            Ops, TxId, SnapshotCommitTime, false, 0),
-    case apply_operations(Type, Snapshot, 0, OpList) of
-        % TODO ADD TRY CATCH HERE
-        {ok, NewSS, Count} ->
-            {ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
-        {error, Reason} ->
-            {error, Reason}
+    try
+        {ok, NewSS, Count} = apply_operations(Type, Snapshot, 0, OpList),
+        {ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count}
+    catch
+        _:_ ->
+        {error, {unexpected_operations, OpList, Type}}
     end.
+
 
 %% @doc Applies a list of operations to a snapshot
 %%      Input:
@@ -110,16 +111,13 @@ materialize(Type, TxId, MinSnapshotTime,
 %%      Output: Either the snapshot with the operations applied to
 %%      it, or an error.
 -spec apply_operations(type(), snapshot(), non_neg_integer(), [clocksi_payload()]) ->
-                              {ok, snapshot(), non_neg_integer()} | {error, reason()}.
+                              {ok, snapshot(), non_neg_integer()}.
 apply_operations(_Type, Snapshot, Count, []) ->
     {ok, Snapshot, Count};
 apply_operations(Type, Snapshot, Count, [Op | Rest]) ->
-    case materializer:update_snapshot(Type, Snapshot, Op#clocksi_payload.op_param) of
-        {ok, NewSnapshot} ->
-            apply_operations(Type, NewSnapshot, Count+1, Rest);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    %TODO!!!!
+    NewSnapshot = materializer:update_snapshot(Type, Snapshot, Op#clocksi_payload.op_param),
+    apply_operations(Type, NewSnapshot, Count+1, Rest).
 
 %% @doc Internal function that goes through a list of operations and a snapshot
 %%      time and returns which operations from the list should be applied for
