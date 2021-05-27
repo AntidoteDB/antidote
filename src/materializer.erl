@@ -36,14 +36,14 @@
 -endif.
 
 -export([
-    create_snapshot/1,
+    new/1,
     update_snapshot/3,
-    materialize_eager/3,
+    apply_effects/3,
     belongs_to_snapshot_op/3]).
 
 %% @doc Creates an empty CRDT
--spec create_snapshot(type()) -> snapshot().
-create_snapshot(Type) ->
+-spec new(type()) -> snapshot().
+new(Type) ->
     antidote_crdt:new(Type).
 
 %% @doc Applies an downstream effect to a snapshot of a crdt.
@@ -54,8 +54,8 @@ update_snapshot(Type, Snapshot, Op) ->
     Result.
 
 %% @doc Applies updates in given order without any checks, errors are simply propagated.
--spec materialize_eager(type(), snapshot(), [effect()]) -> snapshot().
-materialize_eager(Type, InitialSnapshot, Effects) ->
+-spec apply_effects(type(), snapshot(), [effect()]) -> snapshot().
+apply_effects(Type, InitialSnapshot, Effects) ->
     lists:foldl(fun (Effect, Snapshot) -> update_snapshot(Type, Snapshot, Effect) end, InitialSnapshot, Effects).
 
 %% Should be called doesn't belong in SS
@@ -70,10 +70,11 @@ belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
 
 
 -ifdef(TEST).
+
 %% Testing update with pn_counter.
 update_pncounter_test() ->
     Type = antidote_crdt_counter_pn,
-    Counter = create_snapshot(Type),
+    Counter = new(Type),
     ?assertEqual(0, Type:value(Counter)),
     Op = 1,
     Counter2 = update_snapshot(Type, Counter, Op),
@@ -82,28 +83,41 @@ update_pncounter_test() ->
 %% Testing pn_counter with update log
 materializer_counter_withlog_test() ->
     Type = antidote_crdt_counter_pn,
-    Counter = create_snapshot(Type),
+    Counter = new(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [1,
            1,
            2,
            3
           ],
-    Counter2 = materialize_eager(Type, Counter, Ops),
+    Counter2 = apply_effects(Type, Counter, Ops),
     ?assertEqual(7, Type:value(Counter2)).
 
 %% Testing counter with empty update log
 materializer_counter_emptylog_test() ->
     Type = antidote_crdt_counter_pn,
-    Counter = create_snapshot(Type),
+    Counter = new(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [],
-    Counter2 = materialize_eager(Type, Counter, Ops),
+    Counter2 = apply_effects(Type, Counter, Ops),
     ?assertEqual(0, Type:value(Counter2)).
 
 %% Testing non-existing crdt
 materializer_error_nocreate_test() ->
-    ?assertException(error, {badmatch, false}, create_snapshot(bla)).
+    ?assertException(error, {badmatch, false}, new(bla)).
+
+materializer_test()->
+    Type = antidote_crdt_counter_pn,
+    PNCounter = new(Type),
+    ?assertEqual(0, Type:value(PNCounter)),
+    % test - no ops
+    PNCounter2 = apply_effects(Type, PNCounter, []),
+    ?assertEqual(0, Type:value(PNCounter2)),
+    % test - several ops
+    Ops = [1, 2, 3, 4],
+    PNCounter3 = apply_effects(Type, PNCounter, Ops),
+    ?assertEqual(10, Type:value(PNCounter3)).
+
 
 %% Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time

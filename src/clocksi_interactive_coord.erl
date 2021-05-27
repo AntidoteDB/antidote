@@ -674,7 +674,7 @@ apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
 
         {Partition, WS} ->
             FilteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
-            clocksi_materializer:materialize_eager(Type, Snapshot, FilteredAndReversedUpdates)
+            materializer:apply_effects(Type, Snapshot, FilteredAndReversedUpdates)
     end.
 
 

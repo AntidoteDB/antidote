@@ -369,8 +369,8 @@ get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
     case get_snapshot_dict(SnapshotCache, Key) of
         not_found ->
             EmptySnapshot = #materialized_snapshot{
-                last_op_id=0,
-                value=clocksi_materializer:new(Type)
+                last_op_id = 0,
+                value = materializer:new(Type)
             },
             store_snapshot(TxId, Key, EmptySnapshot, vectorclock:new(), false, State),
             %% Create a base version committed at time ignore, i.e. bottom
