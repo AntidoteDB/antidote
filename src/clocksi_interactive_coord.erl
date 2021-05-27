@@ -141,7 +141,6 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                             ok
                                     end,
 
-                                    TxId = Transaction#transaction.txn_id,
                                     DcId = dc_utilities:get_my_dc_id(),
 
                                     CausalClock = vectorclock:set(

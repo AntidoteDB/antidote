@@ -31,8 +31,6 @@
 
 -behavior(supervisor).
 
--include("antidote.hrl").
-
 -export([start_fsm/0,
          start_link/0]).
 
@@ -45,7 +43,6 @@ start_link() ->
 start_fsm() ->
     % calls clocksi_interactive_coord:start_link()
     supervisor:start_child(?MODULE, []).
-
 
 %% @doc Starts the coordinator of a ClockSI interactive transaction.
 init([]) ->
