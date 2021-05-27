@@ -30,7 +30,6 @@
 -behaviour(riak_core_vnode).
 
 -include("antidote.hrl").
--include_lib("kernel/include/logger.hrl").
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.

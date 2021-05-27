@@ -39,8 +39,6 @@
     create_snapshot/1,
     update_snapshot/3,
     materialize_eager/3,
-    check_operations/1,
-    check_operation/1,
     belongs_to_snapshot_op/3]).
 
 %% @doc Creates an empty CRDT
@@ -72,30 +70,6 @@ materialize_eager(Type, Snapshot, [Effect | Rest]) ->
     end.
 
 
-%% @doc Check that in a list of client operations, all of them are correctly typed.
--spec check_operations([client_op()]) -> ok | {error, {type_check_failed, client_op()}}.
-check_operations([]) ->
-    ok;
-check_operations([Op | Rest]) ->
-    case check_operation(Op) of
-        true ->
-            check_operations(Rest);
-        false ->
-            {error, {type_check_failed, Op}}
-    end.
-
-%% @doc Check that an operation is correctly typed.
--spec check_operation(client_op()) -> boolean().
-check_operation(Op) ->
-    case Op of
-        {update, {_, Type, Update}} ->
-            antidote_crdt:is_type(Type) andalso
-                antidote_crdt:is_operation(Type, Update);
-        {read, {_, Type}} ->
-            antidote_crdt:is_type(Type);
-        _ ->
-            false
-    end.
 
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
@@ -156,19 +130,6 @@ materializer_error_invalidupdate_test() ->
                     antidote_crdt_counter_pn}},
                  materialize_eager(Type, Counter, Ops)).
 
-%% Testing that the function check_operations works properly
-check_operations_test() ->
-    Operations =
-        [{read, {key1, antidote_crdt_counter_pn}},
-         {update, {key1, antidote_crdt_counter_pn, increment}}
-        ],
-    ?assertEqual(ok, check_operations(Operations)),
-
-    Operations2 = [{read, {key1, antidote_crdt_counter_pn}},
-        {update, {key1, antidote_crdt_counter_pn, {{add, elem}, a}}},
-        {update, {key2, antidote_crdt_counter_pn, {increment, a}}},
-        {read, {key1, antidote_crdt_counter_pn}}],
-    ?assertMatch({error, _}, check_operations(Operations2)).
 
 %% Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
