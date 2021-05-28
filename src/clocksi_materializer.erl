@@ -46,11 +46,10 @@ get_first_id([]) ->
 get_first_id([{Id, _Op}|_]) ->
     Id;
 get_first_id(Tuple) when is_tuple(Tuple) ->
-    {Length, _ListLen} = element(2, Tuple),
+    Length = get_current_length_oplist(Tuple),
     case Length of
-        0 ->
-            0;
-        Length ->
+        0 -> 0;
+        _ ->
             {Id, _Op} = element(?FIRST_OP+(Length-1), Tuple),
             Id
     end.
@@ -144,16 +143,16 @@ materialize_intern(_Type, OpList, _LastOp, FirstHole, _SnapshotCommitTime, _MinS
     {ok, OpList, FirstHole, LastOpCt, NewSS};
 
 materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, [{OpId, Op}|Rest], TxId, LastOpCt, NewSS, Location) ->
-    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId, Op}, Rest, TxId, LastOpCt, NewSS, Location + 1);
+    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId, Op}, Rest, TxId, LastOpCt, NewSS, Location);
 
 materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, TupleOps, TxId, LastOpCt, NewSS, Location) ->
-    {Length, _ListLen} = element(2, TupleOps),
+    Length = get_current_length_oplist(TupleOps),
     case Length == Location of
         true ->
             {ok, OpList, FirstHole, LastOpCt, NewSS};
         false ->
             materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime,
-                                       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, TxId, LastOpCt, NewSS, Location + 1)
+                                       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, TxId, LastOpCt, NewSS, Location)
     end.
 
 materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId, Op}, Rest, TxId, LastOpCt, NewSS, Location) ->
@@ -179,7 +178,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
     case Result of
         {ok, NewOpList1, NewLastOpCt, NewSS1, NewHole} ->
             materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
+                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location+1)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -239,6 +238,10 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
             %% was already in the prev ss, done searching ops
             {false, true, PrevTime}
     end.
+
+get_current_length_oplist(TupleOps) ->
+    {Length, _ListLen} = element(2, TupleOps),
+    Length.
 
 
 -ifdef(TEST).

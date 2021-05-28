@@ -64,8 +64,8 @@ apply_effects(Type, InitialSnapshot, Effects) ->
 -spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot_op(ignore, _, _) ->
     true;
-belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
-    OpSs1 = vectorclock:set(OpDc, OpCommitTime, OpSs),
+belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSnapshot) ->
+    OpSs1 = vectorclock:set(OpDc, OpCommitTime, OpSnapshot),
     not vectorclock:le(OpSs1, SSTime).
 
 
