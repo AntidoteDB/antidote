@@ -60,7 +60,7 @@ apply_effects(Type, InitialSnapshot, Effects) ->
 
 %% returns false if op is more recent than SS (i.e. if op is not in the ss)
 %% returns true otw
--spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
+-spec belongs_to_snapshot_op(snapshot_time() | ignore, dot(), snapshot_time()) -> boolean().
 belongs_to_snapshot_op(ignore, _, _) ->
     false;
 belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSnapshot) ->

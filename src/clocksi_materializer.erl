@@ -171,7 +171,7 @@ filter_oplist(OpList, LastOp, FirstHole, BaseSnapshotTime, MinSnapshotTime, Tupl
     end.
 
 materialize_intern_perform(OpList, FirstHole, BaseSnapshotTime, MinSnapshotTime, {OpId, Op}, LastOpCt, IsUpdated) ->
-    OpCom=Op#clocksi_payload.commit_time,
+    OpCom=Op#clocksi_payload.dot,
     OpSS=Op#clocksi_payload.snapshot_time,
     case (is_op_in_snapshot(OpCom, OpSS, MinSnapshotTime, BaseSnapshotTime, LastOpCt)) of
                          {true, NewOpCt} ->
@@ -199,7 +199,7 @@ materialize_intern_perform(OpList, FirstHole, BaseSnapshotTime, MinSnapshotTime,
 %%      if the operation should be included in the snapshot false otherwise, the second element
 %%      the snapshot time of the last operation to
 %%      be applied to the snapshot
--spec is_op_in_snapshot(dc_and_commit_time(), snapshot_time(), snapshot_time(),
+-spec is_op_in_snapshot(dot(), snapshot_time(), snapshot_time(),
                         snapshot_time(), snapshot_time()) -> {boolean(), snapshot_time() | ignore} | already_in_snapshot.
 is_op_in_snapshot({OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
@@ -235,16 +235,16 @@ materializer_clocksi_test()->
     %%  need to add the snapshot time for these for the test to pass
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Op3 = #clocksi_payload{key = abc, type =Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 3, snapshot_time=vectorclock:from_list([{1, 3}])},
+                           dot = {1, 3}, txid = 3, snapshot_time=vectorclock:from_list([{1, 3}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1, 4}])},
+                           dot = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1, 4}])},
 
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
@@ -274,16 +274,16 @@ materializer_missing_op_test() ->
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
@@ -309,16 +309,16 @@ materializer_missing_dc_test() ->
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{2, 1}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
@@ -353,13 +353,13 @@ materializer_clocksi_concurrent_test() ->
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
 
     Ops = [{3, Op2}, {2, Op3}, {1, Op1}],
     {PNCounter2, 3, CommitTime2, _Keep} = filter_oplist(

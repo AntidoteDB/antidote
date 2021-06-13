@@ -96,7 +96,7 @@
 }).
 
 -record(commit_log_payload, {
-    commit_time :: dc_and_commit_time(),
+    dot :: dot(),
     snapshot_time :: snapshot_time()
 }).
 -type commit_log_payload() :: #commit_log_payload{}.
@@ -192,7 +192,7 @@
 -type dcid() :: undefined | {term(), term()}.
 -type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
--type dc_and_commit_time() :: {dcid(), clock_time()}.
+-type dot() :: {dcid(), clock_time()}.
 
 -record(tx_id, {
     local_start_time :: clock_time(),
@@ -204,7 +204,7 @@
     type :: type(),
     op_param :: effect(),
     snapshot_time :: snapshot_time(),
-    commit_time :: dc_and_commit_time(),
+    dot :: dot(),
     txid :: txid()
 }).
 
