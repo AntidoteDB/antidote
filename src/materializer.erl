@@ -58,15 +58,14 @@ update_snapshot(Type, Snapshot, Op) ->
 apply_effects(Type, InitialSnapshot, Effects) ->
     lists:foldl(fun (Effect, Snapshot) -> update_snapshot(Type, Snapshot, Effect) end, InitialSnapshot, Effects).
 
-%% Should be called doesn't belong in SS
-%% returns true if op is more recent than SS (i.e. is not in the ss)
-%% returns false otw
+%% returns false if op is more recent than SS (i.e. if op is not in the ss)
+%% returns true otw
 -spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot_op(ignore, _, _) ->
-    true;
+    false;
 belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSnapshot) ->
     OpSs1 = vectorclock:set(OpDc, OpCommitTime, OpSnapshot),
-    not vectorclock:le(OpSs1, SSTime).
+    vectorclock:le(OpSs1, SSTime).
 
 
 -ifdef(TEST).
@@ -134,12 +133,12 @@ belongs_to_snapshot_test() ->
     CommitTime4b = 10,
 
     SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-    ?assertEqual(true, belongs_to_snapshot_op(
+    ?assertEqual(false, belongs_to_snapshot_op(
                  vectorclock:from_list([{1, CommitTime1a}, {2, CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-    ?assertEqual(true, belongs_to_snapshot_op(
+    ?assertEqual(false, belongs_to_snapshot_op(
                  vectorclock:from_list([{1, CommitTime2a}, {2, CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
-    ?assertEqual(false, belongs_to_snapshot_op(
+    ?assertEqual(true, belongs_to_snapshot_op(
                   vectorclock:from_list([{1, CommitTime3a}, {2, CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-    ?assertEqual(false, belongs_to_snapshot_op(
+    ?assertEqual(true, belongs_to_snapshot_op(
                   vectorclock:from_list([{1, CommitTime4a}, {2, CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 -endif.

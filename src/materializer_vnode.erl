@@ -455,7 +455,7 @@ materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snap
 materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
             is_newest_snapshot=IsNewest
         }) ->
-    case clocksi_materializer:materialize(Type, TxId, SnapshotTime, SnapshotResponse) of
+    case clocksi_materializer:materialize(Type, SnapshotTime, SnapshotResponse) of
         {error, Reason} ->
             {error, Reason};
 
@@ -552,7 +552,7 @@ prune_ops({Len, OpsTuple}, Threshold)->
     %% one for including
     {NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
                                          OpCommitTime=Op#clocksi_payload.commit_time,
-                                         (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
+                                         not (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
                                      end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
     case NewSize of
         0 ->

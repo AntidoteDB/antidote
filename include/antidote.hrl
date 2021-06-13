@@ -266,7 +266,7 @@
     %% the previous snapshot to apply the ops to
     materialized_snapshot :: materialized_snapshot(),
     %% The version vector time of the snapshot
-    snapshot_time :: snapshot_time() | ignore,
+    snapshot_time :: snapshot_time(),
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).
