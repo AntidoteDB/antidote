@@ -96,7 +96,7 @@
 }).
 
 -record(commit_log_payload, {
-    dot :: dot(),
+    commit_time :: dc_and_commit_time(),
     snapshot_time :: snapshot_time()
 }).
 -type commit_log_payload() :: #commit_log_payload{}.
@@ -192,7 +192,7 @@
 -type dcid() :: undefined | {term(), term()}.
 -type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
--type dot() :: {dcid(), clock_time()}.
+-type dc_and_commit_time() :: {dcid(), clock_time()}.
 
 -record(tx_id, {
     local_start_time :: clock_time(),
@@ -204,7 +204,7 @@
     type :: type(),
     op_param :: effect(),
     snapshot_time :: snapshot_time(),
-    dot :: dot(),
+    commit_time :: dc_and_commit_time(),
     txid :: txid()
 }).
 
@@ -266,7 +266,7 @@
     %% the previous snapshot to apply the ops to
     materialized_snapshot :: materialized_snapshot(),
     %% The version vector time of the snapshot
-    snapshot_time :: snapshot_time(),
+    snapshot_time :: snapshot_time() | ignore,
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).

@@ -75,9 +75,14 @@ check_tables_ready() ->
     has_stable_meta_data_table().
 
 %% Reads the value of a key stored in the table
--spec read_meta_data(term()) -> {ok, term()} | not_found.
+-spec read_meta_data(term()) -> {ok, term()} | error.
 read_meta_data(Key) ->
-    get_value_from_stable_meta_data_table(Key).
+    case get_value_from_stable_meta_data_table(Key) of
+        not_found ->
+            error;
+        {ok, Value}->
+            {ok, Value}
+    end.
 
 -spec read_all_meta_data() -> [tuple()].
 read_all_meta_data() ->

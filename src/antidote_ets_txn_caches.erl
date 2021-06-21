@@ -76,7 +76,12 @@ get_prepared_txn_by_key_and_table(Table, Key) ->
 
 -spec is_prepared_txn_by_table(cache_id(), key()) -> boolean().
 is_prepared_txn_by_table(Table, Key) ->
-    not ets:member(Table, Key).
+    case ets:lookup(Table, Key) of
+        [] ->
+            true;
+        _ ->
+            false
+    end.
 
 -spec delete_prepared_txn_by_table(cache_id(), key()) -> true.
 delete_prepared_txn_by_table(Table, Key) ->
@@ -116,4 +121,8 @@ delete_prepared_txns_cache(Partition) ->
 
 -spec get_prepared_cache_name(partition_id()) -> cache_id().
 get_prepared_cache_name(Partition) ->
-    list_to_atom(atom_to_list(node()) ++ "prepared-" ++ integer_to_list(Partition)).
+    get_cache_name(Partition, prepared).
+
+-spec get_cache_name(partition_id(), atom()) -> cache_id().
+get_cache_name(Partition, Base) ->
+    list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).

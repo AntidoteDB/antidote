@@ -41,9 +41,9 @@
          execute_hook_test/1,
          execute_post_hook_test/1,
          execute_prehooks_static_txn_test/1,
-         execute_posthooks_static_txn_test/1,
-         execute_bothhooks_static_txn_test/1]).
+         execute_posthooks_static_txn_test/1]).
 
+-include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(BUCKET, test_utils:bucket(commit_hooks_bucket)).
@@ -67,8 +67,7 @@ all() -> [
     execute_hook_test,
     execute_post_hook_test,
     execute_prehooks_static_txn_test,
-    execute_posthooks_static_txn_test,
-    execute_bothhooks_static_txn_test
+    execute_posthooks_static_txn_test
 ].
 
 
@@ -80,11 +79,11 @@ register_hook_test(Config) ->
     ?assertMatch({error, _}, Response),
 
     ok = rpc:call(Node, antidote_hooks, register_post_hook, [Bucket, antidote_hooks, test_commit_hook]),
-    {ok, Result1} = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
+    Result1 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
     ?assertMatch({antidote_hooks, test_commit_hook}, Result1),
 
     ok = rpc:call(Node, antidote, unregister_hook, [post_commit, Bucket]),
-    {ok, Result2} = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
+    Result2 = rpc:call(Node, antidote_hooks, get_hooks, [post_commit, Bucket]),
     ?assertMatch(undefined, Result2).
 
 
@@ -104,7 +103,7 @@ execute_hook_test(Config) ->
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[BoundObject], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    ?assertMatch({ok, [5]}, Res).
+    ?assertMatch({ok, [2]}, Res).
 
 
 %% Test post-commit hook
@@ -122,7 +121,7 @@ execute_post_hook_test(Config) ->
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    ?assertMatch({ok, [100]}, Res).
+    ?assertMatch({ok, [1]}, Res).
 
 execute_prehooks_static_txn_test(Config) ->
     Node = proplists:get_value(node, Config),
@@ -136,7 +135,7 @@ execute_prehooks_static_txn_test(Config) ->
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[BoundObject], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    ?assertMatch({ok, [5]}, Res).
+    ?assertMatch({ok, [2]}, Res).
 
 execute_posthooks_static_txn_test(Config) ->
     Node = proplists:get_value(node, Config),
@@ -151,21 +150,4 @@ execute_posthooks_static_txn_test(Config) ->
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    ?assertMatch({ok, [100]}, Res).
-
-
-execute_bothhooks_static_txn_test(Config) ->
-    Node = proplists:get_value(node, Config),
-    Bucket = ?BUCKET,
-    BoundObject = {bothhook_static_key, antidote_crdt_counter_pn, Bucket},
-
-    ok = rpc:call(Node, antidote, register_pre_hook, [Bucket, antidote_hooks, test_increment_hook]),
-    ok = rpc:call(Node, antidote, register_post_hook, [Bucket, antidote_hooks, test_post_hook]),
-
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject, increment, 1}]]),
-
-    CommitCount = {posthook_static_key, antidote_crdt_counter_pn, commitcount},
-    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
-    Res = rpc:call(Node, antidote, read_objects, [[CommitCount, BoundObject], TxId2]),
-    rpc:call(Node, antidote, commit_transaction, [TxId2]),
-    ?assertMatch({ok, [100, 5]}, Res).
+    ?assertMatch({ok, [1]}, Res).
