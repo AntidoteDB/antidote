@@ -536,7 +536,7 @@ handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key}, _Sende
                             []
                         end,
                     {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
-                                                   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
+                                                   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = materializer:new(Type)},
                                                    snapshot_time = vectorclock:new(), is_newest_snapshot = false},
                      State}
             end;
@@ -691,7 +691,7 @@ get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
     NewMaxVector =
         case OpType of
             commit ->
-                #commit_log_payload{commit_time = {DCID, TxCommitTime}} = LogPayload,
+                #commit_log_payload{dot = {DCID, TxCommitTime}} = LogPayload,
                 vectorclock:set(DCID, TxCommitTime, PrevMaxVector);
             update ->
                 %% Update the per bucket opid count
@@ -808,7 +808,7 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, C
              snapshot_time() | undefined, dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])) ->
                 {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [clocksi_payload()])}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
-    #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
+    #commit_log_payload{dot = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
         NewCommittedOpsDict =
@@ -822,7 +822,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, Co
                            type = Type,
                            op_param = Op,
                            snapshot_time = SnapshotTime,
-                           commit_time = {DcId, TxCommitTime},
+                           dot = {DcId, TxCommitTime},
                            txid = TxId},
                         dict:append(KeyInternal, CommittedDownstreamOp, Acc);
                     false ->
@@ -1214,7 +1214,7 @@ append_log_record(LogId, Node, LocalLogId, Entries, #state{logs_map = Map,
     LogOperation = #log_operation{
         tx_id = #tx_id{local_start_time = 1, server_pid = 1},
         op_type = commit,
-        log_payload = #commit_log_payload{commit_time = {MyDCID, 1}, snapshot_time = 'undefined'}
+        log_payload = #commit_log_payload{dot = {MyDCID, 1}, snapshot_time = 'undefined'}
     },
     OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
     #op_number{global = Global} = OpId,

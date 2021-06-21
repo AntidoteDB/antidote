@@ -50,7 +50,7 @@ from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
   CommitPld = LastOp#log_record.log_operation,
   commit = CommitPld#log_operation.op_type, %% sanity check
-  #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
+  #commit_log_payload{dot = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
   #interdc_txn{
     dcid = DCID,
     partition = Partition,

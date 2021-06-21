@@ -30,7 +30,6 @@
 -behaviour(riak_core_vnode).
 
 -include("antidote.hrl").
--include_lib("kernel/include/logger.hrl").
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -101,7 +100,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     case clocksi_readitem:read_data_item(Node, Key, Type, TxId, []) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            Snapshot2 = materializer:apply_effects(Type, Snapshot, Updates2),
             {ok, Snapshot2};
         {error, Reason} ->
             {error, Reason}
@@ -414,7 +413,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
                 op_type = commit,
-                log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
+                log_payload = #commit_log_payload{dot = {DcId, TxCommitTime},
                                  snapshot_time = Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, _Update} | _Rest] ->
@@ -546,7 +545,7 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
                                 type = Type,
                                 op_param = Op,
                                 snapshot_time = Transaction#transaction.vec_snapshot_time,
-                                commit_time = {DcId, TxCommitTime},
+                                dot = {DcId, TxCommitTime},
                                 txid = Transaction#transaction.txn_id},
                          [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
                      end,

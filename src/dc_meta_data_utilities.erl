@@ -63,7 +63,7 @@ is_restart() ->
     case stable_meta_data_server:read_meta_data(has_started) of
         {ok, Value} ->
             Value;
-        error ->
+        not_found ->
             false
     end.
 
@@ -76,7 +76,7 @@ store_meta_data_name(MetaDataName) ->
 get_env_meta_data(Name, Default) ->
     case stable_meta_data_server:read_meta_data({env, Name}) of
         {ok, Value} -> Value;
-        error ->
+        not_found ->
             Val = application:get_env(antidote, Name, Default),
             ok = stable_meta_data_server:broadcast_meta_data_env({env, Name}, Val),
             Val
@@ -99,7 +99,7 @@ load_env_meta_data() ->
 store_env_meta_data(Name, Value) ->
     stable_meta_data_server:broadcast_meta_data_env({env, Name}, Value).
 
--spec get_meta_data_name() -> {ok, atom()} | error.
+-spec get_meta_data_name() -> {ok, atom()} | not_found.
 get_meta_data_name() ->
     stable_meta_data_server:read_meta_data(meta_data_name).
 
@@ -122,7 +122,7 @@ get_dc_descriptors() ->
             dict:fold(fun(_DCID, Desc, Acc) ->
                               [Desc | Acc]
                       end, [], Dict);
-        error ->
+        not_found ->
             ?LOG_DEBUG("Could not read shared meta data for external_descriptors"),
             %% return self descriptor only
             {ok, Descriptor} = inter_dc_manager:get_descriptor(),
