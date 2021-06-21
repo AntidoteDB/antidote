@@ -75,8 +75,8 @@ get_log_operations(ObjectClockPairs) ->
 get_log_operations_internal([], Acc) ->
     {ok, lists:reverse(Acc)};
 get_log_operations_internal([{{Key, Type, Bucket}, Clock}|Rest], Acc) ->
-    case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
-    ok ->
+    case type_check_read(Type) of
+    true ->
         LogId = log_utilities:get_logid_from_key({Key, Bucket}),
         [Node] = log_utilities:get_preflist_from_key({Key, Bucket}),
         case logging_vnode:get_from_time(Node, LogId, Clock, Type, {Key, Bucket}) of
@@ -85,8 +85,8 @@ get_log_operations_internal([{{Key, Type, Bucket}, Clock}|Rest], Acc) ->
         {error, Reason} ->
             {error, Reason}
         end;
-    {error, Reason} ->
-        {error, Reason}
+    false ->
+        {error, badtype}
     end.
 
 %% Object creation and types
@@ -159,7 +159,7 @@ get_objects(Clock, Objects, Properties) ->
 -spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    case type_check(Updates) of
+    case type_check_update(Updates) of
         ok ->
             cure:update_objects(Updates, TxId);
         {error, Reason} ->
@@ -170,7 +170,7 @@ update_objects(Updates, TxId) ->
 -spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}])
                      -> {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
-    case type_check(Updates) of
+    case type_check_update(Updates) of
         ok ->
             cure:update_objects(Clock, Properties, Updates);
         {error, Reason} ->
@@ -180,18 +180,19 @@ update_objects(Clock, Properties, Updates) ->
 %%% Internal function %%
 %%% ================= %%
 
--spec type_check_update({bound_object(), op_name(), op_param()}) -> boolean().
-type_check_update({{_K, Type, _bucket}, Op, Param}) ->
-    antidote_crdt:is_type(Type)
-        andalso antidote_crdt:is_operation(Type, {Op, Param}).
-
--spec type_check([{bound_object(), op_name(), op_param()}]) -> ok | {error, Reason :: any()}.
-type_check([]) -> ok;
-type_check([Upd|Rest]) ->
-    case type_check_update(Upd) of
-        true -> type_check(Rest);
-        false -> {error, {badtype, Upd}}
+-spec type_check_update([{bound_object(), op_name(), op_param()}]) -> ok | {error, Reason :: any()}.
+type_check_update(Updates) ->
+    Check = fun ({{_K, Type, _Bucket}, Op, Param}) ->
+                not antidote_crdt:is_operation(Type, {Op, Param})
+            end,
+    case lists:filter(Check, Updates) of
+        [] -> ok;
+        BadTypes -> {error, {badtype, BadTypes}}
     end.
+
+-spec type_check_read(type()) -> boolean().
+type_check_read(Type) ->
+    antidote_crdt:is_type(Type).
 
 -spec get_default_txn_properties() -> txn_properties().
 get_default_txn_properties() ->

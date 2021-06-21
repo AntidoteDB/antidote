@@ -369,8 +369,8 @@ get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
     case get_snapshot_dict(SnapshotCache, Key) of
         not_found ->
             EmptySnapshot = #materialized_snapshot{
-                last_op_id=0,
-                value=clocksi_materializer:new(Type)
+                last_op_id = 0,
+                value = materializer:new(Type)
             },
             store_snapshot(TxId, Key, EmptySnapshot, vectorclock:new(), false, State),
             %% Create a base version committed at time ignore, i.e. bottom
@@ -455,7 +455,7 @@ materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snap
 materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
             is_newest_snapshot=IsNewest
         }) ->
-    case clocksi_materializer:materialize(Type, TxId, SnapshotTime, SnapshotResponse) of
+    case clocksi_materializer:materialize(Type, SnapshotTime, SnapshotResponse) of
         {error, Reason} ->
             {error, Reason};
 
@@ -551,8 +551,8 @@ prune_ops({Len, OpsTuple}, Threshold)->
     %% Or can have the filter function return a tuple, one vale for stopping
     %% one for including
     {NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
-                                         OpCommitTime=Op#clocksi_payload.commit_time,
-                                         (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
+                                         OpCommitTime=Op#clocksi_payload.dot,
+                                         not (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
                                      end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
     case NewSize of
         0 ->
@@ -801,7 +801,7 @@ generate_payload(SnapshotTime, CommitTime, Prev, Key) ->
                      type = Type,
                      op_param = Op1,
                      snapshot_time = vectorclock:from_list([{DC1, SnapshotTime}]),
-                     commit_time = {DC1, CommitTime},
+                     dot = {DC1, CommitTime},
                      txid = 1
                     }.
 
@@ -820,7 +820,7 @@ seq_write_test() ->
                                      type = Type,
                                      op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC1, 10}]),
-                                     commit_time = {DC1, 15},
+                                     dot = {DC1, 15},
                                      txid = 1
                                     },
     op_insert_gc(Key, DownstreamOp1, State),
@@ -831,7 +831,7 @@ seq_write_test() ->
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
                       op_param = Op2,
                       snapshot_time = vectorclock:from_list([{DC1, 16}]),
-                      commit_time = {DC1, 20},
+                      dot = {DC1, 20},
                       txid = 2},
 
     op_insert_gc(Key, DownstreamOp2, State),
@@ -859,7 +859,7 @@ multipledc_write_test() ->
                                      type = Type,
                                      op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC2, 0}, {DC1, 10}]),
-                                     commit_time = {DC1, 15},
+                                     dot = {DC1, 15},
                                      txid = 1
                                     },
     op_insert_gc(Key, DownstreamOp1, State),
@@ -871,7 +871,7 @@ multipledc_write_test() ->
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
                       op_param = Op2,
                       snapshot_time = vectorclock:from_list([{DC2, 16}, {DC1, 16}]),
-                      commit_time = {DC2, 20},
+                      dot = {DC2, 20},
                       txid = 2},
     op_insert_gc(Key, DownstreamOp2, State),
     {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}, {DC2, 21}]), ignore, [], false, State),
@@ -897,7 +897,7 @@ concurrent_write_test() ->
                                      type = Type,
                                      op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC1, 0}, {DC2, 0}]),
-                                     commit_time = {DC2, 1},
+                                     dot = {DC2, 1},
                                      txid = 1},
     op_insert_gc(Key, DownstreamOp1, State),
     {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC2, 1}, {DC1, 0}]), ignore, [], false, State),
@@ -909,7 +909,7 @@ concurrent_write_test() ->
                                       type = Type,
                                       op_param = Op2,
                                       snapshot_time = vectorclock:from_list([{DC1, 0}, {DC2, 0}]),
-                                      commit_time = {DC1, 1},
+                                      dot = {DC1, 1},
                                       txid = 2},
     op_insert_gc(Key, DownstreamOp2, State),
 

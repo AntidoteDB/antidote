@@ -33,19 +33,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([new/1,
-         materialize/4,
-         materialize_eager/3]).
-
-%% @doc Creates an empty CRDT for a given type.
--spec new(type()) -> snapshot().
-new(Type) ->
-    materializer:create_snapshot(Type).
+-export([materialize/3]).
 
 %% The materializer is given of tuple containing ordered update operations.
 %% Each update operation has an id number that is one larger than
-%% the previous.  This function takes as input that tuple and returns the id number of the first update
-%% operation (i.e. the one with the largest id)
+%% the previous. This function takes as input that tuple and returns the id number of the first update
+%% operation (i.e. the one with the largest id).
 -spec get_first_id([{non_neg_integer(), clocksi_payload()}] | tuple()) ->
                           non_neg_integer().
 get_first_id([]) ->
@@ -53,14 +46,18 @@ get_first_id([]) ->
 get_first_id([{Id, _Op}|_]) ->
     Id;
 get_first_id(Tuple) when is_tuple(Tuple) ->
-    {Length, _ListLen} = element(2, Tuple),
+    Length = get_current_length_oplist(Tuple),
     case Length of
-        0 ->
-            0;
-        Length ->
+        0 -> 0;
+        _ ->
             {Id, _Op} = element(?FIRST_OP+(Length-1), Tuple),
             Id
     end.
+
+get_current_length_oplist(TupleOps) ->
+    {Length, _ListLen} = element(2, TupleOps),
+    Length.
+
 
 %% @doc Applies the operation of a list to a previously created CRDT snapshot. Only the
 %%      operations that are not already in the previous snapshot and
@@ -72,7 +69,7 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      SnapshotCommitTime: The time used to describe the state of the CRDT given in Snapshot
 %%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
-%%      TxId: The Id of the transaction requesting the snapshot
+%%
 %%      Output: A tuple. The first element is ok, the second is the CRDT after applying the operations,
 %%      the third element 1 minus the number of the operation with the smallest id not included in the snapshot,
 %%      the fourth element is the smallest vectorclock that describes this snapshot,
@@ -80,45 +77,37 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      more operations than the one given as input, false otherwise.
 %%      The sixth element is an integer representing the number of operations applied to make the snapshot
 -spec materialize(type(),
-                  txid() | ignore,
                   snapshot_time() | ignore,
                   snapshot_get_response()
                  ) ->
                          {ok, snapshot(), integer(), snapshot_time() | ignore,
                           boolean(), non_neg_integer()} | {error, reason()}.
-materialize(Type, TxId, MinSnapshotTime,
-            #snapshot_get_response{snapshot_time = SnapshotCommitTime, ops_list = Ops,
-                                   materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = Snapshot}}) ->
+materialize(Type, MinSnapshotTime,
+            #snapshot_get_response{snapshot_time = BaseTime, ops_list = Ops,
+                                   materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = BaseSnapshot}}) ->
     FirstId = get_first_id(Ops),
-    {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
-        materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, MinSnapshotTime,
-                           Ops, TxId, SnapshotCommitTime, false, 0),
-    case apply_operations(Type, Snapshot, 0, OpList) of
-        {ok, NewSS, Count} ->
-            {ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
-        {error, Reason} ->
-            {error, Reason}
+    {FilteredOps, NewLastOp, LastOpCt, IsNewSnapshotTime} =
+        filter_oplist([], LastOp, FirstId, BaseTime, MinSnapshotTime,
+                           Ops, BaseTime, false, 0),
+    try
+        NewSnapshot = apply_operations(Type, BaseSnapshot, FilteredOps),
+        {ok, NewSnapshot, NewLastOp, LastOpCt, IsNewSnapshotTime, length(FilteredOps)}
+    catch
+        _:_ ->
+        {error, {unexpected_operations, FilteredOps, Type}}
     end.
+
 
 %% @doc Applies a list of operations to a snapshot
 %%      Input:
-%%      Type: The type of CRDT of the snapshot
-%%      Snapshot: The initial snapshot to apply the operations to
-%%      Count: Should be input as 0, this will count the number of ops applied
-%%      OpList: The list of operations to apply
-%%      Output: Either the snapshot with the operations applied to
-%%      it, or an error.
--spec apply_operations(type(), snapshot(), non_neg_integer(), [clocksi_payload()]) ->
-                              {ok, snapshot(), non_neg_integer()} | {error, reason()}.
-apply_operations(_Type, Snapshot, Count, []) ->
-    {ok, Snapshot, Count};
-apply_operations(Type, Snapshot, Count, [Op | Rest]) ->
-    case materializer:update_snapshot(Type, Snapshot, Op#clocksi_payload.op_param) of
-        {ok, NewSnapshot} ->
-            apply_operations(Type, NewSnapshot, Count+1, Rest);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+%%          Type: The type of CRDT of the snapshot
+%%          Snapshot: The initial snapshot to apply the operations to
+%%          OpList: The list of operations to apply
+%%      Output: Snapshot with the operations applied to
+-spec apply_operations(type(), snapshot(), [clocksi_payload()]) -> snapshot().
+
+apply_operations(Type, BaseSnapshot, Ops) ->
+    lists:foldl(fun(Op, Snapshot) -> materializer:update_snapshot(Type, Snapshot, Op#clocksi_payload.op_param) end, BaseSnapshot, Ops).
 
 %% @doc Internal function that goes through a list of operations and a snapshot
 %%      time and returns which operations from the list should be applied for
@@ -137,165 +126,141 @@ apply_operations(Type, Snapshot, Count, [Op | Rest]) ->
 %%      TxId: The Id of the transaction requesting the snapshot
 %%      LastOpCommitTime: The snapshot time of the last operation in the list of operations to apply
 %%      NewSS: Boolean that is true if any operations should be applied, fail otherwise.  Should start as false.
+%%
 %%      Output: A tuple with 4 elements or an error.  The first element of the tuple is the atom ok.
 %%      The second element is the list of operations that should be applied to the snapshot.
 %%      The third element 1 minus the number of the operation with the smallest id not included in the snapshot.
 %%      The fourth element is the snapshot time of the last operation in the list.
 %%      The fifth element is a boolean, true if a new snapshot should be generated, false otherwise.
--spec materialize_intern(type(),
+-spec filter_oplist(
                          [clocksi_payload()],
                          integer(),
                          integer(),
-                         snapshot_time() | ignore,
+                         snapshot_time(),
                          snapshot_time(),
                          [{integer(), clocksi_payload()}] | tuple(),
-                         txid() | ignore,
                          snapshot_time() | ignore,
                          boolean(),
                          non_neg_integer()) ->
-                                {ok, [clocksi_payload()], integer(), snapshot_time()|ignore, boolean()}.
-materialize_intern(_Type, OpList, _LastOp, FirstHole, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS, _Location) ->
-    {ok, OpList, FirstHole, LastOpCt, NewSS};
+                                {[clocksi_payload()], integer(), snapshot_time()|ignore, boolean()}.
+filter_oplist(OpList, _LastOp, FirstHole, _BaseSnapshotTime, _MinSnapshotTime, [], LastOpCt, NewSS, _Location) ->
+    {OpList, FirstHole, LastOpCt, NewSS};
 
-materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, [{OpId, Op}|Rest], TxId, LastOpCt, NewSS, Location) ->
-    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId, Op}, Rest, TxId, LastOpCt, NewSS, Location + 1);
+%% Here: Operations to be applied are given as list
+filter_oplist(OpList, LastOp, FirstHole, BaseSnapshotTime, MinSnapshotTime, [{OpId, Op}|Rest], LastOpCt, NewSS, Location) ->
+    Result = materialize_intern_perform(OpList, FirstHole, BaseSnapshotTime, MinSnapshotTime, {OpId, Op}, LastOpCt, NewSS),
+    case Result of
+        {NewOpList, NewLastOpCt, NewSS1, NewHole} ->
+            filter_oplist(NewOpList, LastOp, NewHole, BaseSnapshotTime,
+                               MinSnapshotTime, Rest, NewLastOpCt, NewSS1, Location+1)
+    end;
 
-materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, TupleOps, TxId, LastOpCt, NewSS, Location) ->
-    {Length, _ListLen} = element(2, TupleOps),
+%% Here: Operations to be applied are given as tuple
+filter_oplist(OpList, LastOp, FirstHole, BaseSnapshotTime, MinSnapshotTime, TupleOps, LastOpCt, NewSS, Location) ->
+    Length = get_current_length_oplist(TupleOps),
     case Length == Location of
         true ->
-            {ok, OpList, FirstHole, LastOpCt, NewSS};
+            {OpList, FirstHole, LastOpCt, NewSS};
         false ->
-            materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime,
-                                       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, TxId, LastOpCt, NewSS, Location + 1)
+            Result = materialize_intern_perform(OpList, FirstHole, BaseSnapshotTime, MinSnapshotTime,
+                                       element((?FIRST_OP+Length-1) - Location, TupleOps), LastOpCt, NewSS),
+            case Result of
+                {NewOpList, NewLastOpCt, NewSS1, NewHole} ->
+                    filter_oplist(NewOpList, LastOp, NewHole, BaseSnapshotTime, MinSnapshotTime, TupleOps, NewLastOpCt, NewSS1, Location+1)
+                end
     end.
 
-materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId, Op}, Rest, TxId, LastOpCt, NewSS, Location) ->
-    Result = case Type == Op#clocksi_payload.type of
-                 true ->
-                     OpCom=Op#clocksi_payload.commit_time,
-                     OpSS=Op#clocksi_payload.snapshot_time,
-                     %% Check if the op is not in the previous snapshot and should be included in the new one
-                     case (is_op_in_snapshot(TxId, Op, OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime, LastOpCt)) of
-                         {true, _, NewOpCt} ->
+materialize_intern_perform(OpList, FirstHole, BaseSnapshotTime, MinSnapshotTime, {OpId, Op}, LastOpCt, IsUpdated) ->
+    OpCom=Op#clocksi_payload.dot,
+    OpSS=Op#clocksi_payload.snapshot_time,
+    case (is_op_in_snapshot(OpCom, OpSS, MinSnapshotTime, BaseSnapshotTime, LastOpCt)) of
+                         {true, NewOpCt} ->
                              %% Include the new op because it has a timestamp bigger than the snapshot being generated
-                             {ok, [Op | OpList], NewOpCt, true, FirstHole};
-                         {false, false, _} ->
+                             {[Op | OpList], NewOpCt, true, FirstHole};
+                         {false, _} ->
                              %% Dont include the op
-                             {ok, OpList, LastOpCt, NewSS, OpId-1}; % no update
-                         {false, true, _} ->
+                             {OpList, LastOpCt, IsUpdated, OpId-1}; % no update
+                         already_in_snapshot ->
                              %% Dont Include the op, because it was already in the SS
-                             {ok, OpList, LastOpCt, NewSS, FirstHole}
-                     end;
-                 false -> %% Op is not for this {Key, Type}
-                     erlang:error(corrupted_ops_cache)
-             end,
-    case Result of
-        {ok, NewOpList1, NewLastOpCt, NewSS1, NewHole} ->
-            materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
+                             {OpList, LastOpCt, IsUpdated, FirstHole}
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
 %%      if that update is newer than a snapshot's commit time
+%%      (i.e. the operation happened after the snapshot)
 %%      Input:
-%%      TxId: Descriptor of the transaction requesting the snapshot
-%%      Op: The operation to check
 %%      {OpDc, OpCommitTime}: The DC and commit time of the operation
 %%      OperationSnapshotTime: The snapshot time of the operation
 %%      SnapshotTime: The snapshot time to check if the operation is included in
 %%      LastSnapshot: The previous snapshot that is being used to generate the new snapshot
 %%      PrevTime: The snapshot time of the previous operation that was checked
+%%
 %%      Output: A tuple of 3 elements.  The first element is a boolean that is true
 %%      if the operation should be included in the snapshot false otherwise, the second element
-%%      is a boolean that is true if the operation was already included in the previous snapshot,
-%%      false otherwise.  The third element is the snapshot time of the last operation to
+%%      the snapshot time of the last operation to
 %%      be applied to the snapshot
--spec is_op_in_snapshot(txid(), clocksi_payload(), dc_and_commit_time(), snapshot_time(), snapshot_time(),
-                        snapshot_time() | ignore, snapshot_time()) -> {boolean(), boolean(), snapshot_time()}.
-is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
+-spec is_op_in_snapshot(dot(), snapshot_time(), snapshot_time(),
+                        snapshot_time(), snapshot_time()) -> {boolean(), snapshot_time() | ignore} | already_in_snapshot.
+is_op_in_snapshot({OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
-    %% Is the "or TxId ==" part necessary and correct????
-    case materializer:belongs_to_snapshot_op(LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime)
-            orelse (TxId == Op#clocksi_payload.txid) of
-        true ->
+    case materializer:belongs_to_snapshot_op(LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime) of
+        false ->
             %% If not, check if it should be included in the new snapshot
             %% Replace the snapshot time of the dc where the transaction committed with the commit time
             OpSSCommit = vectorclock:set(OpDc, OpCommitTime, OperationSnapshotTime),
-            %% PrevTime2 is the time of the previous snapshot, if there was none, it usues the snapshot time
-            %% of the new operation
-            PrevTime2 = case PrevTime of
-                            ignore ->
-                                OpSSCommit;
-                            _ ->
-                                PrevTime
-                        end,
-            %% Result is true if the op should be included in the snapshot
-            %% NewTime is the vectorclock of the snapshot with the time of Op included
-            {Result, NewTime} = vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
-                                        TimeSS = vectorclock:get(DcIdOp, SnapshotTime),
-                                        Res1 =  case TimeSS < TimeOp of
-                                                     true ->
-                                                         false;
-                                                     false ->
-                                                         Acc
-                                                 end,
-                                        Res2 = vectorclock:update_with(DcIdOp, fun(Val) -> max(TimeOp, Val) end, TimeOp, PrevTime3),
-                                        {Res1, Res2}
-                                    end, {true, PrevTime2}, OpSSCommit),
-            case Result of
+            case vectorclock:le(OpSSCommit, SnapshotTime) of
                 true ->
-                    {true, false, NewTime};
+                    PrevTime2 = case PrevTime of
+                                        ignore ->
+                                            OpSSCommit;
+                                        _ ->
+                                            PrevTime
+                                    end,
+                    NewTime = vectorclock:max([PrevTime2, OpSSCommit]),
+                    {true, NewTime};
                 false ->
-                    {false, false, PrevTime}
-            end;
-        false->
+                    {false, PrevTime}
+                end;
+        true ->
             %% was already in the prev ss, done searching ops
-            {false, true, PrevTime}
+            already_in_snapshot
     end.
-
-%% @doc Apply updates in given order without any checks.
-%%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
--spec materialize_eager(type(), snapshot(), [op()]) -> snapshot().
-materialize_eager(Type, Snapshot, Ops) ->
-    materializer:materialize_eager(Type, Snapshot, Ops).
-
 
 -ifdef(TEST).
 
 materializer_clocksi_test()->
     Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
+    PNCounter = materializer:new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     %%  need to add the snapshot time for these for the test to pass
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Op3 = #clocksi_payload{key = abc, type =Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 3, snapshot_time=vectorclock:from_list([{1, 3}])},
+                           dot = {1, 3}, txid = 3, snapshot_time=vectorclock:from_list([{1, 3}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1, 4}])},
+                           dot = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1, 4}])},
 
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounter2, 3, CommitTime2, _SsSave, _} = materialize(Type,
-                                                            ignore, vectorclock:from_list([{1, 3}]),
+                                                             vectorclock:from_list([{1, 3}]),
                                                             SS),
     ?assertEqual({4, vectorclock:from_list([{1, 3}])}, {Type:value(PNCounter2), CommitTime2}),
     {ok, PNcounter3, 4, CommitTime3, _SsSave1, _} = materialize(Type,
-                                                             ignore, vectorclock:from_list([{1, 4}]),
+                                                             vectorclock:from_list([{1, 4}]),
                                                              SS),
     ?assertEqual({6, vectorclock:from_list([{1, 4}])}, {Type:value(PNcounter3), CommitTime3}),
 
     {ok, PNcounter4, 4, CommitTime4, _SsSave2, _} = materialize(Type,
-                                                            ignore, vectorclock:from_list([{1, 7}]),
+                                                            vectorclock:from_list([{1, 7}]),
                                                             SS),
     ?assertEqual({6, vectorclock:from_list([{1, 4}])}, {Type:value(PNcounter4), CommitTime4}).
 
@@ -305,33 +270,33 @@ materializer_clocksi_test()->
 %% read with a different timestamp, this missing value must be checked.
 materializer_missing_op_test() ->
     Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
+    PNCounter = materializer:new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
-                                                                 ignore, vectorclock:from_list([{1, 3}, {2, 1}]),
+                                                                 vectorclock:from_list([{1, 3}, {2, 1}]),
                                                                  SS),
     ?assertEqual({3, vectorclock:from_list([{1, 3}, {2, 1}])}, {Type:value(PNCounter2), CommitTime2}),
 
     SS2 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
     {ok, PNCounter3, 4, CommitTime3, _SsSave2, _} = materialize(Type,
-                                                            ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
+                                                            vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS2),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).
 
@@ -340,121 +305,101 @@ materializer_missing_op_test() ->
 %% It ensures that when we read using a snapshot with and without all the DCs we still include the correct updates.
 materializer_missing_dc_test() ->
     Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
+    PNCounter = materializer:new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{2, 1}])},
     Op4 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
+                           dot = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}])},
     Ops = [{4, Op4}, {3, Op3}, {2, Op2}, {1, Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave1, _} = materialize(Type,
-                                                                  ignore, vectorclock:from_list([{1, 3}]),
+                                                                  vectorclock:from_list([{1, 3}]),
                                                                   SS),
     ?assertEqual({3, vectorclock:from_list([{1, 3}])}, {Type:value(PNCounterA), CommitTimeA}),
 
     SS2 = #snapshot_get_response{snapshot_time = CommitTimeA, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOpA, value = PNCounterA}},
     {ok, PNCounterB, 4, CommitTimeB, _SsSave2, _} = materialize(Type,
-                                                            ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
+                                                            vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS2),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounterB), CommitTimeB}),
 
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave3, _} = materialize(Type,
-                                                                 ignore, vectorclock:from_list([{1, 3}, {2, 1}]),
+                                                                 vectorclock:from_list([{1, 3}, {2, 1}]),
                                                                  SS),
     ?assertEqual({3, vectorclock:from_list([{1, 3}])}, {Type:value(PNCounter2), CommitTime2}),
 
     SS3 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
     {ok, PNCounter3, 4, CommitTime3, _SsSave4, _} = materialize(Type,
-                                                            ignore, vectorclock:from_list([{1, 3}, {2, 2}]),
+                                                            vectorclock:from_list([{1, 3}, {2, 2}]),
                                                             SS3),
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).
 
 materializer_clocksi_concurrent_test() ->
     Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
+    PNCounter = materializer:new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = 2,
-                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
     Op2 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
+                           dot = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1, 2}, {2, 1}])},
     Op3 = #clocksi_payload{key = abc, type = Type,
                            op_param = 1,
-                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
+                           dot = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1, 1}, {2, 1}])},
 
     Ops = [{3, Op2}, {2, Op3}, {1, Op1}],
-    {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(Type,
+    {PNCounter2, 3, CommitTime2, _Keep} = filter_oplist(
                                       [], 0, 3, ignore,
                                       vectorclock:from_list([{2, 2}, {1, 2}]),
-                                      Ops, ignore, ignore, false, 0),
-    {ok, PNCounter3, _} = apply_operations(Type, PNCounter, 0, PNCounter2),
+                                      Ops, ignore, false, 0),
+    PNCounter3 = apply_operations(Type, PNCounter, PNCounter2),
     ?assertEqual({4, vectorclock:from_list([{1, 2}, {2, 2}])}, {Type:value(PNCounter3), CommitTime2}),
-    Snapshot=new(Type),
+    Snapshot = materializer:new(Type),
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
                                 materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = Snapshot}},
-    {ok, PNcounter3, 1, CommitTime3, _SsSave1, _} = materialize(Type, ignore,
+    {ok, PNcounter3, 1, CommitTime3, _SsSave1, _} = materialize(Type,
                                    vectorclock:from_list([{1, 2}, {2, 1}]), SS),
     ?assertEqual({3, vectorclock:from_list([{1, 2}, {2, 1}])}, {Type:value(PNcounter3), CommitTime3}),
-    {ok, PNcounter4, 2, CommitTime4, _SsSave2, _} = materialize(Type, ignore,
+    {ok, PNcounter4, 2, CommitTime4, _SsSave2, _} = materialize(Type,
                                    vectorclock:from_list([{1, 1}, {2, 2}]), SS),
     ?assertEqual({3, vectorclock:from_list([{1, 1}, {2, 2}])}, {Type:value(PNcounter4), CommitTime4}),
-    {ok, PNcounter5, 1, CommitTime5, _SsSave3, _} = materialize(Type, ignore,
+    {ok, PNcounter5, 1, CommitTime5, _SsSave3, _} = materialize(Type,
                                    vectorclock:from_list([{1, 1}, {2, 1}]), SS),
     ?assertEqual({2, vectorclock:from_list([{1, 1}, {2, 1}])}, {Type:value(PNcounter5), CommitTime5}).
 
 %% Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
     Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
+    PNCounter = materializer:new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, 0, ignore, _SsSave} = materialize_intern(Type, [], 0, 0, ignore,
+    {PNCounter2, 0, ignore, _SsSave} = filter_oplist([], 0, 0, ignore,
                                                     vectorclock:from_list([{1, 1}]),
-                                                    Ops, ignore, ignore, false, 0),
-    {ok, PNCounter3, _} = apply_operations(Type, PNCounter, 0, PNCounter2),
+                                                    Ops, ignore, false, 0),
+    PNCounter3 = apply_operations(Type, PNCounter, PNCounter2),
     ?assertEqual(0, Type:value(PNCounter3)).
 
-materializer_eager_clocksi_test()->
-    Type = antidote_crdt_counter_pn,
-    PNCounter = new(Type),
-    ?assertEqual(0, Type:value(PNCounter)),
-    % test - no ops
-    PNCounter2 = materialize_eager(Type, PNCounter, []),
-    ?assertEqual(0, Type:value(PNCounter2)),
-    % test - several ops
-    Op1 = 1,
-    Op2 = 2,
-    Op3 = 3,
-    Op4 = 4,
-    Ops = [Op1, Op2, Op3, Op4],
-    PNCounter3 = materialize_eager(Type, PNCounter, Ops),
-    ?assertEqual(10, Type:value(PNCounter3)).
 
 is_op_in_snapshot_test() ->
-    Type = antidote_crdt_counter_pn,
-    Op1 = #clocksi_payload{key = abc, type = Type,
-                           op_param = {increment, 2},
-                           commit_time = {dc1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{dc1, 1}])},
     OpCT1 = {dc1, 1},
     OpCT1SS = vectorclock:from_list([OpCT1]),
     ST1 = vectorclock:from_list([{dc1, 2}]),
     ST2 = vectorclock:from_list([{dc1, 0}]),
-    ?assertEqual({true, false, OpCT1SS}, is_op_in_snapshot(2, Op1, OpCT1, OpCT1SS, ST1, ignore, ignore)),
-    ?assertEqual({false, false, ignore}, is_op_in_snapshot(2, Op1, OpCT1, OpCT1SS, ST2, ignore, ignore)).
-
-
+    ?assertEqual({true, OpCT1SS}, is_op_in_snapshot(OpCT1, OpCT1SS, ST1, ignore, ignore)),
+    ?assertEqual({false, ignore}, is_op_in_snapshot(OpCT1, OpCT1SS, ST2, ignore, ignore)),
+    ?assertEqual(already_in_snapshot, is_op_in_snapshot(OpCT1, OpCT1SS, ST2, ST1, ignore)).
 -endif.

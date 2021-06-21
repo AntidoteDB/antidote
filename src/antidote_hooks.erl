@@ -59,9 +59,6 @@
 
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -export([register_pre_hook/3,
          register_post_hook/3,
@@ -92,8 +89,7 @@ register_pre_hook(Bucket, Module, Function) ->
 register_hook(Prefix, Bucket, Module, Function) ->
     case erlang:function_exported(Module, Function, 1) of
         true ->
-            stable_meta_data_server:broadcast_meta_data({Prefix, Bucket}, {Module, Function}),
-            ok;
+            stable_meta_data_server:broadcast_meta_data({Prefix, Bucket}, {Module, Function});
         false ->
             {error, function_not_exported}
     end.
@@ -104,33 +100,19 @@ unregister_hook(pre_commit, Bucket) ->
 unregister_hook(post_commit, Bucket) ->
     stable_meta_data_server:broadcast_meta_data({?PREFIX_POST, Bucket}, undefined).
 
+-spec get_hooks(pre_commit | post_commit, bucket()) -> {ok, term()} | not_found.
 get_hooks(pre_commit, Bucket) ->
-    R = stable_meta_data_server:read_meta_data({?PREFIX_PRE, Bucket}),
-    case R of
-        {ok, Hooks} -> Hooks;
-        error -> undefined
-    end;
+    get_hooks_prefix(?PREFIX_PRE, Bucket);
 get_hooks(post_commit, Bucket) ->
-    R = stable_meta_data_server:read_meta_data({?PREFIX_POST, Bucket}),
-    case R of
-        {ok, Hooks} -> Hooks;
-        error -> undefined
-    end.
+    get_hooks_prefix(?PREFIX_POST, Bucket).
+
+get_hooks_prefix(Prefix, Bucket) ->
+    stable_meta_data_server:read_meta_data({Prefix, Bucket}).
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
         {term(), type(), op_param()} | {error, reason()}.
 execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
-    Hook = get_hooks(pre_commit, Bucket),
-    case Hook of
-        undefined ->
-            {{Key, Bucket}, Type, Param};
-        {Module, Function} ->
-            try Module:Function({{Key, Bucket}, Type, Param}) of
-                {ok, Res} -> Res
-            catch
-                _:Reason -> {error, {pre_commit_hook, Reason}}
-            end
-    end;
+    execute_hook(?PREFIX_PRE, {Key, Bucket}, Type, Param);
 %% The following is kept to be backward compatible with the old
 %% interface where buckets are not used
 execute_pre_commit_hook(Key, Type, Param) ->
@@ -139,32 +121,35 @@ execute_pre_commit_hook(Key, Type, Param) ->
 -spec execute_post_commit_hook(term(), type(), op_param()) ->
             {term(), type(), op_param()} | {error, reason()}.
 execute_post_commit_hook({Key, Bucket}, Type, Param) ->
-    Hook = get_hooks(post_commit, Bucket),
+    execute_hook(?PREFIX_POST, {Key, Bucket}, Type, Param);
+execute_post_commit_hook(Key, Type, Param) ->
+    {Key, Type, Param}.
+
+execute_hook(Prefix, {Key, Bucket}, Type, Param) ->
+    Hook = get_hooks_prefix(Prefix, Bucket),
     case Hook of
-        undefined ->
+        not_found ->
             {{Key, Bucket}, Type, Param};
-        {Module, Function} ->
+        {ok, {Module, Function}} ->
             try Module:Function({{Key, Bucket}, Type, Param}) of
                 {ok, Res} -> Res
             catch
                 _:Reason -> {error, {post_commit_hook, Reason}}
             end
-    end;
-execute_post_commit_hook(Key, Type, Param) ->
-    {Key, Type, Param}.
+    end.
 
 %-ifdef(TEST).
-%% The following functions here provide commit hooks for the testing (test/commit_hook_SUITE).
+%% The following functions here provide commit hooks for the testing (singledc/commit_hook_SUITE).
 
 test_commit_hook(Object) ->
     ?LOG_INFO("Executing test commit hook"),
     {ok, Object}.
 
 test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) ->
-    {ok, {{Key, Bucket}, antidote_crdt_counter_pn, {increment, 2}}}.
+    {ok, {{Key, Bucket}, antidote_crdt_counter_pn, {increment, 5}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->
-    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter_pn, commitcount}, increment, 1}]),
+    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter_pn, commitcount}, increment, 100}]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
 %-endif.

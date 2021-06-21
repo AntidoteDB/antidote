@@ -141,7 +141,6 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                             ok
                                     end,
 
-                                    TxId = Transaction#transaction.txn_id,
                                     DcId = dc_utilities:get_my_dc_id(),
 
                                     CausalClock = vectorclock:set(
@@ -675,7 +674,7 @@ apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
 
         {Partition, WS} ->
             FilteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
-            clocksi_materializer:materialize_eager(Type, Snapshot, FilteredAndReversedUpdates)
+            materializer:apply_effects(Type, Snapshot, FilteredAndReversedUpdates)
     end.
 
 
