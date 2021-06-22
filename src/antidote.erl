@@ -50,7 +50,8 @@
           get_objects/3,
           get_log_operations/1,
           get_default_txn_properties/0,
-          get_txn_property/2
+          get_txn_property/2,
+          all_keys/1
         ]).
 
 %% Public API
@@ -100,6 +101,15 @@ create_object(_Key, _Type, _Bucket) ->
 
 delete_object({_Key, _Type, _Bucket}) ->
     %% TODO: Object deletion is not currently supported
+    {error, operation_not_supported}.
+
+
+%% returns all known keys at snapshot time
+-spec all_keys(snapshot_time()) -> {ok, [bound_object()]} | {error, term()}.
+all_keys(ignore) ->
+    {ok, logging_vnode:all_keys(ignore)};
+all_keys(_SnapshotTime) ->
+    %% TODO: filter time
     {error, operation_not_supported}.
 
 %% Register a post commit hook.

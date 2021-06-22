@@ -61,7 +61,9 @@
            get_range/6,
            get_all/4,
            request_bucket_op_id/4,
-           request_op_id/3]).
+           request_op_id/3,
+         all_keys/1
+]).
 
 -export([init/1,
          terminate/2,
@@ -221,6 +223,21 @@ get_all(IndexNode, LogId, Continuation, PrevOps) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_all, LogId, Continuation, PrevOps},
                                         ?LOGGING_MASTER,
                                         infinity).
+
+
+%% @doc Traverses the log and returns all known bound objects
+-spec all_keys(ignore) -> [bound_object()].
+all_keys(ignore) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    lists:foldl(fun (IndexAndNode, Responses) ->
+        {keys, KeysOfIndex} =
+            riak_core_vnode_master:sync_spawn_command(IndexAndNode,
+                {list_keys, ignore},
+                ?LOGGING_MASTER),
+        Responses ++ KeysOfIndex
+                end,
+        [],
+        riak_core_ring:all_owners(Ring)).
 
 %% @doc Gets the last id of operations stored in the log for the given DCID
 -spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
@@ -565,6 +582,18 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
+handle_command({list_keys, ignore}, _Sender,
+    #state{logs_map = Map} = State) ->
+
+    FoldKeysFun = fun(_, Log, Acc) ->
+        ok = disk_log:sync(Log),
+        get_all_keys_from_log(Log, start, ignore) ++ Acc
+                  end,
+
+    Keys = dict:fold(FoldKeysFun, [], Map),
+    KeysU = sets:to_list(sets:from_list(Keys)),
+    {reply, {keys, KeysU}, State};
+
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -672,6 +701,28 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
                 false ->
                 NewMaxVector = get_max_op_numbers(NewTerms, ClockTable, PrevMaxVector),
                 get_last_op_from_log(Log, NewContinuation, ClockTable, NewMaxVector)
+            end
+    end.
+
+%% Gets the id of the last operation that was put in the log
+%% and the maximum vectorclock of the committed transactions stored in the log
+%%-spec get_all_keys_from_log
+get_all_keys_from_log(Log, Continuation, ignore) ->
+    ok = disk_log:sync(Log),
+    case disk_log:chunk(Log, Continuation) of
+        eof ->
+            [];
+        {error, Reason} ->
+            {error, Reason};
+        {NewContinuation, NewTerms} ->
+            AllKeys = filter_all_keys(NewTerms, ignore),
+            AllKeys ++ get_all_keys_from_log(Log, NewContinuation, ignore);
+        {NewContinuation, NewTerms, BadBytes} ->
+            case BadBytes > 0 of
+                true -> {error, bad_bytes};
+                false ->
+                    AllKeys = filter_all_keys(NewTerms, ignore),
+                    AllKeys ++ get_all_keys_from_log(Log, NewContinuation, ignore)
             end
     end.
 
@@ -789,6 +840,24 @@ filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, 
             handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
         _ ->
             filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
+    end.
+
+filter_all_keys([], ignore) ->
+    [];
+filter_all_keys([{_, LogRecord} | T], ignore) ->
+    #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
+    #log_operation{op_type = OpType, log_payload = OpPayload} = LogOperation,
+    case OpType of
+        update ->
+            #update_log_payload{key = {Key1, Bucket}, type = Type} = OpPayload,
+                %% bucket is undefined?
+%%                #update_log_payload{key = {Key1, bucket = Bucket, type = Type} = OpPayload,
+            [{Key1, Type, Bucket}] ++ filter_all_keys(T, ignore);
+        %% todo include commit? only commit?
+%%        commit ->
+%%            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
+        _ ->
+            filter_all_keys(T, ignore)
     end.
 
 -spec handle_update(txid(), update_log_payload(), [{non_neg_integer(), log_record()}], key() | undefined, snapshot_time() | undefined,
