@@ -238,6 +238,8 @@
 
 -type bound_object() :: {key(), type(), bucket()}.
 
+-type function_type() :: stable_time_functions.
+
 -type module_name() :: atom().
 -type function_name() :: atom().
 

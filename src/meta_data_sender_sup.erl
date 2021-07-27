@@ -35,7 +35,8 @@
 -export([init/1]).
 
 
-start_link(FunsAndInitState) ->
+-spec start_link([antidote:function_type()]) -> supervisor:startlink_ret().
+start_link(FunsAndInitState) -> %% TODO what is the 'InitState' here?
     supervisor:start_link({local, ?MODULE}, ?MODULE, FunsAndInitState).
 
 
