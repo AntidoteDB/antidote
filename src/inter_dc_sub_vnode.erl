@@ -80,7 +80,9 @@ deliver_log_reader_resp(BinaryRep) ->
 %%%% VNode methods ----------------------------------------------------------+
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
-start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+
+-spec start_vnode(term()) -> {ok, pid()}. % PartitionIndex :: chash:index_as_int()
+start_vnode(PartitionIndex) -> riak_core_vnode_master:get_vnode_pid(PartitionIndex, ?MODULE).
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
   Buf0 = get_buf(DCID, State),
