@@ -34,6 +34,9 @@
          start_link/1]).
 -export([init/1]).
 
+-type function_type() :: stable_time_functions.
+
+-spec start_link(function_type()) -> supervisor:startlink_ret().
 start_link(Init) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, Init).
 
