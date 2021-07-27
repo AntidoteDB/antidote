@@ -38,13 +38,15 @@
 
 -export([init/1]).
 
+-spec start_link() -> {ok, pid()}.
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    {ok, _Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% Starts a new transaction coordinator under this supervisor (see clocksi_interactive_coord)
+-spec start_fsm() -> {ok, pid() | undefined}.
 start_fsm() ->
     % calls clocksi_interactive_coord:start_link()
-    supervisor:start_child(?MODULE, []).
+    {ok, _Pid} = supervisor:start_child(?MODULE, []).
 
 
 %% @doc Starts the coordinator of a ClockSI interactive transaction.
