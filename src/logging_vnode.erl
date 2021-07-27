@@ -914,6 +914,7 @@ delete(State = #state{logs_map = _Map, partition = Partition}) ->
     ?STATS({log_reset, LogPath}),
     {ok, State}.
 
+-spec handle_info({sync, log(), log_id()}, #state{}) -> {ok, #state{}}.
 handle_info({sync, Log, LogId},
             #state{senders_awaiting_ack=SendersAwaitingAck0}=State) ->
     case dict:find(LogId, SendersAwaitingAck0) of

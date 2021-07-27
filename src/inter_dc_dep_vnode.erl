@@ -89,6 +89,7 @@ init([Partition]) ->
   StableSnapshot = vectorclock:new(),
   {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false}}.
 
+-spec start_vnode(partition_id()) -> {ok, pid()}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% Check the content of each queue, try to apply as many elements as possible.

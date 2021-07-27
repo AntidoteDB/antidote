@@ -97,6 +97,7 @@ send_stable_time(Partition, Time) ->
 
 %%%% VNode methods ----------------------------------------------------------+
 
+-spec start_vnode(partition_id()) -> {ok, pid()}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->

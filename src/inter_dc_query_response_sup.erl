@@ -36,6 +36,9 @@
 
 -export([init/1]).
 
+-type concurrency_limit() :: integer().
+
+-spec start_link(concurrency_limit()) -> supervisor:startlink_ret().
 start_link(Args) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, Args).
 

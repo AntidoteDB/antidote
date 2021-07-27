@@ -36,6 +36,7 @@
 -export([start_link/0, get/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-spec start_link() -> supervisor:startlink_ret().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -57,5 +58,6 @@ code_change(_OldVsn, Ctx, _Extra) ->
     {ok, Ctx}.
 
 %% Context is a NIF object handle
+-spec get() -> erlzmq:erlzmq_context().
 get() ->
     gen_server:call(?MODULE, get_context).
