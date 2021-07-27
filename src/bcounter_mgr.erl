@@ -66,8 +66,9 @@
 %% Public API
 %% ===================================================================
 
+-spec start_link() -> {ok, pid()}.
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    {ok, _Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),

@@ -93,7 +93,8 @@ del_dc(DCID) ->
 
 %%%% Server methods ---------------------------------------------------------+
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link() -> {ok, pid()}.
+start_link() -> {ok, _Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     {ok, #state{sockets = dict:new(), req_id = 1}}.
 

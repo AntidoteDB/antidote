@@ -61,6 +61,7 @@ del_dc(DCID) ->
 
 %%%% Server methods ---------------------------------------------------------+
 
+-spec start_link() -> supervisor:startlink_ret().
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 

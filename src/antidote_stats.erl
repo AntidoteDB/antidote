@@ -58,6 +58,7 @@
     monitored_processes :: list()
 }).
 
+-spec start_link() -> {ok, pid()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 

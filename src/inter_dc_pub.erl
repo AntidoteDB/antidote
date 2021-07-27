@@ -68,8 +68,9 @@ get_address_list() ->
 
 %%%% Server methods ---------------------------------------------------------+
 
+-spec start_link() -> {ok, pid()}.
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    {ok, _Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     % bind on ip and port

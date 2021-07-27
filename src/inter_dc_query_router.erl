@@ -99,7 +99,8 @@ send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sende
 
 %%%% Server methods ---------------------------------------------------------+
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link() -> {ok, pid()}.
+start_link() -> {ok, _Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     Ip = get_router_bind_ip(),
