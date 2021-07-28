@@ -73,4 +73,4 @@ sub_filter(Socket, Prefix) ->
 
 -spec close_socket(erlzmq:erlzmq_socket()) -> ok.
 close_socket(Socket) ->
-  ok = erlzmq:close(Socket).
+  erlzmq:close(Socket).
