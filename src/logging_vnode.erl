@@ -95,6 +95,8 @@
         senders_awaiting_ack :: dict:dict(log_id(), sender()),
         last_read_map ::  dict:dict(log_id(), {log_opid(), disk_log:continuation()})}).
 
+-type state() :: #state{}.
+
 %% API
 -spec start_vnode(integer()) -> any().
 start_vnode(I) ->
@@ -914,7 +916,7 @@ delete(State = #state{logs_map = _Map, partition = Partition}) ->
     ?STATS({log_reset, LogPath}),
     {ok, State}.
 
--spec handle_info({sync, log(), log_id()}, #state{}) -> {ok, #state{}}.
+-spec handle_info({sync, log(), log_id()}, state()) -> {ok, state()}.
 handle_info({sync, Log, LogId},
             #state{senders_awaiting_ack=SendersAwaitingAck0}=State) ->
     case dict:find(LogId, SendersAwaitingAck0) of
