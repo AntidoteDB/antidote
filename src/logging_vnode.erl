@@ -47,14 +47,14 @@
 -export([start_vnode/1,
          is_sync_log/0,
          set_sync_log/1,
-         asyn_read/2,
+         async_read/2,
          get_stable_time/1,
          read/2,
-         asyn_append/4,
+         async_append/4,
          append/3,
          append_commit/3,
          append_group/4,
-         asyn_append_group/4,
+         async_append_group/4,
          read_from_to/4,
          get_up_to_time/5,
          get_from_time/5,
@@ -110,8 +110,8 @@ read_from_to(Node, LogId, From, To) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
--spec asyn_read(preflist(), key()) -> ok.
-asyn_read(Preflist, Log) ->
+-spec async_read(preflist(), key()) -> ok.
+async_read(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
                                    {fsm, undefined, self()},
@@ -132,8 +132,8 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asynchronous command to the Logs in `Preflist'
--spec asyn_append(index_node(), key(), log_operation(), sender()) -> ok.
-asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
+-spec async_append(index_node(), key(), log_operation(), sender()) -> ok.
+async_append(IndexNode, Log, LogOperation, ReplyTo) ->
     riak_core_vnode_master:command(IndexNode,
                                    {append, Log, LogOperation, is_sync_log()},
                                    ReplyTo,
@@ -166,8 +166,8 @@ append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
                                         infinity).
 
 %% @doc asynchronous append list of operations
--spec asyn_append_group(index_node(), key(), [log_record()], boolean()) -> ok.
-asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
+-spec async_append_group(index_node(), key(), [log_record()], boolean()) -> ok.
+async_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
                                    {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
                                    ?LOGGING_MASTER,

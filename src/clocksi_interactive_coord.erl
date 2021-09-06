@@ -128,6 +128,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                         log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
                     },
                     LogId = log_utilities:get_logid_from_key(Key),
+                    % TODO: This is replaced with the log append from the gingko library. Maybe simplify the case nesting if possible.
                     case logging_vnode:append(Partition, LogId, LogRecord) of
                         {ok, _} ->
                             case clocksi_vnode:single_commit_sync(UpdatedPartitions, Transaction) of
@@ -816,7 +817,7 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
 
     LogId = log_utilities:get_logid_from_key(Key),
     % TODO: This can be replaced with Gingko's write to log.
-    logging_vnode:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
+    logging_vnode:async_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
 
 %% @doc this function sends a prepare message to all updated partitions and goes
@@ -966,7 +967,7 @@ meck_load() ->
     meck:expect(clocksi_downstream, generate_downstream_op, fun(A, B, Key, C, D, E) -> mock_partition:generate_downstream_op(A, B, Key, C, D, E) end),
 
     meck:expect(logging_vnode, append, fun(_, _, _) -> {ok, {0, node}} end),
-    meck:expect(logging_vnode, asyn_append, fun(A, B, C, ReplyTo) -> mock_partition:asyn_append(A, B, C, ReplyTo) end).
+    meck:expect(logging_vnode, async_append, fun(A, B, C, ReplyTo) -> mock_partition:async_append(A, B, C, ReplyTo) end).
 
 meck_unload() ->
     meck:unload(dc_utilities),
