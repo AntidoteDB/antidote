@@ -136,7 +136,7 @@ get_objects(Clock, Properties, Objects) ->
                           {ok, list(), vectorclock()} | {error, reason()}.
 obtain_objects(Clock, Properties, Objects, StateOrValue) ->
     SingleKey = case Objects of
-                    [_O] -> %% Single key update
+                    [_O]-> %% Single key update
                         case Clock of
                             ignore -> true;
                             _ -> false

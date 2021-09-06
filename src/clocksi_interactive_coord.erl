@@ -241,11 +241,6 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %%       to execute the next operation.
 %% internal state timeout
 -spec execute_op({call, gen_statem:from()}, {update | update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
-
-%% update kept for backwards compatibility with tests.
-execute_op({call, Sender}, {update, Args}, State) ->
-    execute_op({call, Sender}, {update_objects, [Args]}, State);
-
 execute_op({call, Sender}, {OpType, Args}, State) ->
     execute_command(OpType, Args, Sender, State).
 
@@ -551,7 +546,9 @@ execute_command(read_objects, Objects, Sender, State = #state{transaction=Transa
     ExecuteReads = fun({Key, Type}, AccState) ->
         ?STATS(operation_read_async),
         Partition = log_utilities:get_key_partition(Key),
+        % TODO: Replace this with the read from gingko.
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+
         ReadKeys = AccState#state.return_accumulator,
         AccState#state{return_accumulator=[Key | ReadKeys]}
                    end,
@@ -818,6 +815,7 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
     },
 
     LogId = log_utilities:get_logid_from_key(Key),
+    % TODO: This can be replaced with Gingko's write to log.
     logging_vnode:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
 
@@ -1018,37 +1016,37 @@ empty_prepare_() ->
 
 timeout_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{timeout, nothing, nothing}]}, infinity)),
     ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_single_abort_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{fail, nothing, nothing}]}, infinity)),
     ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_single_success_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{single_commit, nothing, nothing}]}, infinity)),
     ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_abort1_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{success, nothing, nothing}]}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{success, nothing, nothing}]}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{fail, nothing, nothing}]}, infinity)),
     ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_abort2_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {fail, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{success, nothing, nothing}]}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{fail, nothing, nothing}]}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{fail, nothing, nothing}]}, infinity)),
     ?assertMatch({error, aborted}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 update_multi_success_() ->
     Pid = whereis(srv),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
-    ?assertEqual(ok, gen_statem:call(Pid, {update, {success, nothing, nothing}}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{success, nothing, nothing}]}, infinity)),
+    ?assertEqual(ok, gen_statem:call(Pid, {update_objects, [{success, nothing, nothing}]}, infinity)),
     ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 read_single_fail_() ->
@@ -1070,7 +1068,7 @@ read_success_() ->
 downstream_fail_() ->
     Pid = whereis(srv),
     ?assertMatch({error, _},
-        gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity)).
+        gen_statem:call(Pid, {update_objects, [{downstream_fail, nothing, nothing}]}, infinity)).
 
 get_snapshot_time_() ->
     {ok, SnapshotTime} = get_snapshot_time(),
