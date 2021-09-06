@@ -87,6 +87,7 @@
     partition :: partition_id(),
     ops_cache :: cache_id(),
     snapshot_cache :: cache_id(),
+    log_index:: cache_id(),
     is_ready :: boolean()
 }).
 -type state() :: #state{}.
@@ -102,8 +103,9 @@ start_vnode(I) ->
 read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
     OpsCache = get_cache_name(Partition, ops_cache),
     SnapshotCache = get_cache_name(Partition, snapshot_cache),
+    LogIndex = get_cache_name(Partition, log_index),
 
-    State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
+    State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, log_index=LogIndex, partition=Partition, is_ready=false},
     internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State).
 
 %%@doc write operation to cache for future read, updates are stored
@@ -125,6 +127,7 @@ store_ss(Key, Snapshot, CommitTime) ->
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
+    LogIndex = open_table(Partition, log_index),
     IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
                     ?LOG_DEBUG("Trying to recover the materializer from log ~p", [Partition]),
@@ -133,7 +136,7 @@ init([Partition]) ->
                 _ ->
                     true
     end,
-    {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+    {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, log_index = LogIndex, snapshot_cache=SnapshotCache}}.
 
 
 %% @doc The tables holding the updates and snapshots are shared with concurrent non-blocking
@@ -169,11 +172,11 @@ handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
 handle_command({check_ready}, _Sender, State = #state{partition=Partition, is_ready=IsReady}) ->
-    Result = case has_ops_cache(Partition) of
+    Result = case has_ops_cache(Partition) and has_snapshot_cache(Partition) and has_log_index_cache(Partition) of
                  false ->
                      false;
                  true ->
-                     has_snapshot_cache(Partition)
+                     true
              end,
     Result2 = Result and IsReady,
     {reply, Result2, State};
@@ -271,10 +274,11 @@ handle_overload_info(_, _) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
+terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, log_index = LogIndex}) ->
     try
         delete_cache(OpsCache),
-        delete_cache(SnapshotCache)
+        delete_cache(SnapshotCache),
+        delete_cache(LogIndex)
     catch
         _:_Reason2->
             ok
@@ -515,23 +519,23 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = Snapshot
             %% if so create a larger or smaller list (by dividing or multiplying by 2)
             %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
             NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
-                         true ->
-                             ListLen * 2;
-                         false ->
-                             HalfListLen = ListLen div 2,
-                         case HalfListLen =< ?OPS_THRESHOLD of
                              true ->
-                                 %% Don't shrink list, already minimun size
-                                 ListLen;
+                                 ListLen * 2;
                              false ->
-                                 %% Only shrink if shrinking would leave some space for new ops
-                                 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
+                                 HalfListLen = ListLen div 2,
+                                 case HalfListLen =< ?OPS_THRESHOLD of
                                      true ->
-                                         HalfListLen;
+                                         %% Don't shrink list, already minimun size
+                                         ListLen;
                                      false ->
-                                         ListLen
+                                         %% Only shrink if shrinking would leave some space for new ops
+                                         case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
+                                             true ->
+                                                 HalfListLen;
+                                             false ->
+                                                 ListLen
+                                         end
                                  end
-                         end
                      end,
         NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen, 0, [{1, Key}, {2, {NewLength, NewListLen}}, {3, OpId}|PrunedOps]),
         true = insert_ops_cache_tuple(OpsCache, NewTuple);
@@ -628,13 +632,14 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
 %%%
 %%%  ops_cache:
 %%%  snapshot_cache:
+%%%  log_index:
 %%%===================================================================
 
 -spec get_cache_name(non_neg_integer(), atom()) -> atom().
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
--spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | cache_id().
+-spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache' | 'log_index') -> atom() | cache_id().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
         undefined ->
@@ -665,6 +670,15 @@ has_ops_cache(Partition) ->
 -spec has_snapshot_cache(partition_id()) -> boolean().
 has_snapshot_cache(Partition) ->
     case ets:info(get_cache_name(Partition, snapshot_cache)) of
+        undefined ->
+            false;
+        _ ->
+            true
+    end.
+
+-spec has_log_index_cache(partition_id()) -> boolean().
+has_log_index_cache(Partition) ->
+    case ets:info(get_cache_name(Partition, log_index)) of
         undefined ->
             false;
         _ ->
