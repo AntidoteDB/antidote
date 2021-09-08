@@ -40,6 +40,8 @@
 
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
+%% Number of cache Levels.
+-define(SNAPSHOT_CACHE_LEVELS, 10).
 %% Number of snapshots to keep after GC
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
@@ -91,10 +93,7 @@
     is_ready :: boolean()
 }).
 -type state() :: #state{}.
-%%---------------- API Functions -------------------%%
 
-start_vnode(I) ->
-    riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
@@ -102,9 +101,10 @@ start_vnode(I) ->
 -spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem:read_property_list(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
     OpsCache = get_cache_name(Partition, ops_cache),
-    SnapshotCache = get_cache_name(Partition, snapshot_cache),
+    SnapshotCache = lists:map(fun(Level) ->
+        {get_cache_name(Partition, list_to_atom("snapshot_cache" ++ integer_to_list(Level)) ), ?SNAPSHOT_THRESHOLD} end,
+        lists:seq(1, ?SNAPSHOT_CACHE_LEVELS)),
     LogIndex = get_cache_name(Partition, log_index),
-
     State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, log_index=LogIndex, partition=Partition, is_ready=false},
     internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State).
 
@@ -116,17 +116,22 @@ update(Key, DownstreamOp) ->
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
         materializer_vnode_master).
 
-%%@doc write snapshot to cache for future read, snapshots are stored
-%%     one at a time into the ets table
--spec store_ss(key(), materialized_snapshot(), snapshot_time()) -> ok.
-store_ss(Key, Snapshot, CommitTime) ->
-    IndexNode = log_utilities:get_key_partition(Key),
-    riak_core_vnode_master:command(IndexNode, {store_ss, Key, Snapshot, CommitTime},
-        materializer_vnode_master).
+
+
+
+
+%%---------------- API Functions -------------------%%
+
+start_vnode(I) ->
+    riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
-    SnapshotCache = open_table(Partition, snapshot_cache),
+    SnapshotCache = lists:map(
+        fun(Level) ->
+            {open_table(Partition, list_to_atom("snapshot_cache" ++ integer_to_list(Level)) ), ?SNAPSHOT_THRESHOLD}
+        end,
+        lists:seq(1, ?SNAPSHOT_CACHE_LEVELS)),
     LogIndex = open_table(Partition, log_index),
     IsReady = case application:get_env(antidote, recover_from_log) of
                   {ok, true} ->
@@ -138,35 +143,6 @@ init([Partition]) ->
               end,
     {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, log_index = LogIndex, snapshot_cache=SnapshotCache}}.
 
-
-%% @doc The tables holding the updates and snapshots are shared with concurrent non-blocking
-%%      readers.
-%%      Returns true if all tables have been initialized, false otherwise.
--spec check_tables_ready() -> boolean().
-check_tables_ready() ->
-    PartitionList = dc_utilities:get_all_partitions_nodes(),
-    check_table_ready(PartitionList).
-
--spec check_table_ready([{partition_id(), node()}]) -> boolean().
-check_table_ready([]) ->
-    true;
-check_table_ready([{Partition, Node}|Rest]) ->
-    Result =
-        try
-            riak_core_vnode_master:sync_command({Partition, Node},
-                {check_ready},
-                materializer_vnode_master,
-                infinity)
-        catch
-            _:_Reason ->
-                false
-        end,
-    case Result of
-        true ->
-            check_table_ready(Rest);
-        false ->
-            false
-    end.
 
 handle_command({hello}, _Sender, State) ->
     {reply, ok, State};
@@ -189,7 +165,7 @@ handle_command({update, Key, DownstreamOp}, _Sender, State) ->
     {reply, ok, State};
 
 handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender, State) ->
-    internal_store_ss(Key, Snapshot, CommitTime, false, State),
+    cacheInsert(Key, Snapshot, CommitTime, State),
     {noreply, State};
 
 handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
@@ -289,6 +265,47 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCach
 
 %%---------------- Internal Functions -------------------%%
 
+%%@doc write snapshot to cache for future read, snapshots are stored
+%%     one at a time into the ets table
+-spec store_ss(key(), materialized_snapshot(), snapshot_time()) -> ok.
+store_ss(Key, Snapshot, CommitTime) ->
+    IndexNode = log_utilities:get_key_partition(Key),
+    riak_core_vnode_master:command(IndexNode, {store_ss, Key, Snapshot, CommitTime},
+        materializer_vnode_master).
+
+
+%% @doc The tables holding the updates and snapshots are shared with concurrent non-blocking
+%%      readers.
+%%      Returns true if all tables have been initialized, false otherwise.
+-spec check_tables_ready() -> boolean().
+check_tables_ready() ->
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
+    check_table_ready(PartitionList).
+
+-spec check_table_ready([{partition_id(), node()}]) -> boolean().
+check_table_ready([]) ->
+    true;
+check_table_ready([{Partition, Node}|Rest]) ->
+    Result =
+        try
+            riak_core_vnode_master:sync_command({Partition, Node},
+                {check_ready},
+                materializer_vnode_master,
+                infinity)
+        catch
+            _:_Reason ->
+                false
+        end,
+    case Result of
+        true ->
+            check_table_ready(Rest);
+        false ->
+            false
+    end.
+
+
+
+
 -spec load_from_log_to_tables(partition_id(), state()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
     LogId = [Partition],
@@ -323,30 +340,6 @@ load_ops(OpsDict, State) ->
                       end, CommittedOps)
               end, true, OpsDict).
 
--spec internal_store_ss(key(), materialized_snapshot(), snapshot_time(), boolean(), state()) -> boolean().
-internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, CommitTime, ShouldGc, State = #state{snapshot_cache=SnapshotCache}) ->
-    SnapshotDict = case get_snapshot_dict(SnapshotCache, Key) of
-                       not_found ->
-                           vector_orddict:new();
-                       {ok, SnapshotDictA} ->
-                           SnapshotDictA
-                   end,
-    %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
-    %% insert requests for the same snapshot could have occurred
-    ShouldInsert =
-        case vector_orddict:size(SnapshotDict) > 0 of
-            true ->
-                {_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
-                ((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
-            false -> true
-        end,
-    case (ShouldInsert or ShouldGc) of
-        true ->
-            SnapshotDict1 = vector_orddict:insert_bigger(CommitTime, Snapshot, SnapshotDict),
-            snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
-        false ->
-            false
-    end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
@@ -355,7 +348,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 
 internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
     %% First look for any existing snapshots in the cache that is compatible with
-    SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
+    SnapshotGetResp = get_from_snapshot_cache(Key, Type, MinSnapshotTime, State),
 
     %% Now apply the operations to the snapshot, and return a materialized value
     materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp).
@@ -364,19 +357,19 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
 %%
 %%      If there's no in-memory suitable snapshot, it will fetch it from the replication log.
 %%
--spec get_from_snapshot_cache(txid() | ignore, key(), type(), snapshot_time(), state()) -> snapshot_get_response().
-
-get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
+-spec get_from_snapshot_cache(key(), type(), snapshot_time(), state()) -> snapshot_get_response().
+get_from_snapshot_cache(Key, Type, MinSnaphsotTime, State = #state{
     ops_cache=OpsCache,
     snapshot_cache=SnapshotCache
 }) ->
-    case get_snapshot_dict(SnapshotCache, Key) of
-        not_found ->
+    case cacheLookup(SnapshotCache, Key) of
+        {error, not_exist} ->
             EmptySnapshot = #materialized_snapshot{
                 last_op_id=0,
                 value=clocksi_materializer:new(Type)
             },
-            store_snapshot(TxId, Key, EmptySnapshot, vectorclock:new(), false, State),
+
+            store_snapshot(Key, EmptySnapshot, vectorclock:new(), State),
             %% Create a base version committed at time ignore, i.e. bottom
             BaseVersion = {{ignore, EmptySnapshot}, true},
             update_snapshot_from_cache(BaseVersion, Key, OpsCache);
@@ -407,16 +400,10 @@ get_from_snapshot_log(Key, Type, SnapshotTime) ->
 %%
 %%      If `ShouldGC' is true, it will try to prune the in-memory cache before inserting.
 %%
--spec store_snapshot(txid() | ignore, key(), materialized_snapshot(), snapshot_time(), boolean(), state()) -> ok.
-store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
-    %% AB: Why don't we need to synchronize through the gen_server if the TxId is ignore??
-    case TxId of
-        ignore ->
-            internal_store_ss(Key, Snapshot, Time, ShouldGC, State),
-            ok;
-        _ ->
-            materializer_vnode:store_ss(Key, Snapshot, Time)
-    end.
+-spec store_snapshot(key(), materialized_snapshot(), snapshot_time(), state()) -> ok.
+store_snapshot(Key, Snapshot, Time, _State) ->
+
+    materializer_vnode:store_ss(Key, Snapshot, Time).
 
 %% @doc Given a snapshot from the cache, update it from the ops cache.
 -spec update_snapshot_from_cache({{snapshot_time() | ignore, materialized_snapshot()}, boolean()}, key(), cache_id())
@@ -486,103 +473,12 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotRes
                                      last_op_id=NewLastOp,
                                      value=MaterializedSnapshot
                                  },
-                                 store_snapshot(TxId, Key, ToCache, CommitTime, ShouldGC, State)
+                                 store_snapshot(Key, ToCache, CommitTime, State)
                          end,
                     {ok, MaterializedSnapshot}
             end
     end.
 
-%% @doc Operation to insert a Snapshot in the cache and start
-%%      Garbage collection triggered by reads.
--spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
-    boolean(), state()) -> true.
-snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = SnapshotCache, ops_cache = OpsCache})->
-    %% Perform the garbage collection when the size of the snapshot dict passed the threshold
-    %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
-    %% Should check op size here also, when run from op gc
-    case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) orelse ShouldGc of
-        true ->
-            %% snapshots are no longer totally ordered
-            PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
-            CommitTimeList = [ CT || {CT, _S} <- vector_orddict:to_list(PrunedSnapshots)],
-            CommitTime = vectorclock:min(CommitTimeList),
-            {Key, Length, OpId, ListLen, OpsDict} =
-                case get_ops_from_cache(OpsCache, Key) of
-                    not_found ->
-                        {Key, 0, 0, 0, {}};
-                    {ok, OpsCacheEntry} ->
-                        OpsCacheEntry
-                end,
-            {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime),
-            true = insert_snapshot_dict(SnapshotCache, Key, PrunedSnapshots),
-            %% Check if the pruned ops are larger or smaller than the previous list size
-            %% if so create a larger or smaller list (by dividing or multiplying by 2)
-            %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
-            NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
-                             true ->
-                                 ListLen * 2;
-                             false ->
-                                 HalfListLen = ListLen div 2,
-                                 case HalfListLen =< ?OPS_THRESHOLD of
-                                     true ->
-                                         %% Don't shrink list, already minimun size
-                                         ListLen;
-                                     false ->
-                                         %% Only shrink if shrinking would leave some space for new ops
-                                         case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
-                                             true ->
-                                                 HalfListLen;
-                                             false ->
-                                                 ListLen
-                                         end
-                                 end
-                         end,
-            NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen, 0, [{1, Key}, {2, {NewLength, NewListLen}}, {3, OpId}|PrunedOps]),
-            true = insert_ops_cache_tuple(OpsCache, NewTuple);
-        false ->
-            true = insert_snapshot_dict(SnapshotCache, Key, SnapshotDict)
-    end.
-
-%% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(), tuple()}, snapshot_time())->
-    {non_neg_integer(), [{non_neg_integer(), op_and_id()}]}.
-prune_ops({Len, OpsTuple}, Threshold)->
-    %% should write custom function for this in the vector_orddict
-    %% or have to just traverse the entire list?
-    %% since the list is ordered, can just stop when all values of
-    %% the op is smaller (i.e. not concurrent)
-    %% So can add a stop function to ordered_filter
-    %% Or can have the filter function return a tuple, one vale for stopping
-    %% one for including
-    {NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
-        OpCommitTime=Op#clocksi_payload.commit_time,
-        (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
-                                     end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
-    case NewSize of
-        0 ->
-            First = element(?FIRST_OP+Len, OpsTuple),
-            {1, [{?FIRST_OP, First}]};
-        _ -> {NewSize, NewOps}
-    end.
-
-%% This function will go through a tuple of operations, filtering out the operations
-%% that are out of date (given by the input function Fun), and returning a list
-%% of the remaining operations and the size of that list
-%% It is used during garbage collection to filter out operations that are older than any
-%% of the cached snapshots
--spec check_filter(fun(({non_neg_integer(), clocksi_payload()}) -> boolean()), non_neg_integer(), non_neg_integer(),
-    non_neg_integer(), tuple(), non_neg_integer(), [{non_neg_integer(), op_and_id()}]) ->
-    {non_neg_integer(), [{non_neg_integer(), op_and_id()}]}.
-check_filter(_Fun, Id, Last, _NewId, _Tuple, NewSize, NewOps) when (Id == Last) ->
-    {NewSize, NewOps};
-check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
-    Op = element(Id, Tuple),
-    case Fun(Op) of
-        true ->
-            check_filter(Fun, Id+1, Last, NewId+1, Tuple, NewSize+1, [{NewId, Op}|NewOps]);
-        false ->
-            check_filter(Fun, Id+1, Last, NewId, Tuple, NewSize, NewOps)
-    end.
 
 %% @doc Extract from the tuple stored in the operation cache
 %% 1) the key, 2) length of the op list (stored in form of a tuple),
@@ -639,7 +535,7 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
--spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache' | 'log_index') -> atom() | cache_id().
+-spec open_table(partition_id(), 'ops_cache' | 'log_index') -> atom() | cache_id().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
         undefined ->
@@ -693,10 +589,6 @@ cache_table_fold(F, Acc0, OpsCache) ->
 insert_ops_cache_tuple(OpsCache, Tuple) ->
     ets:insert(OpsCache, Tuple).
 
--spec insert_snapshot_dict(cache_id(), key(), vector_orddict:vector_orddict()) -> true.
-insert_snapshot_dict(SnapshotCache, Key, SnapshotDict) ->
-    ets:insert(SnapshotCache, {Key, SnapshotDict}).
-
 -spec cache_is_empty(cache_id()) -> boolean().
 cache_is_empty(OpsCache) ->
     case ets:first(OpsCache) of
@@ -709,15 +601,6 @@ cache_is_empty(OpsCache) ->
 -spec delete_cache(cache_id()) -> true.
 delete_cache(Cache) ->
     ets:delete(Cache).
-
--spec get_snapshot_dict(cache_id(), key()) -> not_found | {ok, vector_orddict:vector_orddict()}.
-get_snapshot_dict(SnapshotCache, Key) ->
-    case ets:lookup(SnapshotCache, Key) of
-        [] ->
-            not_found;
-        [{Key, SnapshotDictA}] ->
-            {ok, SnapshotDictA}
-    end.
 
 -spec get_ops_from_cache(cache_id(), key()) -> not_found | {ok, {key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}}.
 get_ops_from_cache(OpsCache, Key) ->
@@ -744,12 +627,49 @@ get_op_list_length(OpsCache, Key) ->
 update_ops_element(OpsCache, Key, Update) ->
     ets:update_element(OpsCache, Key, Update).
 
+cacheLookup([],_Key) ->
+    {error, not_exist};
+cacheLookup([{CacheStore,_Size}| CacheIdentifiers], Key) ->
+    case ets:lookup(CacheStore, Key) of
+        [] -> cacheLookup(CacheIdentifiers, Key);
+        [Object] -> {ok, Object}
+    end.
+
+
+cacheInsert(Key, Snapshot, Clock, _State = #state{snapshot_cache = CacheIdentifiers }) ->
+    {CacheStore, MaxSize} = lists:nth(1, CacheIdentifiers),
+    Size = ets:info(CacheStore, size),
+    ets:insert(CacheStore, {Key, Snapshot, Clock}),
+    case Size >= MaxSize of
+        false -> {CacheIdentifiers, Size+1};
+        true ->
+            case ets:info(CacheStore, size) >= MaxSize of
+                false -> {CacheIdentifiers, Size+1};
+                true -> {garbageCollect(CacheIdentifiers), 0}
+            end
+    end.
+
+-spec garbageCollect(list()) -> list().
+garbageCollect(CacheIdentifiers) ->
+    logger:debug("Initiating Garbage Collection"),
+    {LastSegment, Size} = lists:last(CacheIdentifiers),
+    ets:delete(LastSegment),
+    ets:new(LastSegment, [named_table, ?TABLE_CONCURRENCY]),
+    SubList = lists:droplast(CacheIdentifiers),
+    UpdatedCacheIdentifiers = lists:append([{LastSegment,Size}],SubList),
+    logger:debug("New CacheIdentifier List is ~p ~n",[UpdatedCacheIdentifiers]),
+    UpdatedCacheIdentifiers.
+
+
 -ifdef(TEST).
+
+create_snapshot_caches() ->
+    [{ets:new(snapshot_cache1, [set]), 20}, {ets:new(snapshot_cache2, [set]), 20}, {ets:new(snapshot_cache3, [set]), 20}].
 
 %% This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     Key = mycount,
     DC1 = 1,
     Type = antidote_crdt_counter_pn,
@@ -760,6 +680,7 @@ gc_test() ->
     lists:map(
         fun(N) ->
             {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, N * 10 + 2}]), ignore, [], false, State),
+            io:format(Res),
             ?assertEqual(N, Type:value(Res)),
             op_insert_gc(Key, generate_payload(N * 10, N * 10 + 1, Res, a), State)
         end, lists:seq(0, ?SNAPSHOT_THRESHOLD)),
@@ -782,7 +703,7 @@ gc_test() ->
 %% This tests to make sure operation lists can be large and resized
 large_list_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     Key = mycount,
     DC1 = 1,
     Type = antidote_crdt_counter_pn,
@@ -821,7 +742,7 @@ generate_payload(SnapshotTime, CommitTime, Prev, Key) ->
 
 seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     Key = mycount,
     Type = antidote_crdt_counter_pn,
     DC1 = 1,
@@ -858,7 +779,7 @@ seq_write_test() ->
 
 multipledc_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     Key = mycount,
     Type = antidote_crdt_counter_pn,
     DC1 = 1,
@@ -897,7 +818,7 @@ multipledc_write_test() ->
 
 concurrent_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     Key = mycount,
     Type = antidote_crdt_counter_pn,
     DC1 = local,
@@ -941,7 +862,7 @@ concurrent_write_test() ->
 %% E.g., for a gcounter, return 0.
 read_nonexisting_key_test() ->
     OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    SnapshotCache = create_snapshot_caches(),
     State = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
     Type = antidote_crdt_counter_pn,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1, 1}, {dc2, 0}]), ignore, [], false, State),
