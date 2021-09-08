@@ -41,7 +41,8 @@
     materialize_eager/3,
     check_operations/1,
     check_operation/1,
-    belongs_to_snapshot_op/3]).
+    belongs_to_snapshot_op/3,
+    materialize_clocksi_payload/3]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -69,6 +70,19 @@ materialize_eager(Type, Snapshot, [Effect | Rest]) ->
             {error, Reason};
         {ok, Result} ->
             materialize_eager(Type, Result, Rest)
+    end.
+
+%% @doc
+-spec materialize_clocksi_payload(type(), snapshot(), [clocksi_payload()]) -> snapshot() | {error, {unexpected_operation, effect(), type()}}.
+materialize_clocksi_payload(_Type, Snapshot, []) ->
+    Snapshot;
+materialize_clocksi_payload(Type, Snapshot, [ClocksiPayload | Rest]) ->
+    Effect = ClocksiPayload#clocksi_payload.op_param,
+    case update_snapshot(Type, Snapshot, Effect) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, Result} ->
+            materialize_clocksi_payload(Type, Result, Rest)
     end.
 
 
