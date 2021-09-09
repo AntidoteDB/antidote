@@ -6,12 +6,12 @@
     {logger, [
 
       {handler, default, logger_std_h,
-        #{level => info,
+        #{level => error,
           formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
           config => #{type => standard_io}}},
 
       {handler, debug, logger_std_h,
-        #{level => info,
+        #{level => error,
           formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
           config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/info.log"}}}},
 

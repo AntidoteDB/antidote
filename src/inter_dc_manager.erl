@@ -128,6 +128,7 @@ start_bg_processes(MetaDataName) ->
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
+    ok = dc_utilities:ensure_local_vnodes_running_master(gingko_vnode_master),
     lists:foreach(fun(Node) ->
                       true = wait_init:wait_ready(Node),
                       ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
@@ -170,6 +171,7 @@ check_node_restart() ->
             ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
             ok = dc_utilities:ensure_local_vnodes_running_master(logging_vnode_master),
             ok = dc_utilities:ensure_local_vnodes_running_master(materializer_vnode_master),
+            ok = dc_utilities:ensure_local_vnodes_running_master(gingko_vnode_master),
             wait_init:wait_ready(MyNode),
             ok = dc_utilities:check_registered(meta_data_sender_sup),
             ok = dc_utilities:check_registered(meta_data_manager_sup),

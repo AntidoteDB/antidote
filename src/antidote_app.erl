@@ -56,6 +56,9 @@ start(_StartType, _StartArgs) ->
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, gingko_vnode}]),
             ok = riak_core_node_watcher:service_up(gingko, self()),
+
+            ok = riak_core:register([{vnode_module, logging_vnode}]),
+            ok = riak_core_node_watcher:service_up(logging, self()),
             %%ClockSI layer
 
             ok = riak_core:register([{vnode_module, clocksi_vnode}]),

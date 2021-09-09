@@ -57,11 +57,13 @@
 
 -spec start() -> {ok, [atom()]} | {error, reason()}.
 start() ->
+    logger:error("Gingko startp returns ~p",[gingko:start(1)]),
     application:ensure_all_started(antidote).
 
 -spec stop() -> ok | {error, reason()}.
 stop() ->
     application:stop(antidote).
+
 
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time

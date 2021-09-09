@@ -58,6 +58,10 @@ init(_Args) ->
         {riak_core_vnode_master, start_link, [gingko_vnode]},
         permanent, 5000, worker, [riak_core_vnode_master]},
 
+    LoggingMaster = {logging_vnode_master,
+                     {riak_core_vnode_master, start_link, [logging_vnode]},
+                     permanent, 5000, worker, [riak_core_vnode_master]},
+
     ClockSIMaster = { clocksi_vnode_master,
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
@@ -104,6 +108,7 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [
        Gingko,
+       LoggingMaster,
        ClockSIMaster,
        ClockSIiTxCoordSup,
        MaterializerMaster,
