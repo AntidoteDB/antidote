@@ -519,7 +519,7 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
             {reply, Error, State}
     end;
 
-handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, _Type, Key}, _Sender,
+handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
@@ -535,7 +535,10 @@ handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, _Type, Key}, _Send
                             error ->
                             []
                         end,
-                    {reply, CommittedOpsForKey, State}
+                    {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
+                                                   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
+                                                   snapshot_time = vectorclock:new(), is_newest_snapshot = false},
+                     State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}

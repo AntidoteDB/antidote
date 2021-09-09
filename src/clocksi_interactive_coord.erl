@@ -97,7 +97,7 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = lists:nth(1, Preflist),
+    IndexNode = hd(Preflist),
     case clocksi_readitem:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
