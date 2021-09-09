@@ -15,7 +15,8 @@
     {included_applications, [
         vectorclock,
         antidote_pb_codec,
-        antidote_crdt
+        antidote_crdt,
+        gingko
     ]},
 
     {mod, {antidote_app, []}},
