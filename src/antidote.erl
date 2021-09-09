@@ -63,7 +63,6 @@ start() ->
 stop() ->
     application:stop(antidote).
 
-
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
 -spec get_log_operations([{bound_object(), snapshot_time()}]) -> {ok, [[{non_neg_integer(), clocksi_payload()}]]} | {error, reason()}.
