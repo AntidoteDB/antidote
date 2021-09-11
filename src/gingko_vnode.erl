@@ -23,8 +23,8 @@
     commit/4,
     commit/3,
     abort/2,
-    get_version/2,
-    get_version/4,
+    get_version/3,
+    get_version/5,
     set_stable/1, %%TODO: Implement for the checkpoint store,
     get_stats/0
 ]).
@@ -49,9 +49,9 @@ init([Partition]) ->
 %%====================================================================
 
 %% @equiv get_version(Key, Type, undefined)
--spec get_version(key(), type()) -> {ok, snapshot()}.
-get_version(Key, Type) ->
-    get_version(Key, Type, ignore, ignore).
+-spec get_version(term(),key(), type()) -> {ok, snapshot()}.
+get_version(TxId, Key, Type) ->
+    get_version(TxId, Key, Type, ignore, ignore).
 %% New so the minimum timestamp is irrelevant and the last stale version in the cache is returned.
 
 %% @doc Retrieves a materialized version of the object at given key with expected given type.
@@ -66,12 +66,11 @@ get_version(Key, Type) ->
 %% @param Key the Key under which the object is stored
 %% @param Type the expected CRDT type of the object
 %% @param MaximumSnapshotTime if not 'undefined', then retrieves the latest object version which is not older than this timestamp
--spec get_version(key(), type(), snapshot_time(),snapshot_time()) -> {ok, snapshot()}.
-get_version(Key, Type, MinimumSnapshotTime, MaximumSnapshotTime) ->
+-spec get_version(key(), type(),txid(), snapshot_time(),snapshot_time()) -> {ok, snapshot()}.
+get_version(Key, Type,TxId, MinimumSnapshotTime, MaximumSnapshotTime ) ->
     logger:debug(#{function => "GET_VERSION", key => Key, type => Type, min_snapshot_timestamp => MinimumSnapshotTime, max_snapshot_timestamp => MaximumSnapshotTime}),
     IndexNode = log_utilities:get_key_partition(Key),
-    Response = riak_core_vnode_master:sync_spawn_command(IndexNode, {get_version, Key, Type, MinimumSnapshotTime,MaximumSnapshotTime}, gingko_vnode_master),
-    Response.
+    riak_core_vnode_master:sync_spawn_command(IndexNode, {get_version, TxId, Key, Type, MinimumSnapshotTime,MaximumSnapshotTime}, gingko_vnode_master).
 
 
 %% @doc Applies an update for the given key for given transaction id with a calculated valid downstream operation.
@@ -88,21 +87,9 @@ get_version(Key, Type, MinimumSnapshotTime, MaximumSnapshotTime) ->
 %% @param DownstreamOp the calculated downstream operation of a CRDT update
 -spec update(key(), type(), txid(), op()) -> ok | {error, reason()}.
 update(Key, Type, TransactionId, DownstreamOp) ->
-    io:format("."),
     logger:debug(#{function => "UPDATE", key => Key, type => Type, transaction => TransactionId, op => DownstreamOp}),
-
-    Entry = #log_operation{
-        tx_id = TransactionId,
-        op_type = update,
-        log_payload = #update_log_payload{key = Key, type = Type , op = DownstreamOp}},
-
-    LogRecord = #log_record {
-        version = ?LOG_RECORD_VERSION,
-        op_number = #op_number{},        % not used
-        bucket_op_number = #op_number{}, % not used
-        log_operation = Entry
-    },
-    gingko_op_log:append(?LOGGING_MASTER, Key, LogRecord).
+    IndexNode = log_utilities:get_key_partition(Key),
+    riak_core_vnode_master:sync_spawn_command(IndexNode, {update, Key, Type, TransactionId,DownstreamOp}, gingko_vnode_master).
 
 
 %% @doc Commits all operations belonging to given transaction id for given list of keys.
@@ -136,8 +123,9 @@ commit(Keys, TransactionId, CommitTime, SnapshotTime) ->
         bucket_op_number = #op_number{}, % not used
         log_operation = Entry
     },
-
-    lists:map(fun(Key) -> gingko_op_log:append(?LOGGING_MASTER, Key, LogRecord) end, Keys),
+    lists:map(fun(Key) ->
+        IndexNode = log_utilities:get_key_partition(Key),
+        riak_core_vnode_master:sync_spawn_command(IndexNode, {commit, Key, LogRecord}, gingko_vnode_master) end, Keys),
     ok.
 
 %% @doc Aborts all operations belonging to given transaction id for given list of keys.
@@ -187,15 +175,35 @@ get_stats() ->
 %% Sample command: respond to a ping
 handle_command({hello}, _Sender, State) ->
     {reply, ok, State};
-handle_command({get_version, Key, Type, MinimumSnapshotTime,MaximumSnapshotTime}, _Sender, State = #state{partition = Partition}) ->
+handle_command({get_version, TxId, Key, Type, MinimumSnapshotTime,MaximumSnapshotTime}, _Sender, State = #state{partition = Partition}) ->
     %% Ask the cache for the object.
     %% If tha cache has that object, it is returned.
     %% If the cache does not have it, it is materialised from the log and stored in the cache.
     %% All subsequent reads of the object will return from the cache without reading the whole log.
 
-    {ok, {Key, Type, Value, Timestamp}} = cache_daemon:get_from_cache(Key,Type,MinimumSnapshotTime,MaximumSnapshotTime, Partition),
+    {ok, {Key, Type, Value, Timestamp}} = cache_daemon:get_from_cache(TxId, Key,Type,MinimumSnapshotTime,MaximumSnapshotTime, Partition),
     logger:notice(#{step => "materialize", materialized => {Key, Type, Value, Timestamp}}),
-    {reply, {Key, Type, Value}, State};
+    {reply,{ok,Value}, State};
+
+handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State = #state{partition = Partition}) ->
+    Entry = #log_operation{
+        tx_id = TransactionId,
+        op_type = update,
+        log_payload = #update_log_payload{key = Key, type = Type , op = DownstreamOp}},
+
+    LogRecord = #log_record {
+        version = ?LOG_RECORD_VERSION,
+        op_number = #op_number{},        % not used
+        bucket_op_number = #op_number{}, % not used
+        log_operation = Entry
+    },
+    Result = gingko_op_log:append(Key, LogRecord, Partition),
+    {reply,Result, State};
+
+handle_command({commit, Key, LogRecord}, _Sender, State = #state{partition = Partition}) ->
+    gingko_op_log:append(Key, LogRecord, Partition),
+    {reply,ok, State};
+
 
 handle_command(Message, _Sender, State) ->
     logger:warning("unhandled_command ~p", [Message]),

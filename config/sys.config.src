@@ -34,7 +34,7 @@
     %% has to be an exponent of 2
     %% low number will decrease file accesses (good for testing) and boot time
     %% high number enables scaling and generates smaller log files
-    {ring_creation_size, 2}
+    {ring_creation_size, 16}
   ]},
 
 

@@ -241,8 +241,8 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     end.
 
 format_read_params(ReadObjects) ->
-    lists:map(fun({Key, Type, Bucket}) ->
-                      {{Key, Bucket}, Type}
+    lists:map(fun({Key, Type, _Bucket}) ->
+                      {Key, Type}
               end, ReadObjects).
 
 format_update_params(Updates) ->

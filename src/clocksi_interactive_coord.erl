@@ -341,7 +341,8 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #sta
     num_to_read = NumToRead,
     return_accumulator = ReadKeys
 }) ->
-    %% Apply local updates to the read snapshot
+    %% Apply local updates to the read snapshot. These are the operations that have not been written to the journal yet.
+    %% Because of "Read own Writes", we need to ensure that the local uncommitted operations are also applied to the snapshot.
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
 
     %% Swap keys with their appropriate read values
@@ -354,7 +355,6 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #sta
                 num_to_read = NumToRead - 1,
                 return_accumulator = ReadValues
             }};
-
         false ->
             {next_state, execute_op, CoordState#state{num_to_read = 0},
                 [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
@@ -551,6 +551,7 @@ execute_command(read_objects, Objects, Sender, State = #state{transaction=Transa
     ExecuteReads = fun({Key, Type}, AccState) ->
         ?STATS(operation_read_async),
         Partition = log_utilities:get_key_partition(Key),
+        % This call is forwarded to gingko through clocksi_readitem.
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
         AccState#state{return_accumulator=[Key | ReadKeys]}
@@ -668,11 +669,10 @@ reply_to_client(State = #state{
 apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
     Partition = log_utilities:get_key_partition(Key),
     Found = lists:keyfind(Partition, 1, CoordState#state.updated_partitions),
-
     case Found of
         false ->
+            %% No Local updates found for the snapshot Key
             Snapshot;
-
         {Partition, WS} ->
             FilteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
             clocksi_materializer:materialize_eager(Type, Snapshot, FilteredAndReversedUpdates)
@@ -780,8 +780,9 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
                     {error, Reason};
 
                 {ok, DownstreamOp} ->
-                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
 
+                    gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, DownstreamOp),
+                    %ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
                     %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},
                     NewUpdatedPartitions = append_updated_partitions(
@@ -807,18 +808,6 @@ append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
     %% Update the write set entry with the new record
     AllUpdates = {Partition, [Update | WriteSet]},
     lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
-
-
--spec async_log_propagation(index_node(), txid(), key(), type(), effect()) -> ok.
-async_log_propagation(Partition, TxId, Key, Type, Record) ->
-    LogRecord = #log_operation{
-        op_type=update,
-        tx_id=TxId,
-        log_payload=#update_log_payload{key=Key, type=Type, op=Record}
-    },
-
-    LogId = log_utilities:get_logid_from_key(Key),
-    logging_vnode:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
 
 %% @doc this function sends a prepare message to all updated partitions and goes
