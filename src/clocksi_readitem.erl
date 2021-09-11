@@ -50,22 +50,15 @@
 %%% API
 %%%===================================================================
 
--spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
+-spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
     rpc:call(Node, ?MODULE, perform_read_internal, [Key, Type, Transaction, PropertyList, Partition]).
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {fsm, Sender}) ->
-    spawn_link(Node, fun() -> {
-        case perform_read_internal(Key, Type, Transaction, PropertyList, Partition) of
-            {ok, Snapshot} ->
-                gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}})
-            % TODO dialyzer says this can never happen (it's true)
-            %      Fix spec annotations in this chain
-            % {error, Reason} ->
-            %     gen_statem:cast(Sender, {error, Reason})
-        end
-    } end),
+    spawn_link(Node, fun() ->
+        {ok, Snapshot} = perform_read_internal(Key, Type, Transaction, PropertyList, Partition),
+        gen_statem:cast(Sender, {ok, Snapshot}) end),
     ok.
 
 
@@ -83,7 +76,8 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
             timer:sleep(Time),
             perform_read_internal(Key, Type, Transaction, PropertyList, Partition);
         ready ->
-            return(Key, Type, Transaction, PropertyList, Partition)
+            logger:error("Key ~p ~n Type ~p ~n Transaction ~p ~n",[Key, Type, Transaction]),
+            fetch_from_gingko(Key, Type, Transaction)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -124,11 +118,13 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return(key(), type(), tx(), read_property_list(), partition_id()) -> {error, term()} | {ok, snapshot()}.
-return(Key, Type, Transaction, PropertyList, Partition) ->
+-spec fetch_from_gingko(key(), type(), tx()) -> {ok, snapshot()}.
+fetch_from_gingko(Key, Type, Transaction) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
+    % AP: I have not used a transaction ID here because uncommitted operations are not written to the journal.
+    % And once the operation is committed, we do not care which transaction committed it.
+    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, ignore).
+    %materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
 
 
 
