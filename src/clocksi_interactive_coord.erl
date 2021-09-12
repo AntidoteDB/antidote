@@ -781,7 +781,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
 
                 {ok, DownstreamOp} ->
 
-                    gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, DownstreamOp),
+                    ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, DownstreamOp),
                     %ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
                     %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},

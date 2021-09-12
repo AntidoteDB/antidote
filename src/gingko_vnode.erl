@@ -198,6 +198,7 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
         log_operation = Entry
     },
     Result = gingko_op_log:append(Key, LogRecord, Partition),
+    logger:error("Result of the handle update in gingko_vnode:: ~p",[Result]),
     {reply,Result, State};
 
 handle_command({commit, Key, LogRecord}, _Sender, State = #state{partition = Partition}) ->
