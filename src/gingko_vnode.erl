@@ -19,7 +19,7 @@
     handle_exit/3]).
 %%----------------External API -------------------%%
 -export([
-    update/4,
+    update/5,
     commit/4,
     commit/3,
     abort/2,
@@ -85,11 +85,11 @@ get_version(Key, Type,TxId, MinimumSnapshotTime, MaximumSnapshotTime ) ->
 %% @param Type the expected CRDT type of the object
 %% @param TransactionId the id of the transaction this update belongs to
 %% @param DownstreamOp the calculated downstream operation of a CRDT update
--spec update(key(), type(), txid(), op()) -> ok | {error, reason()}.
-update(Key, Type, TransactionId, DownstreamOp) ->
+-spec update(key(), type(), txid(), op(), {atom(), atom(), pid()}) -> ok | {error, reason()}.
+update(Key, Type, TransactionId, DownstreamOp, ReplyTo) ->
     logger:debug(#{function => "UPDATE", key => Key, type => Type, transaction => TransactionId, op => DownstreamOp}),
     IndexNode = log_utilities:get_key_partition(Key),
-    riak_core_vnode_master:sync_spawn_command(IndexNode, {update, Key, Type, TransactionId,DownstreamOp}, gingko_vnode_master).
+    riak_core_vnode_master:command(IndexNode, {update, Key, Type, TransactionId,DownstreamOp}, ReplyTo, gingko_vnode_master).
 
 
 %% @doc Commits all operations belonging to given transaction id for given list of keys.
@@ -198,7 +198,6 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
         log_operation = Entry
     },
     Result = gingko_op_log:append(Key, LogRecord, Partition),
-    logger:error("Result of the handle update in gingko_vnode:: ~p",[Result]),
     {reply,Result, State};
 
 handle_command({commit, Key, LogRecord}, _Sender, State = #state{partition = Partition}) ->

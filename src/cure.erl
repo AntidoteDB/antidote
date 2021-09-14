@@ -73,6 +73,7 @@ abort_transaction(TxId) ->
 -spec commit_transaction(txid()) ->
                                 {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
+    logger:error("Commit called for Transaction with ID: ~p",[TxId]),
     case clocksi_full_icommit(TxId) of
         {ok, {_TxId, CommitTime}} ->
             {ok, CommitTime};
@@ -119,6 +120,7 @@ update_objects(_Clock, _Properties, []) ->
     {ok, vectorclock:new()};
 update_objects(ClientCausalVC, Properties, Updates) ->
     {ok, TxId} = clocksi_istart_tx(ClientCausalVC, Properties),
+    logger:error("Started Transaction with ID: ~p",[TxId]),
     case update_objects(Updates, TxId) of
         ok -> commit_transaction(TxId);
         {error, Reason} -> {error, Reason}
@@ -207,8 +209,10 @@ clocksi_istart_tx(Clock, Properties) ->
 -spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}
                                           | {error, reason()}.
 clocksi_full_icommit(TxId)->
+    logger:error("Commit called for Transaction in clocksi_full_commit with ID: ~p for the server: ~p",[TxId, TxId#tx_id.server_pid]),
     case gen_statem:call(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
-        {ok, _PrepareTime} ->
+        {ok, PrepareTime} ->
+            logger:error("Agents replied with prepared for clockSI full icommit at ~p for the server: ~p",[PrepareTime, TxId#tx_id.server_pid]),
             gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
@@ -246,8 +250,8 @@ format_read_params(ReadObjects) ->
               end, ReadObjects).
 
 format_update_params(Updates) ->
-    lists:map(fun({{Key, Type, Bucket}, Op, Param}) ->
-                      {{Key, Bucket}, Type, {Op, Param}}
+    lists:map(fun({{Key, Type, _Bucket}, Op, Param}) ->
+                      {Key, Type, {Op, Param}}
               end, Updates).
 
 %% The following function are usefull for testing. They shouldn't be used in normal operations.

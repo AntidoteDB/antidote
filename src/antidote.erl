@@ -57,7 +57,6 @@
 
 -spec start() -> {ok, [atom()]} | {error, reason()}.
 start() ->
-    logger:error("Gingko startp returns ~p",[gingko:start(1)]),
     application:ensure_all_started(antidote).
 
 -spec stop() -> ok | {error, reason()}.
@@ -171,6 +170,7 @@ update_objects(Updates, TxId) ->
 -spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}])
                      -> {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
+    logger:error("In 3 param update objects"),
     case type_check(Updates) of
         ok ->
             cure:update_objects(Clock, Properties, Updates);

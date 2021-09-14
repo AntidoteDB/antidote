@@ -44,7 +44,6 @@
 -export([
     start_link/0,
     perform_singleitem_operation/4,
-    perform_singleitem_update/5,
     finish_op/3
 ]).
 
@@ -105,70 +104,6 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
             {ok, Snapshot, CommitTime}
-    end.
-
-
-%% @doc This is a standalone function for directly contacting the update
-%%      server vnode.  This is lighter than creating a transaction
-%%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
-    Transaction = create_transaction_record(Clock, true, Properties),
-    Partition = log_utilities:get_key_partition(Key),
-    %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
-        {Key, Type, Params1} ->
-            case clocksi_downstream:generate_downstream_op(Transaction, Partition, Key, Type, Params1, []) of
-                {ok, DownstreamRecord} ->
-                    UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
-                    TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_operation{
-                        tx_id=TxId,
-                        op_type=update,
-                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
-                    },
-                    LogId = log_utilities:get_logid_from_key(Key),
-                    case logging_vnode:append(Partition, LogId, LogRecord) of
-                        {ok, _} ->
-                            case clocksi_vnode:single_commit_sync(UpdatedPartitions, Transaction) of
-                                {committed, CommitTime} ->
-
-                                    %% Execute post commit hook
-                                    case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-                                        {error, Reason} ->
-                                            ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
-                                        _ ->
-                                            ok
-                                    end,
-
-                                    TxId = Transaction#transaction.txn_id,
-                                    DcId = dc_utilities:get_my_dc_id(),
-
-                                    CausalClock = vectorclock:set(
-                                        DcId,
-                                        CommitTime,
-                                        Transaction#transaction.vec_snapshot_time
-                                    ),
-
-                                    {ok, {TxId, [], CausalClock}};
-
-                                abort ->
-                                    % TODO increment aborted transaction metrics?
-                                    {error, aborted};
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end;
-
-                        Error ->
-                            {error, Error}
-                    end;
-
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-
-        {error, Reason} ->
-            {error, Reason}
     end.
 
 %% TODO spec
@@ -781,7 +716,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
 
                 {ok, DownstreamOp} ->
 
-                    ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, DownstreamOp),
+                    ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, DownstreamOp, {fsm, undefined, self()}),
                     %ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
                     %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},
@@ -796,6 +731,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
                     {NewUpdatedPartitions, UpdatedOps}
             end
     end.
+
 
 %% @doc Add new updates to the write set of the given partition.
 %%

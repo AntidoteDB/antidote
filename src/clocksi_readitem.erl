@@ -76,7 +76,6 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
             timer:sleep(Time),
             perform_read_internal(Key, Type, Transaction, PropertyList, Partition);
         ready ->
-            logger:error("Key ~p ~n Type ~p ~n Transaction ~p ~n",[Key, Type, Transaction]),
             fetch_from_gingko(Key, Type, Transaction)
     end.
 
