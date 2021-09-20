@@ -46,48 +46,21 @@
 start(_StartType, _StartArgs) ->
     ok = validate_data_dir(),
 
-    % set the error logger counting the number of errors during operation
-    ok = logger:add_handler(count_errors, antidote_error_monitor, #{level => error}),
-
-    % set the warning logger counting the number of warnings during operation
-    ok = logger:add_handler(count_warnings, antidote_warning_monitor, #{level => warning}),
 
     case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, gingko_vnode}]),
             ok = riak_core_node_watcher:service_up(gingko, self()),
 
-            ok = riak_core:register([{vnode_module, logging_vnode}]),
-            ok = riak_core_node_watcher:service_up(logging, self()),
             %%ClockSI layer
 
             ok = riak_core:register([{vnode_module, clocksi_vnode}]),
             ok = riak_core_node_watcher:service_up(clocksi, self()),
 
-            ok = riak_core:register([{vnode_module, materializer_vnode}]),
-            ok = riak_core_node_watcher:service_up(materializer, self()),
-
-            ok = riak_core:register([{vnode_module, inter_dc_log_sender_vnode}]),
-            ok = riak_core_node_watcher:service_up(logsender, self()),
-
-            ok = riak_core:register([{vnode_module, inter_dc_sub_vnode}]),
-            ok = riak_core_node_watcher:service_up(inter_dc_sub, self()),
-
-            ok = riak_core:register([{vnode_module, inter_dc_dep_vnode}]),
-            ok = riak_core_node_watcher:service_up(inter_dc_dep, self()),
 
             ok = riak_core_ring_events:add_guarded_handler(antidote_ring_event_handler, []),
             ok = riak_core_node_watcher_events:add_guarded_handler(antidote_node_event_handler, []),
 
-            _IsRestart = inter_dc_manager:check_node_restart(),
-
-            case application:get_env(antidote, auto_start_read_servers) of
-                {ok, true} ->
-                    %% start read servers
-                    inter_dc_manager:start_bg_processes(stable_time_functions);
-                _->
-                    ok %dont_start_read_servers
-            end,
             {ok, Pid};
         {error, Reason} ->
             {error, Reason}
