@@ -49,7 +49,6 @@ update_objects(_Clock, _Properties, []) ->
   {ok, vectorclock:new()};
 update_objects(ClientCausalVC, Properties, Updates) ->
   {ok, TxId} = clocksi_interactive_coord_api:start_transaction(ClientCausalVC, Properties),
-  logger:error("Transaction created ~p",[TxId]),
   case update_objects(Updates, TxId) of
     ok -> clocksi_interactive_coord_api:commit_transaction(TxId);
     {error, Reason} -> {error, Reason}
@@ -87,7 +86,6 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
         {ok, clocksi} ->
 
           {ok, TxId} = clocksi_interactive_coord_api:start_transaction(Clock, Properties),
-          logger:error("Starting clocksi read with TXID ~p",[TxId]),
           case obtain_objects(Objects, TxId, StateOrValue) of
             {ok, Res} ->
               {ok, CommitTime} = clocksi_interactive_coord_api:commit_transaction(TxId),

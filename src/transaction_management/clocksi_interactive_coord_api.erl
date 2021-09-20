@@ -45,8 +45,8 @@ commit_transaction(TxId) ->
 -spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}} | {error, reason()}.
 clocksi_full_icommit(TxId)->
   case gen_statem:call(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of
-    {ok, _PrepareTime} ->
-      gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
+    {ok, PrepareTime} ->
+      gen_statem:call(TxId#tx_id.server_pid, {commit, PrepareTime}, ?OP_TIMEOUT);
     Msg ->
       Msg
   end.

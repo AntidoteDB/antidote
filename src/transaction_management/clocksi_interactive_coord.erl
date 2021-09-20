@@ -28,7 +28,7 @@
   stop/1
 ]).
 %% States
--export([execute_op/3, receive_prepared/3, receive_logging_responses/3]).
+-export([execute_op/3, execute_commit/3, receive_prepared/3, receive_logging_responses/3, receive_committed/3]).
 
 -define(SERVER, ?MODULE).
 %%%===================================================================
@@ -66,7 +66,8 @@
   operations :: undefined | list() | {update_objects, list()},
   return_accumulator :: list() | ok | {error, reason()},
   is_static :: boolean(),
-  properties :: txn_properties()
+  properties :: txn_properties(),
+    commit_type_required:: read_only | normal
 }).
 
 -type state() :: #state{}.
@@ -111,7 +112,6 @@ init([]) ->
 
 wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, _State) ->
   BaseState = init_state(Properties),
-  logger:error("Coordinator started and state initilised ~p ~n~n~n",[BaseState]),
   {ok, TransactionRecord} = start_tx_internal(ClientClock, Properties),
   TxnId = TransactionRecord#transaction.txn_id,
   {next_state, execute_op, BaseState#state{transaction = TransactionRecord}, {reply, Sender, {ok, TxnId}}}.
@@ -125,8 +125,16 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 -spec execute_op({call, gen_statem:from()}, {update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
 % Invoked for read, update, perpare, commit etc and a relevant internal callback is triggered using execute command.
 execute_op({call, Sender}, {OpType, Args}, State) ->
-  logger:error("Executing Update"),
   execute_command(OpType, Args, Sender, State).
+
+%% @doc Contact the leader computed in the prepare state for it to execute the
+%%      operation, wait for it to finish (synchronous) and go to the prepareOP
+%%       to execute the next operation.
+%% internal state timeout
+-spec execute_commit({call, gen_statem:from()}, {update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
+% Invoked for read, update, perpare, commit etc and a relevant internal callback is triggered using execute command.
+execute_commit({call, Sender}, {commit, PrepareTime}, State) ->
+    execute_command(commit,PrepareTime, Sender, State).
 
 
 %% @doc in this state, the fsm waits for prepare_time from each updated
@@ -142,6 +150,26 @@ receive_prepared(cast, timeout, State) ->
 receive_prepared(info, {_EventType, EventValue}, State) ->
   receive_prepared(cast, EventValue, State).
 
+%%%== receive_committed
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%      committed the tx and finishes operation.
+%%      Should we retry sending the committed message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_committed(cast, committed, State = #state{num_ack_pending = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            reply_to_client(State#state{state = committed});
+        _ ->
+            {next_state, receive_committed, State#state{num_ack_pending = NumToAck - 1}}
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_committed(info, {_EventType, EventValue}, State) ->
+    receive_committed(cast, EventValue, State).
+
+
 %%%== receive_logging_responses
 
 %% internal state timeout
@@ -153,40 +181,32 @@ receive_logging_responses(state_timeout, timeout, State) ->
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
 receive_logging_responses(cast, Response, State = #state{
-  is_static = IsStatic,
-  num_agents_affected = NumToReply,
+  num_ack_pending = NumToReply,
   return_accumulator = ReturnAcc
 }) ->
-
-  NewAcc = case Response of
+    NewAcc = case Response of
              {error, _r} = Err -> Err;
              {ok, _OpId} -> ReturnAcc;
              timeout -> ReturnAcc
-           end,
+            end,
 
   %% Loop back to the same state until we process all the replies
-  case NumToReply > 1 of
-    true ->
-      {next_state, receive_logging_responses, State#state{
-        num_agents_affected = NumToReply - 1,
-        return_accumulator=NewAcc
-      }};
+    case NumToReply > 1 of
+        true ->
+          {next_state, receive_logging_responses, State#state{
+              num_ack_pending = NumToReply - 1,
+            return_accumulator=NewAcc
+          }};
 
-    false ->
-      case NewAcc of
-        ok ->
-          case IsStatic of
-            true ->
-              prepare(State);
-            false ->
-              {next_state, execute_op, State#state{num_agents_affected = 0, return_accumulator=[]},
-                [{reply, State#state.from, NewAcc}]}
-          end;
-
-        _ ->
-          abort(State)
-      end
-  end;
+        false ->
+          case NewAcc of
+            ok ->
+              {next_state, execute_op, State#state{num_ack_pending = 0, return_accumulator=[]},
+                [{reply, State#state.from, NewAcc}]};
+            _ ->
+              abort(State)
+          end
+    end;
 
 %% capture regular events (e.g. logging_vnode responses)
 receive_logging_responses(info, {_EventType, EventValue}, State) ->
@@ -234,31 +254,11 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
       {next_state, receive_logging_responses, LoggingState};
     false ->
       {next_state, receive_logging_responses, LoggingState, [{state_timeout, 0, timeout}]}
-  end.
+  end;
 
 
-process_prepared(ReceivedPrepareTime, State = #state{num_ack_pending = NumPendingAck,
-  prepare_time = PrepareTime}) ->
-  MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
-  case NumPendingAck of
-    1 ->
-      % this is the last ack we expected
-          prepare_done(State, {normal_commit, MaxPrepareTime});
-    _ ->
-      {next_state, receive_prepared, State#state{num_ack_pending = NumPendingAck - 1, prepare_time = MaxPrepareTime}}
-  end.
-%% @doc when an error occurs or an updated partition
-%% does not pass the certification check, the transaction aborts.
-abort(State = #state{transaction = Transaction,
-  updated_partitions = UpdatedPartitions}) ->
-  NumPendingAck = length(UpdatedPartitions),
-  case NumPendingAck of
-    0 ->
-      reply_to_client(State#state{state = aborted});
-    _ ->
-      ok = clocksi_vnode:abort(UpdatedPartitions, Transaction),
-      {next_state, receive_aborted, State#state{num_ack_pending = NumPendingAck, state = aborted}}
-  end.
+execute_command(commit,_PrepareTime, Sender, State = #state{commit_type_required = CommitType}) ->
+    commit(State#state{from = Sender}, CommitType).
 
 %%%===================================================================
 %%% API
@@ -283,16 +283,18 @@ stop(Pid) -> gen_statem:stop(Pid).
 %%      to the "receive_prepared"state.
 -spec prepare(state()) -> gen_statem:event_handler_result(state()).
 prepare(State = #state{
-  transaction=Transaction,
-  updated_partitions = UpdatedPartitions
+    from = From,
+    transaction=Transaction,
+    updated_partitions = UpdatedPartitions
 }) ->
   case UpdatedPartitions of
     [] ->
-      prepare_done(State, commit_read_only);
+        send_prepared_ack(State#state{from = From}),
+        {next_state, execute_commit, State#state{num_ack_pending = 0, prepare_time = dc_utilities:now_microsec(), state= prepared, commit_type_required = read_only}};
     [_|_] ->
       ok = clocksi_vnode:prepare(UpdatedPartitions, Transaction),
       NewNumAffectedAgents = length(UpdatedPartitions),
-      {next_state, receive_prepared, State#state{num_agents_affected = NewNumAffectedAgents, state = prepared}}
+      {next_state, receive_prepared, State#state{num_ack_pending = NewNumAffectedAgents, state = prepared}}
   end.
 
 
@@ -302,25 +304,38 @@ prepare(State = #state{
 %% commit_read_only: special case for when we have not updated anything
 %% {reply_and_then_commit, clock_time()}: first reply that we have successfully committed and then try to commit TODO rly?
 %% {normal_commit, clock_time(): wait until all participants have acknowledged the commit and then reply to the client
--spec prepare_done(state(), Action) -> gen_statem:event_handler_result(state())
-  when Action :: single_committing | commit_read_only | {reply_and_then_commit, clock_time()} | {normal_commit, clock_time()}.
-prepare_done(State, Action) ->
-  case Action of
-    commit_read_only ->
-      reply_to_client(State#state{state = committed_read_only});
-    {normal_commit, MaxPrepareTime} ->
-      UpdatedPartitions = State#state.updated_partitions,
-      Transaction = State#state.transaction,
-      TransactionId = Transaction#transaction.txn_id,
-      SnapshotTime = Transaction#transaction.vec_snapshot_time,
-      lists:map(fun(Partition) -> gingko_vnode:commit(Partition,TransactionId, {dc_utilities:get_my_dc_id(), MaxPrepareTime}, SnapshotTime) end, UpdatedPartitions),
+-spec commit(state(), CommitType) -> gen_statem:event_handler_result(state())
+  when CommitType :: read_only | {normal, clock_time()}.
+commit(State, CommitType) ->
+  case CommitType of
+    read_only ->
+        reply_to_client(State#state{state = committed_read_only});
+    normal ->
+        UpdatedPartitions = State#state.updated_partitions,
+        Transaction = State#state.transaction,
+        TransactionId = Transaction#transaction.txn_id,
+        SnapshotTime = Transaction#transaction.vec_snapshot_time,
+        MaxPrepareTime = State#state.prepare_time,
+      lists:map(fun({Partition, _Host}) -> gingko_vnode:commit(Partition,TransactionId, {dc_utilities:get_my_dc_id(), MaxPrepareTime}, SnapshotTime) end, UpdatedPartitions),
       {next_state, receive_committed,
         State#state{
-          num_agents_affected = length(UpdatedPartitions),
+          num_ack_pending = length(UpdatedPartitions),
           commit_time = MaxPrepareTime,
           state = committing}}
   end.
 
+%% @doc when an error occurs or an updated partition
+%% does not pass the certification check, the transaction aborts.
+abort(State = #state{transaction = Transaction,
+    updated_partitions = UpdatedPartitions}) ->
+    NumPendingAck = length(UpdatedPartitions),
+    case NumPendingAck of
+        0 ->
+            reply_to_client(State#state{state = aborted});
+        _ ->
+            ok = clocksi_vnode:abort(UpdatedPartitions, Transaction),
+            {next_state, receive_aborted, State#state{num_ack_pending = NumPendingAck, state = aborted}}
+    end.
 
 
 %% @private
@@ -426,12 +441,31 @@ append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
   lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
 
 
+
+process_prepared(ReceivedPrepareTime, State = #state{num_ack_pending = NumPendingAck,
+    prepare_time = PrepareTime}) ->
+    MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
+    case NumPendingAck of
+        1 ->
+            send_prepared_ack(State),
+            {next_state, execute_commit, State#state{num_ack_pending = 0, prepare_time = MaxPrepareTime, state= prepared, commit_type_required = normal}};
+        _ ->
+            {next_state, receive_prepared, State#state{num_ack_pending = NumPendingAck - 1, prepare_time = MaxPrepareTime}}
+    end.
+
+send_prepared_ack(_State = #state{
+    from=From,
+    prepare_time = PrepareTime
+}) ->
+    gen_statem:reply(From, {ok,PrepareTime}).
+
+
+
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(State = #state{
   from=From,
   state=TxState,
-  is_static=IsStatic,
   client_ops=ClientOps,
   commit_time=CommitTime,
   transaction=Transaction,
@@ -445,26 +479,14 @@ reply_to_client(State = #state{
 
           Reply = case TxState of
                     committed_read_only ->
-                      case IsStatic of
-                        false ->
-                          {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
-                        true ->
-                          {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
-                      end;
-
+                      {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
                     committed ->
                       %% Execute post_commit_hooks
                       _Result = execute_post_commit_hooks(ClientOps),
                       %% TODO: What happens if commit hook fails?
                       DcId = dc_utilities:get_my_dc_id(),
                       CausalClock = vectorclock:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                      case IsStatic of
-                        false ->
-                          {ok, {TxId, CausalClock}};
-                        true ->
-                          {ok, CausalClock}
-                      end;
-
+                      {ok, {TxId, CausalClock}};
                     aborted ->
                       ?STATS(transaction_aborted),
                       case ReturnAcc of
@@ -476,7 +498,6 @@ reply_to_client(State = #state{
                   end,
           gen_statem:reply(From, Reply)
       end,
-
   % transaction is finished, decrement count
   ?STATS(transaction_finished),
   {stop, normal, State}.
