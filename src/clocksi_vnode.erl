@@ -220,7 +220,6 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
           ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepareTimestamp, Dict),
           NewPreparedDict = orddict:store(NewPrepareTimestamp, TxId, PreparedDict),
           Result = gingko_vnode:prepare(Key, TxId, NewPrepareTimestamp),
-          %Result = logging_vnode:append(Node, LogId, LogRecord),
           {Result, NewPrepareTimestamp, NewPreparedDict};
       _ ->
       {{error, no_updates}, 0, PreparedDict}

@@ -124,7 +124,7 @@ commit(Keys, TransactionId, CommitTime)->
 -spec commit([integer()], txid(), dc_and_commit_time(), snapshot_time()) -> ok.
 commit(Partitions, TransactionId, CommitTime, SnapshotTime)->
     io:format("."),
-    logger:error(#{function => "COMMIT", partitions => Partitions, transaction => TransactionId, commit_timestamp => CommitTime, snapshot_timestamp => SnapshotTime}),
+    logger:debug(#{function => "COMMIT", partitions => Partitions, transaction => TransactionId, commit_timestamp => CommitTime, snapshot_timestamp => SnapshotTime}),
 
     Entry = #log_operation{
         tx_id = TransactionId,
@@ -223,7 +223,7 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
 
 handle_command({commit, LogRecord}, _Sender, State = #state{partition = Partition}) ->
     gingko_op_log:append(LogRecord, Partition),
-    {reply, {committed, dc_utilities:now_microsec()}, State};
+    {reply, committed, State};
 
 
 handle_command(Message, _Sender, State) ->
