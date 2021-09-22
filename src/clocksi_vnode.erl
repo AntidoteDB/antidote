@@ -100,12 +100,12 @@ commit(AffectedPartitions, Transaction, CommitTime) ->
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
 get_active_txns_for_key(Key, Partition) ->
+
     case antidote_ets_txn_caches:has_prepared_txns_cache(Partition) of
         false ->
-            riak_core_vnode_master:sync_command({Partition, node()},
-                {get_active_txns, Key},
-                clocksi_vnode_master,
-                infinity);
+            %Wait until the caches are initialised and then check. Can this not be done when starting up?
+           timer:sleep(?SPIN_WAIT),
+            get_active_txns_for_key(Key, Partition);
         true ->
             {ok, antidote_ets_txn_caches:get_prepared_txns_by_key(Partition, Key)}
     end.
@@ -199,8 +199,6 @@ handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State 
             NewPreparedDict = clean_and_notify(TransactionId, WriteSet, State),
             {reply, committed, State#state{prepared_dict = NewPreparedDict}}
     end;
-
-
 
 handle_command(_Message, _Sender, State) ->
   {noreply, State}.

@@ -199,9 +199,17 @@ handle_command({get_version, TxId, Key, Type, MinimumSnapshotTime,MaximumSnapsho
     {reply,{ok, {Key, Type, Value}}, State};
 
 handle_command({prepare, TransactionId,PrepareTimestamp}, _Sender, State = #state{partition = Partition}) ->
-    LogRecord = #log_operation{tx_id = TransactionId,
+    Entry = #log_operation{
+        tx_id = TransactionId,
         op_type = prepare,
         log_payload = #prepare_log_payload{prepare_time = PrepareTimestamp}},
+
+    LogRecord = #log_record {
+        version = ?LOG_RECORD_VERSION,
+        op_number = #op_number{},        % not used
+        bucket_op_number = #op_number{}, % not used
+        log_operation = Entry
+    },
     Result = gingko_op_log:append(LogRecord, Partition),
     {reply, Result, State};
 

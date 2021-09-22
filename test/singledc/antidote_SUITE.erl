@@ -75,8 +75,8 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
-     static_txn_single_object,
-     static_txn_single_object_clock
+     static_txn_single_object
+     %static_txn_single_object_clock
      %static_txn_multi_objects
      %static_txn_multi_objects_clock,
      %interactive_txn,
@@ -85,24 +85,23 @@ all() ->
 
 
 static_txn_single_object(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static1,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type, Bucket},
+    Object = {Key, Type},
     Update = {Object, increment, 1},
 
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
+    io:format("update called"),
     {ok, [Val], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Object]]),
     ?assertEqual(1, Val).
 
 
 static_txn_single_object_clock(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static2,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type, Bucket},
+    Object = {Key, Type},
     Update = {Object, increment, 1},
 
     {ok, Clock1} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),

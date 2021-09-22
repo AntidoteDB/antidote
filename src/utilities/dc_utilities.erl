@@ -250,7 +250,7 @@ get_stable_snapshot() ->
         undefined ->
             %% The snapshot isn't ready yet, need to wait for startup
             %TODO: Extract into configuration constant
-            timer:sleep(10),
+            timer:sleep(?SPIN_WAIT),
             get_stable_snapshot();
         SS ->
             case application:get_env(antidote, txn_prot) of
