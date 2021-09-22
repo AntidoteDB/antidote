@@ -31,7 +31,6 @@ start_transaction(Clock, Properties) ->
 -spec commit_transaction(txid()) ->
   {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
-  %TODO Think about simplifying the coordinator
   case clocksi_full_icommit(TxId) of
     {ok, {_TxId, CommitTime}} ->
       {ok, CommitTime};

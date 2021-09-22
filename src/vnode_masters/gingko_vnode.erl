@@ -119,12 +119,11 @@ prepare(Key, TransactionId, PrepareTimestamp) ->
 %% @param CommitTime TODO
 %% @param SnapshotTime TODO
 -spec commit([key()], txid(), dc_and_commit_time()) -> ok.
-commit(Keys, TransactionId, CommitTime)->
-    commit(Keys, TransactionId, CommitTime, vectorclock:new()).
+commit(Key, TransactionId, CommitTime)->
+    commit(Key, TransactionId, CommitTime, vectorclock:new()).
 -spec commit([integer()], txid(), dc_and_commit_time(), snapshot_time()) -> ok.
-commit(Partitions, TransactionId, CommitTime, SnapshotTime)->
-    io:format("."),
-    logger:debug(#{function => "COMMIT", partitions => Partitions, transaction => TransactionId, commit_timestamp => CommitTime, snapshot_timestamp => SnapshotTime}),
+commit(Partition, TransactionId, CommitTime, SnapshotTime)->
+    logger:debug(#{function => "COMMIT", partitions => Partition, transaction => TransactionId, commit_timestamp => CommitTime, snapshot_timestamp => SnapshotTime}),
 
     Entry = #log_operation{
         tx_id = TransactionId,
@@ -137,7 +136,7 @@ commit(Partitions, TransactionId, CommitTime, SnapshotTime)->
         bucket_op_number = #op_number{}, % not used
         log_operation = Entry
     },
-        riak_core_vnode_master:command(Partitions, {commit, LogRecord},{fsm, undefined, self()}, gingko_vnode_master),
+    riak_core_vnode_master:command(Partition, {commit, LogRecord}, gingko_vnode_master),
     ok.
 
 

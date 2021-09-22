@@ -36,7 +36,7 @@
 -endif.
 -ignore_xref([start_vnode/1]).
 
--export([prepare/2]).
+-export([prepare/2,commit/3, get_active_txns_for_key/2]).
 
 -export([start_vnode/1,
   init/1,
@@ -89,7 +89,26 @@ prepare(ListofNodes, TxId) ->
       ?CLOCKSI_MASTER)
                 end, ListofNodes).
 
+commit(AffectedPartitions, Transaction, CommitTime) ->
+    lists:foreach(fun({Node,WriteSet}) ->
+        riak_core_vnode_master:command(Node,
+            {commit, Node, Transaction, WriteSet, CommitTime},
+            {fsm, undefined, self()},
+            ?CLOCKSI_MASTER)
+                  end, AffectedPartitions).
 
+%% @doc Return active transactions in prepare state with their preparetime for a given key
+%% should be run from same physical node
+get_active_txns_for_key(Key, Partition) ->
+    case antidote_ets_txn_caches:has_prepared_txns_cache(Partition) of
+        false ->
+            riak_core_vnode_master:sync_command({Partition, node()},
+                {get_active_txns, Key},
+                clocksi_vnode_master,
+                infinity);
+        true ->
+            {ok, antidote_ets_txn_caches:get_prepared_txns_by_key(Partition, Key)}
+    end.
 
 
 %%%===================================================================
@@ -161,6 +180,28 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
       {reply, abort, State#state{prepared_dict = NewPreparedDict}}
   end;
 
+
+handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State = #state{
+    committed_tx = CommittedTxnCache}) ->
+    if is_list(WriteSet) =/= true ->
+            {reply, no_tx_record, State};
+        true ->
+            case application:get_env(antidote, txn_cert) of
+            {ok, true} ->
+            lists:foreach(fun(K) -> true = insert_committed_txn(CommittedTxnCache, K, CommitTime) end,
+            WriteSet);
+            _ ->
+            ok
+            end,
+            TransactionId = Transaction#transaction.txn_id,
+            SnapshotTimestamp = Transaction#transaction.vec_snapshot_time,
+            gingko_vnode:commit(Node,TransactionId, {dc_utilities:get_my_dc_id(), CommitTime}, SnapshotTimestamp),
+            NewPreparedDict = clean_and_notify(TransactionId, WriteSet, State),
+            {reply, committed, State#state{prepared_dict = NewPreparedDict}}
+    end;
+
+
+
 handle_command(_Message, _Sender, State) ->
   {noreply, State}.
 
@@ -209,15 +250,15 @@ handle_overload_info(_, _) ->
 %%% Internal Functions
 %%%===================================================================
 
-prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
-  case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
+prepare(Transaction, AffectedKeys, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
+  case certification_check(Transaction, AffectedKeys, CommittedTx, PreparedTx) of
     true ->
-      case TxWriteSet of
-        [{Key, _Type, _Update} | _] ->
+      case AffectedKeys of
+        [Key | _] ->
           TxId = Transaction#transaction.txn_id,
-          Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
+          Dict = set_prepared(PreparedTx, AffectedKeys, TxId, PrepareTime, dict:new()),
           NewPrepareTimestamp = dc_utilities:now_microsec(),
-          ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepareTimestamp, Dict),
+          ok = reset_prepared(PreparedTx, AffectedKeys, TxId, NewPrepareTimestamp, Dict),
           NewPreparedDict = orddict:store(NewPrepareTimestamp, TxId, PreparedDict),
           Result = gingko_vnode:prepare(Key, TxId, NewPrepareTimestamp),
           {Result, NewPrepareTimestamp, NewPreparedDict};
@@ -229,12 +270,15 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 end.
 
 
-certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
+
+
+
+certification_check(Transaction, Keys, CommittedTx, PreparedTx) ->
   TxId = Transaction#transaction.txn_id,
   Certify = antidote:get_txn_property(certify, Transaction#transaction.properties),
   case Certify of
     true ->
-      certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+      certification_with_check(TxId, Keys, CommittedTx, PreparedTx);
     false -> true
   end.
 
@@ -242,9 +286,8 @@ certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
 %%      to the prepared state.
 certification_with_check(_, [], _, _) ->
   true;
-certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
+certification_with_check(TxId, [Key | T], CommittedTx, PreparedTx) ->
   TxLocalStartTime = TxId#tx_id.local_start_time,
-  {Key, _, _} = H,
   case get_committed_txn(CommittedTx, Key) of
     {ok, CommitTime} ->
       case CommitTime > TxLocalStartTime of
@@ -279,7 +322,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
   Acc;
-set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
+set_prepared(PreparedTx, [Key | Rest], TxId, Time, Acc) ->
   ActiveTxs = antidote_ets_txn_caches:get_prepared_txn_by_key_and_table(PreparedTx, Key),
   case lists:keymember(TxId, 1, ActiveTxs) of
     true ->
@@ -292,7 +335,7 @@ set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
   ok;
-reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [Key | Rest], TxId, Time, ActiveTxs) ->
   %% Could do this more efficiently in case of multiple updates to the same key
   true = antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]),
   reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
@@ -302,6 +345,9 @@ reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs
 create_committed_txns_cache() ->
   ets:new(committed_tx, [set]).
 
+-spec insert_committed_txn(cache_id(), key(), clock_time()) -> true.
+insert_committed_txn(CommittedTxCache, Key, TxCommitTime) ->
+    ets:insert(CommittedTxCache, {Key, TxCommitTime}).
 
 -spec get_committed_txn(cache_id(), key()) -> not_found | {ok, clock_time()}.
 get_committed_txn(CommittedTxCache, Key) ->
@@ -315,3 +361,62 @@ get_committed_txn(CommittedTxCache, Key) ->
 
 check_prepared(_TxId, PreparedTx, Key) ->
   antidote_ets_txn_caches:is_prepared_txn_by_table(PreparedTx, Key).
+
+
+%% @doc clean_and_notify:
+%%      This function is used for cleanning the state a transaction
+%%      stores in the vnode while it is being procesed. Once a
+%%      transaction commits or aborts, it is necessary to clean the
+%%      prepared record of a transaction T. There are three possibility
+%%      when trying to clean a record:
+%%      1. The record is prepared by T (with T's TxId).
+%%          If T is being committed, this is the normal. If T is being
+%%          aborted, it means T successfully prepared here, but got
+%%          aborted somewhere else.
+%%          In both cases, we should remove the record.
+%%      2. The record is empty.
+%%          This can only happen when T is being aborted. What can only
+%%          only happen is as follows: when T tried to prepare, someone
+%%          else has already prepared, which caused T to abort. Then
+%%          before the partition receives the abort message of T, the
+%%          prepared transaction gets processed and the prepared record
+%%          is removed.
+%%          In this case, we don't need to do anything.
+%%      3. The record is prepared by another transaction M.
+%%          This can only happen when T is being aborted. We can not
+%%          remove M's prepare record, so we should not do anything
+%%          either.
+clean_and_notify(TxId, Keys, #state{
+    prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
+    ok = clean_prepared(PreparedTx, Keys, TxId),
+    case get_time(PreparedDict, TxId) of
+        error ->
+            PreparedDict;
+        {ok, Time} ->
+            orddict:erase(Time, PreparedDict)
+    end.
+
+clean_prepared(_PreparedTx, [], _TxId) ->
+    ok;
+clean_prepared(PreparedTx, [Key | Rest], TxId) ->
+    ActiveTxs = antidote_ets_txn_caches:get_prepared_txn_by_key_and_table(PreparedTx, Key),
+    NewActive = lists:keydelete(TxId, 1, ActiveTxs),
+    true = case NewActive of
+               [] ->
+                   antidote_ets_txn_caches:delete_prepared_txn_by_table(PreparedTx, Key);
+               _ ->
+                   antidote_ets_txn_caches:insert_prepared_txn_by_table(PreparedTx, Key, NewActive)
+           end,
+    clean_prepared(PreparedTx, Rest, TxId).
+
+
+-spec get_time(list(), txid()) -> {ok, non_neg_integer()} | error.
+get_time([], _TxIdCheck) ->
+    error;
+get_time([{Time, TxId} | Rest], TxIdCheck) ->
+    case TxId == TxIdCheck of
+        true ->
+            {ok, Time};
+        false ->
+            get_time(Rest, TxIdCheck)
+    end.
