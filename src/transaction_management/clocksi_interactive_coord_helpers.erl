@@ -53,9 +53,9 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
   Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
-  {ok, VecSnapshotTime} = dc_utilities:get_stable_snapshot(),
+  %{ok, VecSnapshotTime} = dc_utilities:get_stable_snapshot(),
   DcId = dc_utilities:get_my_dc_id(),
-  SnapshotTime = vectorclock:set(DcId, Now, VecSnapshotTime),
+  SnapshotTime = vectorclock:set(DcId, Now, vectorclock:new()),
   {ok, SnapshotTime}.
 
 

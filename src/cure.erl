@@ -51,7 +51,6 @@ update_objects(ClientCausalVC, Properties, Updates) ->
   {ok, TxId} = clocksi_interactive_coord_api:start_transaction(ClientCausalVC, Properties),
   case update_objects(Updates, TxId) of
     ok -> Result = clocksi_interactive_coord_api:commit_transaction(TxId),
-      logger:error("Update Objects Complete!!"),
       Result;
     {error, Reason} -> {error, Reason}
   end.
@@ -78,7 +77,7 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
                 [_H|_T] -> false
               end,
   case SingleKey of
-    true -> %% Execute the fast path
+    true ->
       [{Key, Type}] = Objects,
       {ok, {Key, Type, Val}, SnapshotTimestamp} = clocksi_interactive_coord:perform_static_operation(Clock, Key, Type, Properties),
       {ok, transform_reads([Val], StateOrValue, Objects), SnapshotTimestamp};
@@ -99,7 +98,7 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
 transform_reads(Snapshot, StateOrValue, Objects) ->
   case StateOrValue of
     object_state -> Snapshot;
-    object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
+    object_value -> lists:map(fun({State, {_Key, Type}}) ->
       antidote_crdt:value(Type, State) end,
       lists:zip(Snapshot, Objects))
   end.
