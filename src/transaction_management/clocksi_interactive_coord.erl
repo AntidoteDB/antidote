@@ -28,7 +28,7 @@
   stop/1
 ]).
 %% States
--export([execute_op/3, execute_commit/3, receive_prepared/3, receive_logging_responses/3, receive_committed/3]).
+-export([execute_op/3, execute_commit/3, receive_prepared/3, receive_logging_responses/3, receive_committed/3, receive_read_objects_result/3]).
 
 -define(SERVER, ?MODULE).
 %%%===================================================================
@@ -53,9 +53,10 @@
 -record(state, {
   from :: undefined | gen_statem:from(),
   transaction :: undefined | tx(),
-  updated_partitions :: list(),
+  partition_writesets :: list(),
   client_ops :: list(), % list of upstream updates, used for post commit hooks
   num_ack_pending :: non_neg_integer(),
+  num_read_pending :: non_neg_integer(),
   num_agents_affected :: non_neg_integer(),
   prepare_time :: undefined | clock_time(),
   commit_time :: undefined | clock_time(),
@@ -66,8 +67,7 @@
   operations :: undefined | list() | {update_objects, list()},
   return_accumulator :: list() | ok | {error, reason()},
   is_static :: boolean(),
-  properties :: txn_properties(),
-    commit_type_required:: read_only | normal
+  properties :: txn_properties(), commit_type_required:: read_only | normal
 }).
 
 -type state() :: #state{}.
@@ -85,15 +85,13 @@
   {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_static_operation(Clock, Key, Type, Properties) ->
   Transaction = clocksi_interactive_coord_helpers:create_transaction_record(Clock, true, Properties),
-  %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
   Preflist = antidote_riak_utilities:get_preflist_from_key(Key),
   IndexNode = hd(Preflist),
   case clocksi_readitem:read_data_item(IndexNode, Key, Type, Transaction, []) of
     {error, Reason} ->
       {error, Reason};
     {ok, Snapshot} ->
-      %% Read only transaction has no commit, hence return the snapshot time
-      CommitTime = Transaction#transaction.vec_snapshot_time,
+        CommitTime = Transaction#transaction.vec_snapshot_time,
       {ok, Snapshot, CommitTime}
   end.
 
@@ -134,7 +132,7 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
 -spec execute_commit({call, gen_statem:from()}, {update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
 % Invoked for read, update, perpare, commit etc and a relevant internal callback is triggered using execute command.
 execute_commit({call, Sender}, {commit, PrepareTime}, State) ->
-    execute_command(commit,PrepareTime, Sender, State).
+    execute_command(commit, PrepareTime, Sender, State).
 
 
 %% @doc in this state, the fsm waits for prepare_time from each updated
@@ -214,6 +212,37 @@ receive_logging_responses(info, {_EventType, EventValue}, State) ->
 
 
 
+%%%== receive_read_objects_result
+
+%% @doc After asynchronously reading a batch of keys, collect the responses here
+receive_read_objects_result(cast, {ok, {Key, _Type, Snapshot}}, CoordState = #state{
+    num_read_pending = NumToRead,
+    return_accumulator = ReadKeys
+}) ->
+
+    %% Swap keys with their appropriate read values
+    ReadValues = replace_key_with_snapshot(ReadKeys, Key, Snapshot),
+
+    %% Loop back to the same state until we process all the replies
+    case NumToRead > 1 of
+        true ->
+            {next_state, receive_read_objects_result, CoordState#state{
+                num_ack_pending = NumToRead - 1,
+                return_accumulator = ReadValues
+            }};
+        false ->
+            {next_state, execute_op, CoordState#state{num_read_pending = 0},
+                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_read_objects_result(info, {_EventType, EventValue}, State) ->
+    receive_read_objects_result(cast, EventValue, State).
+
+
+
+stop(Pid) -> gen_statem:stop(Pid).
+
 %%%===================================================================
 %%% Command Execution
 %%%===================================================================
@@ -224,11 +253,30 @@ execute_command(prepare, CommitProtocol, Sender, State0) ->
   State = State0#state{from=Sender, commit_protocol= CommitProtocol},
   prepare(State);
 
+%% @doc Read a batch of objects, asynchronous
+execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
+    ExecuteReads = fun({Key, Type}, AccState) ->
+        ?STATS(operation_read_async),
+        Partition = antidote_riak_utilities:get_key_partition(Key),
+        % This call is forwarded to gingko through clocksi_readitem.
+        ok = clocksi_readitem:async_read_data_item(Partition, Key, Type,Transaction, {fsm, self()}),
+        ReadKeys = AccState#state.return_accumulator,
+        AccState#state{return_accumulator=[Key | ReadKeys]}
+                   end,
+
+    NewCoordState = lists:foldl(
+        ExecuteReads,
+        State#state{num_read_pending = length(Objects), return_accumulator=[]},
+        Objects
+    ),
+
+    {next_state, receive_read_objects_result, NewCoordState#state{from = Sender}};
+
 
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Transaction}) ->
   ExecuteUpdates =
-    fun(Op, AccState=#state{ client_ops = ClientOps0,updated_partitions = UpdatedPartitions0}) ->
+    fun(Op, AccState=#state{ client_ops = ClientOps0,partition_writesets = UpdatedPartitions0}) ->
       case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0) of
         {error, _} = Err ->
           AccState#state{return_accumulator = Err};
@@ -237,7 +285,7 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
           AccState#state{
             client_ops=ClientOps,
             num_agents_affected=NumAgentsAffected + 1,
-            updated_partitions=UpdatedPartitions
+              partition_writesets=UpdatedPartitions
           }
       end
     end,
@@ -257,8 +305,24 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
   end;
 
 
-execute_command(commit,_PrepareTime, Sender, State = #state{commit_type_required = CommitType}) ->
-    commit(State#state{from = Sender}, CommitType).
+execute_command(commit,_PrepareTime, Sender, State = #state{
+    commit_type_required = CommitType,
+    partition_writesets = PartitionsAffected,
+    transaction = Transaction,
+    prepare_time = PrepareTime}) ->
+    case CommitType of
+        read_only ->
+            reply_to_client(State#state{state = committed_read_only});
+        normal ->
+            clocksi_vnode:commit(PartitionsAffected, Transaction, PrepareTime),
+            {next_state, receive_committed,
+                State#state{
+                    from = Sender,
+                    num_ack_pending = length(PartitionsAffected),
+                    commit_time = PrepareTime,
+                    state = committing}}
+    end.
+
 
 %%%===================================================================
 %%% API
@@ -272,12 +336,9 @@ execute_command(commit,_PrepareTime, Sender, State = #state{commit_type_required
 start_link() ->
   gen_statem:start_link(?MODULE, [], []).
 
-
-stop(Pid) -> gen_statem:stop(Pid).
 %%%===================================================================
 %%% gen_statem callbacks
 %%%===================================================================
-
 
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
@@ -285,49 +346,25 @@ stop(Pid) -> gen_statem:stop(Pid).
 prepare(State = #state{
     from = From,
     transaction=Transaction,
-    updated_partitions = UpdatedPartitions
+    partition_writesets = UpdatedPartitions
 }) ->
   case UpdatedPartitions of
     [] ->
-        send_prepared_ack(State#state{from = From}),
-        {next_state, execute_commit, State#state{num_ack_pending = 0, prepare_time = dc_utilities:now_microsec(), state= prepared, commit_type_required = read_only}};
+        PrepareTime = dc_utilities:now_microsec(),
+        send_prepared_ack(From, PrepareTime),
+        {next_state, execute_commit, State#state{from = From, num_ack_pending = 0, prepare_time = PrepareTime, state= prepared, commit_type_required = read_only}};
     [_|_] ->
       ok = clocksi_vnode:prepare(UpdatedPartitions, Transaction),
       NewNumAffectedAgents = length(UpdatedPartitions),
-      {next_state, receive_prepared, State#state{num_ack_pending = NewNumAffectedAgents, state = prepared}}
+      {next_state, receive_prepared, State#state{from = From, num_ack_pending = NewNumAffectedAgents, state = prepared}}
   end.
 
 
-%% This function is called when we are done with the prepare phase.
-%% There are different options to continue the commit phase:
-%% single_committing: special case for when we just touched a single partition
-%% commit_read_only: special case for when we have not updated anything
-%% {reply_and_then_commit, clock_time()}: first reply that we have successfully committed and then try to commit TODO rly?
-%% {normal_commit, clock_time(): wait until all participants have acknowledged the commit and then reply to the client
--spec commit(state(), CommitType) -> gen_statem:event_handler_result(state())
-  when CommitType :: read_only | {normal, clock_time()}.
-commit(State, CommitType) ->
-  case CommitType of
-    read_only ->
-        reply_to_client(State#state{state = committed_read_only});
-    normal ->
-        UpdatedPartitions = State#state.updated_partitions,
-        Transaction = State#state.transaction,
-        TransactionId = Transaction#transaction.txn_id,
-        SnapshotTime = Transaction#transaction.vec_snapshot_time,
-        MaxPrepareTime = State#state.prepare_time,
-      lists:map(fun({Partition, _Host}) -> gingko_vnode:commit(Partition,TransactionId, {dc_utilities:get_my_dc_id(), MaxPrepareTime}, SnapshotTime) end, UpdatedPartitions),
-      {next_state, receive_committed,
-        State#state{
-          num_ack_pending = length(UpdatedPartitions),
-          commit_time = MaxPrepareTime,
-          state = committing}}
-  end.
 
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
 abort(State = #state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
+    partition_writesets = UpdatedPartitions}) ->
     NumPendingAck = length(UpdatedPartitions),
     case NumPendingAck of
         0 ->
@@ -374,7 +411,7 @@ init_state(Properties) ->
   #state{
     from = undefined,
     transaction = undefined,
-    updated_partitions = [],
+      partition_writesets = [],
     client_ops = [],
     num_ack_pending = 0,
     num_agents_affected = 0,
@@ -395,12 +432,12 @@ start_tx_internal(ClientClock, Properties) ->
 
 
 
-perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
+perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sender, ClientOps) ->
   ?STATS(operation_update),
-  {Key, Type, Update} = Op,
+    {Key, _ObjectType} = Object,
   Partition = antidote_riak_utilities:get_key_partition(Key),
 
-  WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
+  WriteSet = case lists:keyfind(Partition, 1, PartitionWritesets) of
                false ->
                  [];
                {Partition, WS} ->
@@ -408,23 +445,22 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
              end,
 
   %% Execute pre_commit_hook if any
-  case antidote_hooks:execute_pre_commit_hook(Key, Type, Update) of
+  case antidote_hooks:execute_pre_commit_hook(Key, OpType, Update) of
     {error, Reason} ->
       ?LOG_DEBUG("Execute pre-commit hook failed ~p", [Reason]),
       {error, Reason};
 
     {Key, Type, PostHookUpdate} ->
-        ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, Op, {fsm, undefined, self()}),
-        GeneratedUpdate = {Key, Type, Op},
-        NewUpdatedPartitions = append_updated_partitions(
-          UpdatedPartitions,
+        %TODO: Generate a downstream operation for the type.
+        ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, Update, {fsm, undefined, self()}),
+        UpdatedPartitionWritesets = append_updated_partitions(
+          PartitionWritesets,
           WriteSet,
           Partition,
-          GeneratedUpdate
+          Key
         ),
-
         UpdatedOps = [{Key, Type, PostHookUpdate} | ClientOps],
-        {NewUpdatedPartitions, UpdatedOps}
+        {UpdatedPartitionWritesets, UpdatedOps}
   end.
 
 
@@ -432,32 +468,31 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
 %%
 %%      If there's no write set, create a new one.
 %%
-append_updated_partitions(UpdatedPartitions, [], Partition, Update) ->
-  [{Partition, [Update]} | UpdatedPartitions];
+append_updated_partitions(PartitionWritesets, [], Partition, Key) ->
+  [{Partition, [Key]} | PartitionWritesets];
 
-append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
+append_updated_partitions(PartitionWritesets, ModifiedKeys, Partition, Key) ->
   %% Update the write set entry with the new record
-  AllUpdates = {Partition, [Update | WriteSet]},
-  lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
+  AllUpdates = {Partition, [Key | ModifiedKeys]},
+  lists:keyreplace(Partition, 1, PartitionWritesets, AllUpdates).
 
 
 
-process_prepared(ReceivedPrepareTime, State = #state{num_ack_pending = NumPendingAck,
+process_prepared(ReceivedPrepareTime, State = #state{
+    from = From,
+    num_ack_pending = NumPendingAck,
     prepare_time = PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumPendingAck of
         1 ->
-            send_prepared_ack(State),
+            send_prepared_ack(From, MaxPrepareTime),
             {next_state, execute_commit, State#state{num_ack_pending = 0, prepare_time = MaxPrepareTime, state= prepared, commit_type_required = normal}};
         _ ->
             {next_state, receive_prepared, State#state{num_ack_pending = NumPendingAck - 1, prepare_time = MaxPrepareTime}}
     end.
 
-send_prepared_ack(_State = #state{
-    from=From,
-    prepare_time = PrepareTime
-}) ->
-    gen_statem:reply(From, {ok,PrepareTime}).
+send_prepared_ack(To, PrepareTime) ->
+    gen_statem:reply(To, {ok,PrepareTime}).
 
 
 
@@ -512,3 +547,15 @@ execute_post_commit_hooks(Ops) ->
       _ -> ok
     end
   end, lists:reverse(Ops)).
+
+
+
+
+%% Replaces the first occurrence of an entry;
+%% yields error if there the element to be replaced is not in the list
+replace_key_with_snapshot([], _, _) ->
+    error;
+replace_key_with_snapshot([Key|Rest], Key, Snapshot) ->
+    [Snapshot|Rest];
+replace_key_with_snapshot([NotMyKey|Rest], Key, Snapshot) ->
+    [NotMyKey|replace_key_with_snapshot(Rest, Key, Snapshot)].
