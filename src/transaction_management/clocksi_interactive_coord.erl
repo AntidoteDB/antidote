@@ -179,7 +179,7 @@ receive_logging_responses(state_timeout, timeout, State) ->
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
 receive_logging_responses(cast, Response, State = #state{
-  num_ack_pending = NumToReply,
+    num_agents_affected = NumToReply,
   return_accumulator = ReturnAcc
 }) ->
     NewAcc = case Response of
@@ -192,14 +192,14 @@ receive_logging_responses(cast, Response, State = #state{
     case NumToReply > 1 of
         true ->
           {next_state, receive_logging_responses, State#state{
-              num_ack_pending = NumToReply - 1,
+              num_agents_affected = NumToReply - 1,
             return_accumulator=NewAcc
           }};
 
         false ->
           case NewAcc of
             ok ->
-              {next_state, execute_op, State#state{num_ack_pending = 0, return_accumulator=[]},
+              {next_state, execute_op, State#state{num_agents_affected = 0, return_accumulator=[]},
                 [{reply, State#state.from, NewAcc}]};
             _ ->
               abort(State)
@@ -227,7 +227,7 @@ receive_read_objects_result(cast, {ok, {Key, _Type, Snapshot}}, CoordState = #st
     case NumToRead > 1 of
         true ->
             {next_state, receive_read_objects_result, CoordState#state{
-                num_ack_pending = NumToRead - 1,
+                num_read_pending = NumToRead - 1,
                 return_accumulator = ReadValues
             }};
         false ->
