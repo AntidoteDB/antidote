@@ -129,7 +129,7 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% internal state timeout
--spec execute_commit({call, gen_statem:from()}, {update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
+-spec execute_commit({call, gen_statem:from()}, {commit, non_neg_integer()}, state()) -> gen_statem:event_handler_result(state()).
 % Invoked for read, update, perpare, commit etc and a relevant internal callback is triggered using execute command.
 execute_commit({call, Sender}, {commit, PrepareTime}, State) ->
     execute_command(commit, PrepareTime, Sender, State).
@@ -305,14 +305,14 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
   end;
 
 
-execute_command(commit,_PrepareTime, Sender, State = #state{
+execute_command(commit, _PrepareTime, Sender, State = #state{
     commit_type_required = CommitType,
     partition_writesets = PartitionsAffected,
     transaction = Transaction,
     prepare_time = PrepareTime}) ->
     case CommitType of
         read_only ->
-            reply_to_client(State#state{state = committed_read_only});
+            reply_to_client(State#state{from = Sender, state = committed_read_only});
         normal ->
             clocksi_vnode:commit(PartitionsAffected, Transaction, PrepareTime),
             {next_state, receive_committed,
@@ -492,7 +492,7 @@ process_prepared(ReceivedPrepareTime, State = #state{
     end.
 
 send_prepared_ack(To, PrepareTime) ->
-    gen_statem:reply(To, {ok,PrepareTime}).
+    gen_statem:reply(To, {ok, PrepareTime}).
 
 
 
