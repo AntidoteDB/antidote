@@ -234,7 +234,7 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
         undefined ->
-            ?LOG_DEBUG("Wait for ~p to register", [Name]),
+            ?LOG_ERROR("Wait for ~p to register", [Name]),
             timer:sleep(100),
             check_registered(Name);
         _ ->

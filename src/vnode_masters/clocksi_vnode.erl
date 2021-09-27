@@ -36,7 +36,7 @@
 -endif.
 -ignore_xref([start_vnode/1]).
 
--export([prepare/2,commit/3, get_active_txns_for_key/2]).
+-export([prepare/2,commit/3,abort/2, get_active_txns_for_key/2, send_min_prepared/1]).
 
 -export([start_vnode/1,
   init/1,
@@ -97,6 +97,15 @@ commit(AffectedPartitions, Transaction, CommitTime) ->
             ?CLOCKSI_MASTER)
                   end, AffectedPartitions).
 
+%% @doc Sends a commit request to a Node involved in a tx identified by TxId
+abort(ListofNodes, TxId) ->
+    lists:foreach(fun({Node, WriteSet}) ->
+        riak_core_vnode_master:command(Node,
+            {abort, Node, TxId, WriteSet},
+            {fsm, undefined, self()},
+            ?CLOCKSI_MASTER)
+                  end, ListofNodes).
+
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
 get_active_txns_for_key(Key, Partition) ->
@@ -110,6 +119,37 @@ get_active_txns_for_key(Key, Partition) ->
             {ok, antidote_ets_txn_caches:get_prepared_txns_by_key(Partition, Key)}
     end.
 
+
+send_min_prepared(Partition) ->
+    dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
+
+%% @doc The table holding the prepared transactions is shared with concurrent
+%%      readers, so they can safely check if a key they are reading is being updated.
+%%      This function checks whether or not all tables have been intialized or not yet.
+%%      Returns true if the have, false otherwise.
+check_tables_ready() ->
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
+    check_table_ready(PartitionList).
+
+check_table_ready([]) ->
+    true;
+check_table_ready([{Partition, Node} | Rest]) ->
+    Result =
+        try
+            riak_core_vnode_master:sync_command({Partition, Node},
+                {check_tables_ready},
+                ?CLOCKSI_MASTER,
+                infinity)
+        catch
+            _:_Reason ->
+                false
+        end,
+    case Result of
+        true ->
+            check_table_ready(Rest);
+        false ->
+            false
+    end.
 
 %%%===================================================================
 %%% API
@@ -128,35 +168,6 @@ init([Partition]) ->
     committed_tx = CommittedTx,
     read_servers = ?READ_CONCURRENCY,
     prepared_dict = orddict:new()}}.
-
-%% @doc The table holding the prepared transactions is shared with concurrent
-%%      readers, so they can safely check if a key they are reading is being updated.
-%%      This function checks whether or not all tables have been intialized or not yet.
-%%      Returns true if the have, false otherwise.
-check_tables_ready() ->
-  PartitionList = dc_utilities:get_all_partitions_nodes(),
-  check_table_ready(PartitionList).
-
-check_table_ready([]) ->
-  true;
-check_table_ready([{Partition, Node} | Rest]) ->
-  Result =
-    try
-      riak_core_vnode_master:sync_command({Partition, Node},
-        {check_tables_ready},
-        ?CLOCKSI_MASTER,
-        infinity)
-    catch
-      _:_Reason ->
-        false
-    end,
-  case Result of
-    true ->
-      check_table_ready(Rest);
-    false ->
-      false
-  end.
-
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
@@ -181,7 +192,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
   end;
 
 
-handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State = #state{
+handle_command({commit, Node, Transaction, WriteSet, CommitTime}, _Sender, State = #state{
     committed_tx = CommittedTxnCache}) ->
     if is_list(WriteSet) =/= true ->
             {reply, no_tx_record, State};
@@ -199,7 +210,26 @@ handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State 
             NewPreparedDict = clean_and_notify(TransactionId, WriteSet, State),
             {reply, committed, State#state{prepared_dict = NewPreparedDict}}
     end;
+handle_command({abort, Node, Transaction, WriteSet}, _Sender,
+    #state{partition = _Partition} = State) ->
+    TxId = Transaction#transaction.txn_id,
+    if is_list(WriteSet) =/= true ->
+        {reply, {error, no_tx_record}, State};
 
+        true ->
+            gingko_vnode:abort(Node, TxId),
+            NewPreparedDict = clean_and_notify(TxId, WriteSet, State),
+            {reply, aborted, State#state{prepared_dict = NewPreparedDict}}
+    end;
+
+handle_command({send_min_prepared}, _Sender,
+    State = #state{partition = Partition, prepared_dict = PreparedDict}) ->
+    {ok, Time} = get_min_prep(PreparedDict),
+    inter_dc_log_sender_vnode:send_stable_time(Partition, Time),
+    {noreply, State};
+handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
+    Result = antidote_ets_txn_caches:has_prepared_txns_cache(Partition),
+    {reply, Result, SD0};
 handle_command(_Message, _Sender, State) ->
   {noreply, State}.
 
@@ -308,7 +338,14 @@ certification_with_check(TxId, [Key | T], CommittedTx, PreparedTx) ->
       end
   end.
 
-
+-spec get_min_prep(list()) -> {ok, non_neg_integer()}.
+get_min_prep(OrdDict) ->
+    case OrdDict of
+        [] ->
+            {ok, dc_utilities:now_microsec()};
+        [{Time, _TxId}|_] ->
+            {ok, Time}
+    end.
 
 
 %%%===================================================================
@@ -418,3 +455,6 @@ get_time([{Time, TxId} | Rest], TxIdCheck) ->
         false ->
             get_time(Rest, TxIdCheck)
     end.
+
+
+
