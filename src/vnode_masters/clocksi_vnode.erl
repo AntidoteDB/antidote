@@ -36,7 +36,7 @@
 -endif.
 -ignore_xref([start_vnode/1]).
 
--export([prepare/2,commit/3, get_active_txns_for_key/2]).
+-export([prepare/2,commit/3,get_active_txns_for_key/2, send_min_prepared/1]).
 
 -export([start_vnode/1,
   init/1,
@@ -111,6 +111,37 @@ get_active_txns_for_key(Key, Partition) ->
     end.
 
 
+send_min_prepared(Partition) ->
+    dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
+
+%% @doc The table holding the prepared transactions is shared with concurrent
+%%      readers, so they can safely check if a key they are reading is being updated.
+%%      This function checks whether or not all tables have been intialized or not yet.
+%%      Returns true if the have, false otherwise.
+check_tables_ready() ->
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
+    check_table_ready(PartitionList).
+
+check_table_ready([]) ->
+    true;
+check_table_ready([{Partition, Node} | Rest]) ->
+    Result =
+        try
+            riak_core_vnode_master:sync_command({Partition, Node},
+                {check_tables_ready},
+                ?CLOCKSI_MASTER,
+                infinity)
+        catch
+            _:_Reason ->
+                false
+        end,
+    case Result of
+        true ->
+            check_table_ready(Rest);
+        false ->
+            false
+    end.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -128,35 +159,6 @@ init([Partition]) ->
     committed_tx = CommittedTx,
     read_servers = ?READ_CONCURRENCY,
     prepared_dict = orddict:new()}}.
-
-%% @doc The table holding the prepared transactions is shared with concurrent
-%%      readers, so they can safely check if a key they are reading is being updated.
-%%      This function checks whether or not all tables have been intialized or not yet.
-%%      Returns true if the have, false otherwise.
-check_tables_ready() ->
-  PartitionList = dc_utilities:get_all_partitions_nodes(),
-  check_table_ready(PartitionList).
-
-check_table_ready([]) ->
-  true;
-check_table_ready([{Partition, Node} | Rest]) ->
-  Result =
-    try
-      riak_core_vnode_master:sync_command({Partition, Node},
-        {check_tables_ready},
-        ?CLOCKSI_MASTER,
-        infinity)
-    catch
-      _:_Reason ->
-        false
-    end,
-  case Result of
-    true ->
-      check_table_ready(Rest);
-    false ->
-      false
-  end.
-
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
@@ -200,6 +202,14 @@ handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State 
             {reply, committed, State#state{prepared_dict = NewPreparedDict}}
     end;
 
+handle_command({send_min_prepared}, _Sender,
+    State = #state{partition = Partition, prepared_dict = PreparedDict}) ->
+    {ok, Time} = get_min_prep(PreparedDict),
+    inter_dc_log_sender_vnode:send_stable_time(Partition, Time),
+    {noreply, State};
+handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
+    Result = antidote_ets_txn_caches:has_prepared_txns_cache(Partition),
+    {reply, Result, SD0};
 handle_command(_Message, _Sender, State) ->
   {noreply, State}.
 
@@ -308,7 +318,14 @@ certification_with_check(TxId, [Key | T], CommittedTx, PreparedTx) ->
       end
   end.
 
-
+-spec get_min_prep(list()) -> {ok, non_neg_integer()}.
+get_min_prep(OrdDict) ->
+    case OrdDict of
+        [] ->
+            {ok, dc_utilities:now_microsec()};
+        [{Time, _TxId}|_] ->
+            {ok, Time}
+    end.
 
 
 %%%===================================================================
@@ -418,3 +435,6 @@ get_time([{Time, TxId} | Rest], TxIdCheck) ->
         false ->
             get_time(Rest, TxIdCheck)
     end.
+
+
+
