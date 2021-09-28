@@ -11,11 +11,14 @@
 -include("antidote.hrl").
 %% API
 -export([
-  read_objects/2,
-  read_objects/3,
-  update_objects/2,
-  update_objects/3,
-  get_txn_property/2
+    start_transaction/2,
+    commit_transaction/1,
+    abort_transaction/1,
+    read_objects/2,
+    read_objects/3,
+    update_objects/2,
+    update_objects/3,
+    get_txn_property/2
 
 ]).
 
@@ -53,7 +56,23 @@ update_objects(Clock, Properties, Updates) ->
       {error, Reason}
   end.
 
+%% Transaction API %%
+%% ==============  %%
 
+-spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
+        -> {ok, txid()} | {error, reason()}.
+start_transaction(Clock, Properties) ->
+    clocksi_interactive_coord_api:start_transaction(Clock, Properties).
+
+-spec abort_transaction(TxId::txid()) -> ok | {error, reason()}.
+abort_transaction(TxId) ->
+    clocksi_interactive_coord_api:abort_transaction(TxId).
+
+-spec commit_transaction(TxId::txid()) ->
+    {ok, snapshot_time()} | {error, reason()}.
+commit_transaction(TxId) ->
+    clocksi_interactive_coord_api:commit_transaction(TxId).
+%% TODO: Execute post_commit hooks here?
 
 
 -spec get_txn_property(atom(), txn_properties()) -> atom().

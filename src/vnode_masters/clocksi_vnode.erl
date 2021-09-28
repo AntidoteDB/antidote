@@ -36,7 +36,7 @@
 -endif.
 -ignore_xref([start_vnode/1]).
 
--export([prepare/2,commit/3,get_active_txns_for_key/2, send_min_prepared/1]).
+-export([prepare/2,commit/3,abort/2, get_active_txns_for_key/2, send_min_prepared/1]).
 
 -export([start_vnode/1,
   init/1,
@@ -96,6 +96,15 @@ commit(AffectedPartitions, Transaction, CommitTime) ->
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
                   end, AffectedPartitions).
+
+%% @doc Sends a commit request to a Node involved in a tx identified by TxId
+abort(ListofNodes, TxId) ->
+    lists:foreach(fun({Node, WriteSet}) ->
+        riak_core_vnode_master:command(Node,
+            {abort, Node, TxId, WriteSet},
+            {fsm, undefined, self()},
+            ?CLOCKSI_MASTER)
+                  end, ListofNodes).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -183,7 +192,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
   end;
 
 
-handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State = #state{
+handle_command({commit, Node, Transaction, WriteSet, CommitTime}, _Sender, State = #state{
     committed_tx = CommittedTxnCache}) ->
     if is_list(WriteSet) =/= true ->
             {reply, no_tx_record, State};
@@ -200,6 +209,17 @@ handle_command({commit,Node, Transaction, WriteSet, CommitTime}, _Sender, State 
             gingko_vnode:commit(Node,TransactionId, {dc_utilities:get_my_dc_id(), CommitTime}, SnapshotTimestamp),
             NewPreparedDict = clean_and_notify(TransactionId, WriteSet, State),
             {reply, committed, State#state{prepared_dict = NewPreparedDict}}
+    end;
+handle_command({abort, Node, Transaction, WriteSet}, _Sender,
+    #state{partition = _Partition} = State) ->
+    TxId = Transaction#transaction.txn_id,
+    if is_list(WriteSet) =/= true ->
+        {reply, {error, no_tx_record}, State};
+
+        true ->
+            gingko_vnode:abort(Node, TxId),
+            NewPreparedDict = clean_and_notify(TxId, WriteSet, State),
+            {reply, aborted, State#state{prepared_dict = NewPreparedDict}}
     end;
 
 handle_command({send_min_prepared}, _Sender,

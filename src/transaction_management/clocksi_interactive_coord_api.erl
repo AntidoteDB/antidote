@@ -12,7 +12,8 @@
 %% API
 -export([
   start_transaction/2,
-  commit_transaction/1
+  commit_transaction/1,
+    abort_transaction/1
 ]).
 
 
@@ -51,3 +52,9 @@ clocksi_full_icommit(TxId)->
   end.
 
 
+-spec abort_transaction(txid()) -> ok | {error, reason()}.
+abort_transaction(TxId) ->
+    case gen_statem:call(TxId#tx_id.server_pid, {abort, []}) of
+        {error, aborted} -> ok;
+        {error, Reason} -> {error, Reason}
+    end.

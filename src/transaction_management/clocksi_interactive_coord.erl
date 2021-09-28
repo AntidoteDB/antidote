@@ -28,7 +28,7 @@
   stop/1
 ]).
 %% States
--export([execute_op/3, execute_commit/3, receive_prepared/3, receive_logging_responses/3, receive_committed/3, receive_read_objects_result/3]).
+-export([execute_op/3, execute_commit/3, receive_prepared/3, receive_logging_responses/3, receive_committed/3,receive_aborted/3, receive_read_objects_result/3]).
 
 -define(SERVER, ?MODULE).
 %%%===================================================================
@@ -166,6 +166,31 @@ receive_committed(cast, committed, State = #state{num_ack_pending = NumToAck}) -
 %% capture regular events (e.g. logging_vnode responses)
 receive_committed(info, {_EventType, EventValue}, State) ->
     receive_committed(cast, EventValue, State).
+
+
+%%%== receive_aborted
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%      aborted the tx and finishes operation.
+%%      Should we retry sending the aborted message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_aborted(cast, aborted, State = #state{num_ack_pending = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            reply_to_client(State#state{state = aborted});
+        _ ->
+            {next_state, receive_aborted, State#state{num_ack_pending = NumToAck - 1}}
+    end;
+
+receive_aborted(cast, _, State) -> {next_state, receive_aborted, State};
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_aborted(info, {_EventType, EventValue}, State) ->
+    receive_aborted(cast, EventValue, State).
+
+
+
 
 
 %%%== receive_logging_responses
@@ -321,9 +346,11 @@ execute_command(commit, _PrepareTime, Sender, State = #state{
                     num_ack_pending = length(PartitionsAffected),
                     commit_time = PrepareTime,
                     state = committing}}
-    end.
+    end;
 
-
+%% @doc Abort the current transaction
+execute_command(abort, _Protocol, Sender, State) ->
+    abort(State#state{from=Sender}).
 %%%===================================================================
 %%% API
 %%%===================================================================

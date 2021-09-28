@@ -132,8 +132,6 @@ commit(Partition, TransactionId, CommitTime, SnapshotTime)->
 
     LogRecord = #log_record {
         version = ?LOG_RECORD_VERSION,
-        op_number = #op_number{},        % not used
-        bucket_op_number = #op_number{}, % not used
         log_operation = Entry
     },
     riak_core_vnode_master:command(Partition, {commit, LogRecord}, gingko_vnode_master),
@@ -150,9 +148,9 @@ commit(Partition, TransactionId, CommitTime, SnapshotTime)->
 %%
 %% @param Keys list of keys to abort a transaction
 %% @param TransactionId the id of the transaction to abort
--spec abort([key()], txid()) -> ok.
-abort(Keys, TransactionId) ->
-    logger:debug(#{function => "ABORT", keys => Keys, transaction => TransactionId}),
+-spec abort(non_neg_integer(), txid()) -> ok.
+abort(Partition, TransactionId) ->
+    logger:debug(#{function => "ABORT", keys => Partition, transaction => TransactionId}),
 
     Entry = #log_operation{
         tx_id = TransactionId,
@@ -161,12 +159,9 @@ abort(Keys, TransactionId) ->
 
     LogRecord = #log_record {
         version = ?LOG_RECORD_VERSION,
-        op_number = #op_number{},        % not used
-        bucket_op_number = #op_number{}, % not used
         log_operation = Entry
     },
-
-    lists:map(fun(Key) -> gingko_op_log:append(Key, LogRecord) end, Keys),
+    riak_core_vnode_master:command(Partition, {abort, LogRecord}, gingko_vnode_master),
     ok.
 
 
@@ -206,8 +201,7 @@ handle_command({prepare, TransactionId,PrepareTimestamp}, _Sender, State = #stat
 
     LogRecord = #log_record {
         version = ?LOG_RECORD_VERSION,
-        op_number = #op_number{},        % not used
-        bucket_op_number = #op_number{}, % not used
+
         log_operation = Entry
     },
     Result = gingko_op_log:append(LogRecord, Partition),
@@ -221,8 +215,6 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
 
     LogRecord = #log_record {
         version = ?LOG_RECORD_VERSION,
-        op_number = #op_number{},        % not used
-        bucket_op_number = #op_number{}, % not used
         log_operation = Entry
     },
     Result = gingko_op_log:append(LogRecord, Partition),
@@ -232,6 +224,9 @@ handle_command({commit, LogRecord}, _Sender, State = #state{partition = Partitio
     gingko_op_log:append(LogRecord, Partition),
     {reply, committed, State};
 
+handle_command({abort, LogRecord}, _Sender, State = #state{partition = Partition}) ->
+    gingko_op_log:append(LogRecord, Partition),
+    {reply, aborted, State};
 
 handle_command(Message, _Sender, State) ->
     logger:warning("unhandled_command ~p", [Message]),
