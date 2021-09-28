@@ -179,7 +179,6 @@ get_stats() ->
     gen_server:call(?CACHE_DAEMON, {get_event_stats}).
 
 
-
 %% Sample command: respond to a ping
 handle_command({hello}, _Sender, State) ->
     {reply, ok, State};

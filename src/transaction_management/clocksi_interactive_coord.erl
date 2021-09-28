@@ -436,16 +436,16 @@ code_change(_OldVsn, StateName, State = #state{}, _Extra) ->
 -spec init_state(proplists:proplist()) -> state().
 init_state(Properties) ->
   #state{
-    from = undefined,
-    transaction = undefined,
+      from = undefined,
+      transaction = undefined,
       partition_writesets = [],
-    client_ops = [],
-    num_ack_pending = 0,
-    num_agents_affected = 0,
-    prepare_time = 0,
-    operations = undefined,
-    return_accumulator = [],
-    properties = Properties
+      client_ops = [],
+      num_ack_pending = 0,
+      num_agents_affected = 0,
+      prepare_time = 0,
+      operations = undefined,
+      return_accumulator = [],
+      properties = Properties
   }.
 
 
