@@ -206,7 +206,7 @@ handle_command({commit, Node, Transaction, WriteSet, CommitTime}, _Sender, State
             end,
             TransactionId = Transaction#transaction.txn_id,
             SnapshotTimestamp = Transaction#transaction.vec_snapshot_time,
-            gingko_vnode:commit(Node,TransactionId, {dc_utilities:get_my_dc_id(), CommitTime}, SnapshotTimestamp),
+            gingko_vnode:commit(Node,TransactionId, WriteSet, {dc_utilities:get_my_dc_id(), CommitTime}, SnapshotTimestamp),
             NewPreparedDict = clean_and_notify(TransactionId, WriteSet, State),
             {reply, committed, State#state{prepared_dict = NewPreparedDict}}
     end;

@@ -119,15 +119,4 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 -spec fetch_from_gingko(key(), type(), tx()) -> {ok, snapshot()}.
 fetch_from_gingko(Key, Type, Transaction) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, ignore).
-
-
--ifdef(TEST).
-
-check_prepared_list_test() ->
-    ?assertEqual({not_ready, ?SPIN_WAIT}, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 50}])),
-    ?assertEqual(ready, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 101}])).
-
-
-
--endif.
+    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, VecSnapshotTime).
