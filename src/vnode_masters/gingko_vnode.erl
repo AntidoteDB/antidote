@@ -22,7 +22,7 @@
     update/5,
     prepare/3,
     commit/4,
-    commit/3,
+    commit/5,
     abort/2,
     get_version/3,
     get_version/5,
@@ -118,11 +118,11 @@ prepare(Key, TransactionId, PrepareTimestamp) ->
 %% @param TransactionId the id of the transaction this commit belongs to
 %% @param CommitTime TODO
 %% @param SnapshotTime TODO
--spec commit([key()], txid(), dc_and_commit_time()) -> ok.
-commit(Key, TransactionId, CommitTime)->
-    commit(Key, TransactionId, CommitTime, vectorclock:new()).
--spec commit([integer()], txid(), dc_and_commit_time(), snapshot_time()) -> ok.
-commit(Partition, TransactionId, CommitTime, SnapshotTime)->
+-spec commit(non_neg_integer(), txid(), list(), dc_and_commit_time()) -> ok.
+commit(Partition, TransactionId, WriteSet, CommitTime)->
+    commit(Partition, TransactionId,WriteSet, CommitTime, vectorclock:new()).
+-spec commit([integer()], txid(),list(), dc_and_commit_time(), snapshot_time()) -> ok.
+commit(Partition, TransactionId, WriteSet, CommitTime, SnapshotTime)->
     logger:debug(#{function => "COMMIT", partitions => Partition, transaction => TransactionId, commit_timestamp => CommitTime, snapshot_timestamp => SnapshotTime}),
 
     Entry = #log_operation{
@@ -134,7 +134,7 @@ commit(Partition, TransactionId, CommitTime, SnapshotTime)->
         version = ?LOG_RECORD_VERSION,
         log_operation = Entry
     },
-    riak_core_vnode_master:command(Partition, {commit, LogRecord}, gingko_vnode_master),
+    riak_core_vnode_master:command(Partition, {commit, LogRecord, WriteSet}, gingko_vnode_master),
     ok.
 
 
@@ -219,8 +219,9 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
     Result = gingko_op_log:append(LogRecord, Partition),
     {reply,Result, State};
 
-handle_command({commit, LogRecord}, _Sender, State = #state{partition = Partition}) ->
+handle_command({commit, LogRecord, WriteSet}, _Sender, State = #state{partition = Partition}) ->
     gingko_op_log:append(LogRecord, Partition),
+    checkpoint_daemon:trigger_checkpoint(WriteSet),
     {reply, committed, State};
 
 handle_command({abort, LogRecord}, _Sender, State = #state{partition = Partition}) ->
