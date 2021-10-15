@@ -461,7 +461,7 @@ start_tx_internal(ClientClock, Properties) ->
 
 perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sender, ClientOps) ->
   ?STATS(operation_update),
-    {Key, _ObjectType} = Object,
+    {Key, ObjectType} = Object,
   Partition = antidote_riak_utilities:get_key_partition(Key),
 
   WriteSet = case lists:keyfind(Partition, 1, PartitionWritesets) of
@@ -484,7 +484,8 @@ perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sende
           PartitionWritesets,
           WriteSet,
           Partition,
-          Key
+          Key,
+          ObjectType
         ),
         UpdatedOps = [{Key, Type, PostHookUpdate} | ClientOps],
         {UpdatedPartitionWritesets, UpdatedOps}
@@ -495,12 +496,12 @@ perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sende
 %%
 %%      If there's no write set, create a new one.
 %%
-append_updated_partitions(PartitionWritesets, [], Partition, Key) ->
-  [{Partition, [Key]} | PartitionWritesets];
+append_updated_partitions(PartitionWritesets, [], Partition, Key, Type) ->
+  [{Partition, [{Key, Type}]} | PartitionWritesets];
 
-append_updated_partitions(PartitionWritesets, ModifiedKeys, Partition, Key) ->
+append_updated_partitions(PartitionWritesets, ModifiedKeys, Partition, Key, Type) ->
   %% Update the write set entry with the new record
-  AllUpdates = {Partition, [Key | ModifiedKeys]},
+  AllUpdates = {Partition, [{Key, Type} | ModifiedKeys]},
   lists:keyreplace(Partition, 1, PartitionWritesets, AllUpdates).
 
 
