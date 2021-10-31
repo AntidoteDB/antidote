@@ -66,18 +66,17 @@ all() ->
     ].
 
 append_test(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     ct:log("Starting write operation 1"),
-    antidote_utils:increment_pn_counter(Node, append_key1, Bucket),
+    antidote_utils:increment_pn_counter(Node, append_key1),
 
     ct:log("Starting write operation 2"),
-    antidote_utils:increment_pn_counter(Node, append_key2, Bucket),
+    antidote_utils:increment_pn_counter(Node, append_key2),
 
     ct:log("Starting read operation 1"),
-    {Val1, _} = antidote_utils:read_pn_counter(Node, append_key1, Bucket),
+    {Val1, _} = antidote_utils:read_pn_counter(Node, append_key1),
     ?assertEqual(1, Val1),
 
     ct:log("Starting read operation 2"),
-    {Val2, _} = antidote_utils:read_pn_counter(Node, append_key2, Bucket),
+    {Val2, _} = antidote_utils:read_pn_counter(Node, append_key2),
     ?assertEqual(1, Val2).
