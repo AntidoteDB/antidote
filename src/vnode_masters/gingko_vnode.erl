@@ -218,12 +218,12 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
     },
     Result = gingko_op_log:append(Key, LogRecord, Partition),
     % TODO: Trigger checkpoint synchronization here to update the included partitions for the txn safe pointer.
-    checkpoint_daemon:updateKeyInCheckpoint(Partition, TransactionId),
+    %checkpoint_daemon:updateKeyInCheckpoint(Partition, TransactionId),
     {reply,Result, State};
 
-handle_command({commit, LogRecord, WriteSet}, _Sender, State = #state{partition = Partition}) ->
+handle_command({commit, LogRecord, _WriteSet}, _Sender, State = #state{partition = Partition}) ->
     gingko_op_log:append(LogRecord, Partition),
-    checkpoint_daemon:trigger_checkpoint(WriteSet),
+    %checkpoint_daemon:trigger_checkpoint(WriteSet),
     {reply, committed, State};
 
 handle_command({abort, LogRecord}, _Sender, State = #state{partition = Partition}) ->
