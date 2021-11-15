@@ -134,7 +134,7 @@ commit(Partition, TransactionId, WriteSet, CommitTime, SnapshotTime)->
         version = ?LOG_RECORD_VERSION,
         log_operation = Entry
     },
-    riak_core_vnode_master:command(Partition, {commit, LogRecord, WriteSet}, gingko_vnode_master),
+    riak_core_vnode_master:command(Partition, {commit, TransactionId, LogRecord, WriteSet}, gingko_vnode_master),
     ok.
 
 
@@ -217,13 +217,12 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
         log_operation = Entry
     },
     Result = gingko_op_log:append(Key, LogRecord, Partition),
-    % TODO: Trigger checkpoint synchronization here to update the included partitions for the txn safe pointer.
-    %checkpoint_daemon:updateKeyInCheckpoint(Partition, TransactionId),
+    checkpoint_daemon:updateKeyInCheckpoint(Partition, TransactionId),
     {reply,Result, State};
 
-handle_command({commit, LogRecord, _WriteSet}, _Sender, State = #state{partition = Partition}) ->
+handle_command({commit,TransactionId, LogRecord, _WriteSet}, _Sender, State = #state{partition = Partition}) ->
     gingko_op_log:append(LogRecord, Partition),
-    %checkpoint_daemon:trigger_checkpoint(WriteSet),
+    checkpoint_daemon:commitTxn(Partition, TransactionId),
     {reply, committed, State};
 
 handle_command({abort, LogRecord}, _Sender, State = #state{partition = Partition}) ->
