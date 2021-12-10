@@ -444,7 +444,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
     end.
 
 -spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), state(), snapshot_get_response())
-    -> {ok, snapshot_time()} | {error, reason()}.
+    -> {ok, snapshot()} | {error, reason()}.
 
 materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snapshot_get_response{
             number_of_ops=0,
