@@ -157,6 +157,12 @@ message ApbReadObjects {
     required bytes transaction_descriptor = 2;
 }
 
+message ApbValidateOrReadObjects {
+    repeated ApbBoundObject boundobjects = 1;
+    repeated bytes object_tokens = 2;
+    required bytes transaction_descriptor = 3;
+}
+
 // An Object to be updated with specified operation
 message ApbUpdateOp {
     required ApbBoundObject boundobject = 1;
@@ -226,6 +232,13 @@ message ApbReadObjectsResp {
     required bool success = 1;
     repeated ApbReadObjectResp objects = 2;
     optional uint32 errorcode = 3;
+}
+
+message ApbValidateOrReadObjectsResp {
+    required bool success = 1;
+    repeated ApbReadObjectResp objects = 2;
+    repeated bytes tokens = 3;
+    optional uint32 errorcode = 4;
 }
 
 // Commit Response
