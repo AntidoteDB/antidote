@@ -36,3 +36,4 @@ edoc/
 docker-tmpdir*
 *.coverdata
 *.iml
+_checkouts
