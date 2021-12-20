@@ -82,6 +82,15 @@ init(_Args) ->
         {meta_data_sender_sup, start_link, [[stable_time_functions]]},
         permanent, 5000, supervisor,
         [meta_data_sender_sup]},
+
+    PbSup = #{id => antidote_pb_sup,
+        start => {antidote_pb_sup, start_link, []},
+        restart => permanent,
+        shutdown => 5000,
+        type => supervisor,
+        modules => [antidote_pb_sup]},
+
+
   {ok,
      {{one_for_one, 5, 10},
       [
@@ -91,5 +100,6 @@ init(_Args) ->
           InterDcSup,
           StableMetaData,
           MetaDataManagerSup,
-          MetaDataSenderSup
+          MetaDataSenderSup,
+          PbSup
        ]}}.
