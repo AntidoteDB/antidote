@@ -101,6 +101,8 @@ process({static_read_objects, Clock, Properties, Objects}) ->
         {error, Reason} -> {static_read_objects_response, {error, Reason}}
     end;
 
+
+
 process({create_dc, NodeNames}) ->
     try
       ok = antidote_dc_manager:create_dc(NodeNames),
