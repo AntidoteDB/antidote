@@ -230,6 +230,8 @@
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
+-type object_token() :: binary().
+-define(INVALID_OBJECT_TOKEN, <<>>).
 
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tab().

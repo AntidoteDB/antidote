@@ -45,6 +45,7 @@
          commit_transaction/1,
          abort_transaction/1,
          read_objects/2,
+         validate_or_read_objects/3,
          get_objects/2,
          read_objects/3,
          get_objects/3,
@@ -89,6 +90,14 @@ read_objects(Objects, TxId) ->
 get_objects(Objects, TxId) ->
     obtain_objects(Objects, TxId, object_state).
 
+-spec validate_or_read_objects([bound_object()], [binary()], txid()) -> {ok, [valid | {invalid, term(), binary()}]} | {error, reason()}.
+validate_or_read_objects(Objects, Tokens, TxId) ->
+    FormattedObjects = format_read_params(Objects),
+    case gen_statem:call(TxId#tx_id.server_pid, {validate_or_read_objects, {FormattedObjects, Tokens}}, ?OP_TIMEOUT) of
+        {ok, Results} ->
+            {ok, transform_reads_from_validate_or_reads(Results, Objects)};
+        {error, Reason} -> {error, Reason}
+    end.
 
 -spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
 obtain_objects(Objects, TxId, StateOrValue) ->
@@ -191,6 +200,14 @@ transform_reads(States, StateOrValue, Objects) ->
                                       lists:zip(States, Objects))
     end.
 
+transform_reads_from_validate_or_reads(Results, Objects) ->
+    lists:map(fun({Result, {_Key, Type, _Bucket}}) ->
+        case Result of
+            valid -> valid;
+            {invalid, State, Token} ->
+                {invalid, antidote_crdt:value(Type, State), Token}
+        end
+    end, lists:zip(Results, Objects)).
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:

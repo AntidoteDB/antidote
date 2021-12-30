@@ -38,10 +38,13 @@
 
 %% API
 -export([read_data_item/5,
-    async_read_data_item/6]).
+         async_read_data_item/6,
+         validate_or_read_data_item/6,
+         async_validate_or_read_data_item/7]).
 
 %% Internal
--export([perform_read_internal/5]).
+-export([perform_read_internal/5,
+         perform_validate_or_read_internal/6]).
 
 %% Spawn
 -type read_property_list() :: [].
@@ -68,6 +71,23 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {f
     } end),
     ok.
 
+-spec validate_or_read_data_item(index_node(), key(), type(), object_token(), tx(), read_property_list()) -> {ok, {invalid, snapshot(), object_token()}} | {ok, valid} | {error, term()}.
+validate_or_read_data_item({Partition, Node}, Key, Type, Token, Transaction, PropertyList) ->
+    rpc:call(Node, ?MODULE, perform_validate_or_read_internal, [Key, Type, Token, Transaction, PropertyList, Partition]).
+
+-spec async_validate_or_read_data_item(index_node(), key(), type(), object_token(), tx(), read_property_list(), term()) -> ok.
+async_validate_or_read_data_item({Partition, Node}, Key, Type, Token, Transaction, PropertyList, {fsm, Sender}) ->
+    spawn_link(Node, fun() -> {
+        case perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition) of
+            {ok, {invalid, Snapshot, NextToken}} ->
+                gen_statem:cast(Sender, {ok, {invalid, Key, Type, Snapshot, NextToken}});
+            {ok, valid} ->
+                gen_statem:cast(Sender, {ok, {valid, Key, Type}});
+            {error, Reason} ->
+                gen_statem:cast(Sender, {error, Reason})
+        end
+    } end),
+    ok.
 
 %%%===================================================================
 %%% Internal
@@ -84,6 +104,19 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
             perform_read_internal(Key, Type, Transaction, PropertyList, Partition);
         ready ->
             return(Key, Type, Transaction, PropertyList, Partition)
+    end.
+
+-spec perform_validate_or_read_internal(key(), type(), object_token(), tx(), read_property_list(), partition_id())
+    -> {ok, valid} | {ok, {invalid, snapshot(), object_token()}} | {error, reason()}.
+perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition) ->
+    TxId = Transaction#transaction.txn_id,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
+    case check_clock(Key, TxLocalStartTime, Partition) of
+        {not_ready, Time} ->
+            timer:sleep(Time),
+            perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition);
+        ready ->
+            return_validate_or_read(Key, Type, Token, Transaction, PropertyList, Partition)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -130,7 +163,15 @@ return(Key, Type, Transaction, PropertyList, Partition) ->
     TxId = Transaction#transaction.txn_id,
     materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
 
-
+-spec return_validate_or_read(key(), type(), object_token(),
+                              tx(), read_property_list(),
+                              partition_id()) -> {error, term()}
+                                                 | {ok, valid}
+                                                 | {ok, {invalid, snapshot(), object_token()}}.
+return_validate_or_read(Key, Type, Token, Transaction, PropertyList, Partition) ->
+    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    TxId = Transaction#transaction.txn_id,
+    materializer_vnode:validate_or_read(Key, Type, Token, VecSnapshotTime, TxId, PropertyList, Partition).
 
 -ifdef(TEST).
 

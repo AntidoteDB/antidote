@@ -48,6 +48,7 @@
     get/2,
     get_preflist_from_key/1,
     read_data_item/5,
+    validate_or_read_data_item/6,
     generate_downstream_op/6,
     get_key_partition/1,
     get_logid_from_key/1,
@@ -153,6 +154,31 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
             {ok, Set1};
         _ ->
             {ok, mock_value}
+    end.
+
+validate_or_read_data_item(_IndexNode, _Transaction, Key, _Type, Token, _Ws) ->
+    Value = case Key of
+        read_fail ->
+            {error, mock_read_fail};
+        counter ->
+            Counter = antidote_crdt_counter_pn:new(),
+            {ok, Counter1} = antidote_crdt_counter_pn:update(1, Counter),
+            {ok, Counter2} = antidote_crdt_counter_pn:update(1, Counter1),
+            Counter2;
+        _ ->
+            mock_value
+    end,
+
+    TokenValidity = case Token of
+        <<"past_token">> -> invalid;
+        <<>> -> invalid;
+        _ -> valid
+    end,
+
+    case {TokenValidity, Value} of
+        {_, {error, mock_read_fail}} -> {error, mock_read_fail};
+        {valid, Value} -> {ok, valid};
+        {invalid, Value} -> {ok, {invalid, Value, <<"valid">>}}
     end.
 
 generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->

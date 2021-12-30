@@ -48,7 +48,10 @@
          static_txn_multi_objects/1,
          static_txn_multi_objects_clock/1,
          interactive_txn/1,
-         interactive_txn_abort/1
+         interactive_txn_abort/1,
+         interactive_txn_validate_or_read/1,
+         interactive_txn_validate_or_read_concurrent/1,
+         interactive_txn_validate_or_read_multiple/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -80,7 +83,10 @@ all() ->
      static_txn_multi_objects,
      static_txn_multi_objects_clock,
      interactive_txn,
-     interactive_txn_abort
+     interactive_txn_abort,
+     interactive_txn_validate_or_read,
+     interactive_txn_validate_or_read_concurrent,
+     interactive_txn_validate_or_read_multiple
     ].
 
 
@@ -212,3 +218,138 @@ txn_seq_update_check(Node, TxId, Updates) ->
                       Res = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
                       ?assertMatch(ok, Res)
               end, Updates).
+
+interactive_txn_validate_or_read(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Type = antidote_crdt_counter_pn,
+
+    Object1 = {vor_key1, Type, Bucket},
+
+    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+
+    {ok, Res1} = rpc:call(Node, antidote, read_objects, [[Object1], TxId1]),
+    ?assertEqual([0], Res1),
+
+    % An empty token is invalid and returns the correct next token
+    {ok, Res2} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [<<>>], TxId1]),
+    [{invalid, 0, Token1}] = Res2,
+
+    % With a correct token, no new value is returned.
+    {ok, Res3} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [Token1], TxId1]),
+    ?assertEqual([valid], Res3),
+
+    {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
+
+    % Tokens works across transaction boundaries.
+    {ok, Res4} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [Token1], TxId2]),
+    ?assertEqual([valid], Res4),
+
+    Update = {Object1, increment, 1},
+    ok = rpc:call(Node, antidote, update_objects, [[Update], TxId2]),
+
+    % Local updates discard the validate_or_read optim, token will always
+    % be invalid with this transaction.
+    {ok, Res5} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [Token1], TxId2]),
+    ?assertEqual([{invalid, 1, <<>>}], Res5),
+
+    {ok, Res6} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [<<>>], TxId2]),
+    ?assertEqual([{invalid, 1, <<>>}], Res6),
+
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
+
+interactive_txn_validate_or_read_concurrent(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Type = antidote_crdt_counter_pn,
+
+    Object1 = {vor_key1, Type, Bucket},
+
+    {ok, TxIdA1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, TxIdB1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+
+    % On the first read of an empty object without a min transaction time, there is no
+    % other choice but to return an invalid token.
+    {ok, ResA1} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [<<>>], TxIdA1]),
+    ?assertEqual([{invalid, 0, <<>>}], ResA1),
+
+    {ok, ResB1} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [<<>>], TxIdB1]),
+    [{invalid, 0, TokenB1}] = ResB1,
+
+    % It should work on both transaction.
+    {ok, ResA2} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [TokenB1], TxIdA1]),
+    ?assertEqual([valid], ResA2),
+
+    {ok, ResB2} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [TokenB1], TxIdB1]),
+    ?assertEqual(ResA2, ResB2),
+
+    % Local updates doesn't affect the other transaction.
+    Update = {Object1, increment, 1},
+    ok = rpc:call(Node, antidote, update_objects, [[Update], TxIdA1]),
+
+    {ok, ResB3} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [TokenB1], TxIdB1]),
+    ?assertEqual([valid], ResB3),
+
+    % Commit updates from A, check B.
+    {ok, ClockA1} = rpc:call(Node, antidote, commit_transaction, [TxIdA1]),
+
+    {ok, ResB3} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [TokenB1], TxIdB1]),
+    ?assertEqual([valid], ResB3),
+
+    % However restarting a transaction which causally depends on A1
+    % correctly mismatches the previous token.
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxIdB1]),
+    {ok, TxIdB2} = rpc:call(Node, antidote, start_transaction, [ClockA1, []]),
+
+    {ok, ResB4} = rpc:call(Node, antidote, validate_or_read_objects, [[Object1], [TokenB1], TxIdB2]),
+    ?assertMatch([{invalid, 1, _}], ResB4),
+
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxIdB2]).
+
+interactive_txn_validate_or_read_multiple(Config) ->
+    Bucket = ?BUCKET,
+    Node = proplists:get_value(node, Config),
+    Type = antidote_crdt_counter_pn,
+
+    ObjectA = {vor_key1, Type, Bucket},
+    ObjectB = {vor_key2, Type, Bucket},
+    Objects = [ObjectA, ObjectB],
+
+    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+
+    {ok, _Res1} = rpc:call(Node, antidote, read_objects, [Objects, TxId1]),
+
+    {ok, Res2} = rpc:call(Node, antidote, validate_or_read_objects,
+                          [Objects, [<<>>, <<>>], TxId1]),
+    ?assertMatch([{invalid, 0, _}, {invalid, 0, _}], Res2),
+    [{_, _, TokenObjectA1}, {_, _, TokenObjectB1}] = Res2,
+
+    {ok, Res3} = rpc:call(Node, antidote, validate_or_read_objects,
+                          [Objects, [TokenObjectA1, TokenObjectB1], TxId1]),
+    ?assertEqual([valid, valid], Res3),
+
+    % Update one object and checks that it doesn't affect the other.
+    Update = {ObjectA, increment, 1},
+    ok = rpc:call(Node, antidote, update_objects, [[Update], TxId1]),
+
+    % Both objects lies on the same partition, the local update discard both
+    % token.
+    {ok, Res4} = rpc:call(Node, antidote, validate_or_read_objects,
+                          [Objects, [TokenObjectA1, TokenObjectB1], TxId1]),
+    ?assertEqual(
+        [{invalid, 1, <<>>},
+         {invalid, 0, <<>>}], Res4),
+
+    % On a new transaction token for B is still valid.
+    {ok, _ClockTxId1} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+
+    {ok, Res5} = rpc:call(Node, antidote, validate_or_read_objects,
+                          [Objects, [TokenObjectA1, TokenObjectB1], TxId2]),
+    ?assertMatch([{invalid, 1, _}, valid], Res5),
+    [{_, _, TokenObjectA2}, valid] = Res5,
+
+    {ok, Res6} = rpc:call(Node, antidote, validate_or_read_objects,
+                          [Objects, [TokenObjectA2, TokenObjectB1], TxId2]),
+    ?assertEqual([valid, valid], Res6).

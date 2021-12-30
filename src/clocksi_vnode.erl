@@ -38,6 +38,8 @@
 -export([start_vnode/1,
     read_data_item/5,
     async_read_data_item/4,
+    validate_or_read_data_item/6,
+    async_validate_or_read_data_item/5,
     send_min_prepared/1,
     get_active_txns_key/2,
     prepare/2,
@@ -109,6 +111,25 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 
 async_read_data_item(Node, TxId, Key, Type) ->
     clocksi_readitem:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
+
+validate_or_read_data_item(Node, TxId, Key, Type, Token, Updates) ->
+    case clocksi_readitem:validate_or_read_data_item(Node, Key, Type, Token, TxId, []) of
+        {ok, {invalid, Snapshot, _}} ->
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+
+            {ok, {invalid, Snapshot2, ?INVALID_OBJECT_TOKEN}};
+        {ok, valid} ->
+            % When valid, there shouldn't be any update to apply here and the
+            % provided Token is necessarily invalid.
+            ?INVALID_OBJECT_TOKEN = Token,
+            {ok, valid};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+async_validate_or_read_data_item(Node, TxId, Key, Type, Token) ->
+    clocksi_readitem:async_validate_or_read_data_item(Node, Key, Type, Token, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
