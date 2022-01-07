@@ -337,9 +337,7 @@ interactive_txn_validate_or_read_multiple(Config) ->
     % token.
     {ok, Res4} = rpc:call(Node, antidote, validate_or_read_objects,
                           [Objects, [TokenObjectA1, TokenObjectB1], TxId1]),
-    ?assertEqual(
-        [{invalid, 1, <<>>},
-         {invalid, 0, <<>>}], Res4),
+    ?assertMatch([{invalid, 1, <<>>}, _], Res4),
 
     % On a new transaction token for B is still valid.
     {ok, _ClockTxId1} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
