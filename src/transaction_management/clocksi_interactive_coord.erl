@@ -280,10 +280,11 @@ execute_command(prepare, CommitProtocol, Sender, State0) ->
 
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
-    ExecuteReads = fun({Key, Type}, AccState) ->
+    ExecuteReads = fun({Key, Type,_B}, AccState) ->
         ?STATS(operation_read_async),
         Partition = antidote_riak_utilities:get_key_partition(Key),
         % This call is forwarded to gingko through clocksi_readitem.
+        ok = clocksi_readitem:async_read_data_item(Partition, Key, Type,Transaction, {fsm, self()}),
         ok = clocksi_readitem:async_read_data_item(Partition, Key, Type,Transaction, {fsm, self()}),
         ReadKeys = AccState#state.return_accumulator,
         AccState#state{return_accumulator=[Key | ReadKeys]}
@@ -461,7 +462,7 @@ start_tx_internal(ClientClock, Properties) ->
 
 perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sender, ClientOps) ->
   ?STATS(operation_update),
-    {Key, ObjectType} = Object,
+    {Key, ObjectType,_B} = Object,
   Partition = antidote_riak_utilities:get_key_partition(Key),
 
   WriteSet = case lists:keyfind(Partition, 1, PartitionWritesets) of
