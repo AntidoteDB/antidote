@@ -78,7 +78,7 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
               end,
   case SingleKey of
     true ->
-      [{Key, Type}] = Objects,
+      [{Key, Type,_B}] = Objects,
       {ok, {Key, Type, Val}, SnapshotTimestamp} = clocksi_interactive_coord:perform_static_operation(Clock, Key, Type, Properties),
       {ok, transform_reads([Val], StateOrValue, Objects), SnapshotTimestamp};
     false ->
@@ -98,7 +98,7 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
 transform_reads(Snapshot, StateOrValue, Objects) ->
   case StateOrValue of
     object_state -> Snapshot;
-    object_value -> lists:map(fun({State, {_Key, Type}}) ->
+    object_value -> lists:map(fun({State, {_Key, Type, _B}}) ->
       antidote_crdt:value(Type, State) end,
       lists:zip(Snapshot, Objects))
   end.

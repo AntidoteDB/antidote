@@ -30,6 +30,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(BUCKET, test_utils:bucket(append_bucket)).
 -define(TYPE_PNC, antidote_crdt_counter_pn).
 -define(TYPE_B, antidote_crdt_counter_b).
 
@@ -61,19 +62,19 @@
 
 
 increment_pn_counter(Node, Key) ->
-    Obj = {Key, ?TYPE_PNC},
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     WriteResult = rpc:call(Node, antidote, update_objects, [ignore, [], [{Obj, increment, 1}]]),
     {ok, Vectorclock} = WriteResult,
     Vectorclock.
 
 
 read_pn_counter(Node, Key) ->
-    Obj = {Key, ?TYPE_PNC},
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [ignore, [], [Obj]]),
     {Value, CommitTime}.
 
 read_pn_counter(Node, Key, Clock) ->
-    Obj = {Key, ?TYPE_PNC},
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [Clock, [], [Obj]]),
     {Value, CommitTime}.
 
@@ -82,7 +83,7 @@ read_b_counter(Node, Key) ->
     read_b_counter_commit(Node, Key, ignore).
 
 read_b_counter_commit(Node, Key, CommitTime) ->
-    Obj = {Key, ?TYPE_B},
+    Obj = {Key, ?TYPE_B, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [CommitTime, [], [Obj]]),
     {?TYPE_B:permissions(Value), CommitTime}.
 

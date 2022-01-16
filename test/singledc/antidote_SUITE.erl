@@ -88,7 +88,7 @@ static_txn_single_object(Config) ->
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static1,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
 
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
@@ -100,7 +100,7 @@ static_txn_single_object_clock(Config) ->
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static2,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
 
     {ok, Clock1} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
@@ -117,7 +117,7 @@ static_txn_multi_objects(Config) ->
     Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type}
+                                {Key, Type, ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -135,7 +135,7 @@ static_txn_multi_objects_clock(Config) ->
     Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type}
+                                {Key, Type,  ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -157,7 +157,7 @@ interactive_txn(Config) ->
     Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type}
+                                {Key, Type, ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -181,7 +181,7 @@ interactive_txn_abort(Config) ->
     Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Key = antidote_int_abort_m1,
-    Object = {Key, Type},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     ok = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
