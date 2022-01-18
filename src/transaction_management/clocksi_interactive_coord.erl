@@ -285,7 +285,6 @@ execute_command(read_objects, Objects, Sender, State = #state{transaction=Transa
         Partition = antidote_riak_utilities:get_key_partition(Key),
         % This call is forwarded to gingko through clocksi_readitem.
         ok = clocksi_readitem:async_read_data_item(Partition, Key, Type,Transaction, {fsm, self()}),
-        ok = clocksi_readitem:async_read_data_item(Partition, Key, Type,Transaction, {fsm, self()}),
         ReadKeys = AccState#state.return_accumulator,
         AccState#state{return_accumulator=[Key | ReadKeys]}
                    end,
