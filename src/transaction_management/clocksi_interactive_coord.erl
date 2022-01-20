@@ -476,7 +476,6 @@ perform_update({Object, OpType, Update}, PartitionWritesets, Transaction, _Sende
     {error, Reason} ->
       ?LOG_DEBUG("Execute pre-commit hook failed ~p", [Reason]),
       {error, Reason};
-
     {Key, Type, PostHookUpdate} ->
         %TODO: Generate a downstream operation for the type.
         ok = gingko_vnode:update(Key, Type, Transaction#transaction.txn_id, Update, {fsm, undefined, self()}),
