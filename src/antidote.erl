@@ -116,7 +116,7 @@ get_txn_property(certify, Properties) ->
 %%%===================================================================
 
 -spec type_check_update({bound_object(), op_name(), op_param()}) -> boolean().
-type_check_update({{_K, Type}, Op, Param}) ->
+type_check_update({{_K, Type,_B}, Op, Param}) ->
   antidote_crdt:is_type(Type)
     andalso antidote_crdt:is_operation(Type, {Op, Param}).
 
