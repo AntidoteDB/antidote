@@ -216,13 +216,13 @@ handle_command({update, Key, Type, TransactionId,DownstreamOp}, _Sender, State =
         version = ?LOG_RECORD_VERSION,
         log_operation = Entry
     },
-    Result = gingko_op_log:append(Key, LogRecord, Partition),
+    {ok, NextIndex, _LastContinuation} = gingko_op_log:append(Key, LogRecord, Partition),
     checkpoint_daemon:updateKeyInCheckpoint(Partition, TransactionId),
-    {reply,Result, State};
+    {reply, {ok, NextIndex}, State};
 
 handle_command({commit,TransactionId, LogRecord, _WriteSet}, _Sender, State = #state{partition = Partition}) ->
-    gingko_op_log:append(LogRecord, Partition),
-    checkpoint_daemon:commitTxn(Partition, TransactionId),
+    {ok, _NextIndex, LastContinuation}= gingko_op_log:append(LogRecord, Partition),
+    checkpoint_daemon:commitTxn(Partition, TransactionId, LastContinuation),
     {reply, committed, State};
 
 handle_command({abort, LogRecord}, _Sender, State = #state{partition = Partition}) ->
