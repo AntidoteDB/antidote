@@ -120,9 +120,6 @@ validate_or_read_data_item(Node, TxId, Key, Type, Token, Updates) ->
 
             {ok, {invalid, Snapshot2, ?INVALID_OBJECT_TOKEN}};
         {ok, valid} ->
-            % When valid, there shouldn't be any update to apply here and the
-            % provided Token is necessarily invalid.
-            ?INVALID_OBJECT_TOKEN = Token,
             {ok, valid};
         {error, Reason} ->
             {error, Reason}
