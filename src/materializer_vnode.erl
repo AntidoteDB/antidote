@@ -382,10 +382,10 @@ internal_validate_or_read(Key, Type, Token, MinSnapshotTime, TxId, _PropertyList
     SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
 
     case materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp) of
-        {ok, {SnapshotCommitTime, Snapshot}} ->
-            ReadToken = case SnapshotCommitTime of
+        {ok, {SnapshotTime, Snapshot}} ->
+            ReadToken = case SnapshotTime of
                 ignore -> ?INVALID_OBJECT_TOKEN;
-                _ -> erlang:term_to_binary(vectorclock:to_list(SnapshotCommitTime))
+                _ -> erlang:term_to_binary(vectorclock:to_list(SnapshotTime))
             end,
 
             case {ReadToken =/= ?INVALID_OBJECT_TOKEN, ReadToken == Token} of
@@ -493,9 +493,9 @@ fetch_updates_from_cache(OpsCache, Key) ->
 materialize_snapshot(_TxId, _Key, _Type, _MinSnapshotTime, _ShouldGC, _State, #snapshot_get_response{
             number_of_ops=0,
             materialized_snapshot=Snapshot,
-            snapshot_time=CommitTime
+            snapshot_time=SnapshotTime
         }) ->
-    {ok, {CommitTime, Snapshot#materialized_snapshot.value}};
+    {ok, {SnapshotTime, Snapshot#materialized_snapshot.value}};
 
 materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
             is_newest_snapshot=IsNewest
@@ -504,11 +504,11 @@ materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGC, State, Snapshot
         {error, Reason} ->
             {error, Reason};
 
-        {ok, MaterializedSnapshot, NewLastOp, CommitTime, WasUpdated, OpsAdded} ->
+        {ok, MaterializedSnapshot, NewLastOp, SnapshotTime, WasUpdated, OpsAdded} ->
             %% the following checks for the case there were no snapshots and there were operations,
             %% but none was applicable for the given snapshot_time
             %% But is the snapshot not safe?
-            case CommitTime of
+            case SnapshotTime of
                 ignore ->
                     {ok, {ignore, MaterializedSnapshot}};
                 _ ->
@@ -527,9 +527,9 @@ materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGC, State, Snapshot
                                 last_op_id=NewLastOp,
                                 value=MaterializedSnapshot
                             },
-                            store_snapshot(TxId, Key, ToCache, CommitTime, ShouldGC, State)
+                            store_snapshot(TxId, Key, ToCache, SnapshotTime, ShouldGC, State)
                      end,
-                    {ok, {CommitTime, MaterializedSnapshot}}
+                    {ok, {SnapshotTime, MaterializedSnapshot}}
             end
     end.
 
