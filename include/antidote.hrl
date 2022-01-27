@@ -231,6 +231,12 @@
 -type bucket() :: term().
 -type snapshot() :: term().
 -type object_token() :: binary().
+
+%% A special token for the validate_or_read API that is always considered
+%% as invalid.
+%%
+%% It is useful for when no sensible token can be returned or when the caller
+%% explicitly wants the value.
 -define(INVALID_OBJECT_TOKEN, <<>>).
 
 -type tx() :: #transaction{}.
