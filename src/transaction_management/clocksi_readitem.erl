@@ -37,11 +37,11 @@
 -endif.
 
 %% API
--export([read_data_item/5,
-    async_read_data_item/6]).
-
-%% Internal
--export([perform_read_internal/5]).
+-export([
+    read_data_item/5,
+    async_read_data_item/5,
+    perform_read_internal/5
+]).
 
 %% Spawn
 -type read_property_list() :: [].
@@ -50,22 +50,14 @@
 %%% API
 %%%===================================================================
 
--spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
+-spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
     rpc:call(Node, ?MODULE, perform_read_internal, [Key, Type, Transaction, PropertyList, Partition]).
-
--spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
-async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {fsm, Sender}) ->
-    spawn_link(Node, fun() -> {
-        case perform_read_internal(Key, Type, Transaction, PropertyList, Partition) of
-            {ok, Snapshot} ->
-                gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}})
-            % TODO dialyzer says this can never happen (it's true)
-            %      Fix spec annotations in this chain
-            % {error, Reason} ->
-            %     gen_statem:cast(Sender, {error, Reason})
-        end
-    } end),
+-spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
+async_read_data_item({Partition, Node}, Key, Type, Transaction, {fsm, Sender}) ->
+    spawn_link(Node, fun() ->
+        {ok, Snapshot} = perform_read_internal(Key, Type, Transaction, [], Partition),
+        gen_statem:cast(Sender, {ok, Snapshot}) end),
     ok.
 
 
@@ -83,7 +75,7 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
             timer:sleep(Time),
             perform_read_internal(Key, Type, Transaction, PropertyList, Partition);
         ready ->
-            return(Key, Type, Transaction, PropertyList, Partition)
+            fetch_from_gingko(Key, Type, Transaction)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -107,7 +99,7 @@ check_clock(Key, TxLocalStartTime, Partition) ->
 -spec check_prepared(key(), clock_time(), partition_id()) ->
                             ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key, TxLocalStartTime, Partition) ->
-    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition),
+    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_for_key(Key, Partition),
     check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
 -spec check_prepared_list(key(), clock_time(), [{txid(), clock_time()}]) ->
@@ -124,20 +116,7 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return(key(), type(), tx(), read_property_list(), partition_id()) -> {error, term()} | {ok, snapshot()}.
-return(Key, Type, Transaction, PropertyList, Partition) ->
+-spec fetch_from_gingko(key(), type(), tx()) -> {ok, snapshot()}.
+fetch_from_gingko(Key, Type, Transaction) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
-
-
-
--ifdef(TEST).
-
-check_prepared_list_test() ->
-    ?assertEqual({not_ready, ?SPIN_WAIT}, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 50}])),
-    ?assertEqual(ready, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 101}])).
-
-
-
--endif.
+    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, VecSnapshotTime).

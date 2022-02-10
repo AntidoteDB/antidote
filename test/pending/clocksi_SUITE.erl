@@ -91,64 +91,63 @@ all() -> [
 
 
 clocksi_test1(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key1 = clocksi_test1_key1,
     Key2 = clocksi_test1_key2,
 
     %% Empty transaction works,
-    antidote_utils:update_counters(Node, [], [], ignore, static, Bucket),
-    antidote_utils:update_counters(Node, [], [], ignore, static, Bucket),
+    antidote_utils:update_counters(Node, [], [], ignore, static),
+    antidote_utils:update_counters(Node, [], [], ignore, static),
 
     %% A read before an update returns empty
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 0, ignore, static, Bucket),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 0, ignore, static),
 
     %% Read what you wrote
-    antidote_utils:update_counters(Node, [Key1, Key2], [1, 1], ignore, static, Bucket),
-    antidote_utils:check_read_keys(Node, [Key1, Key2], antidote_crdt_counter_pn, [1, 1], ignore, static, Bucket),
+    antidote_utils:update_counters(Node, [Key1, Key2], [1, 1], ignore, static),
+    antidote_utils:check_read_keys(Node, [Key1, Key2], antidote_crdt_counter_pn, [1, 1], ignore, static),
 
     %% Multiple updates to a key in a transaction works
-    antidote_utils:update_counters(Node, [Key1, Key1], [1, 1], ignore, static, Bucket),
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 3, ignore, static, Bucket),
+    antidote_utils:update_counters(Node, [Key1, Key1], [1, 1], ignore, static),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 3, ignore, static),
     pass.
 
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
 clocksi_test2(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key1=clocksi_test2_key1,
     Key2=clocksi_test2_key2,
     Key3=clocksi_test2_key3,
 
-    {ok, TxId} = rpc:call(Node, cure, start_transaction, [ignore, []]),
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 0, ignore, TxId, Bucket),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 0, ignore, TxId),
 
-    antidote_utils:update_counters(Node, [Key1], [1], ignore, TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, ignore, TxId, Bucket),
+    antidote_utils:update_counters(Node, [Key1], [1], ignore, TxId),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, ignore, TxId),
 
-    antidote_utils:update_counters(Node, [Key2], [1], ignore, TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key2, antidote_crdt_counter_pn, 1, ignore, TxId, Bucket),
+    antidote_utils:update_counters(Node, [Key2], [1], ignore, TxId),
+    antidote_utils:check_read_key(Node, Key2, antidote_crdt_counter_pn, 1, ignore, TxId),
 
-    antidote_utils:update_counters(Node, [Key3], [1], ignore, TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key3, antidote_crdt_counter_pn, 1, ignore, TxId, Bucket),
+    antidote_utils:update_counters(Node, [Key3], [1], ignore, TxId),
+    antidote_utils:check_read_key(Node, Key3, antidote_crdt_counter_pn, 1, ignore, TxId),
 
-    {ok, CausalSnapshot} = rpc:call(Node, cure, commit_transaction, [TxId]),
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, CausalSnapshot, static, Bucket),
+    {ok, CausalSnapshot} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, CausalSnapshot, static),
     pass.
 
 
 %% @doc The following function tests that ClockSI can execute a
 %%      read-only interactive tx.
 clocksi_test4(Config) ->
-    Bucket = ?BUCKET,
+
     FirstNode = proplists:get_value(node, Config),
     Key = clocksi_test4_key1,
 
-    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    antidote_utils:check_read_key(FirstNode, Key, antidote_crdt_counter_pn, 0, ignore, TxId, Bucket),
+    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
+    antidote_utils:check_read_key(FirstNode, Key, antidote_crdt_counter_pn, 0, ignore, TxId),
 
-    {ok, _CT} = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
+    {ok, _CT} = rpc:call(FirstNode, antidote, commit_transaction, [TxId]),
     pass.
 
 
@@ -156,24 +155,24 @@ clocksi_test4(Config) ->
 %%      that updates only one partition. This type of txs use an only-one phase
 %%      commit.
 clocksi_test5(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clocksi_test5_key1,
 
-    {ok, TxId} = rpc:call(Node, cure, start_transaction, [ignore, []]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [], ignore, TxId, Bucket),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [], ignore, TxId),
 
-    antidote_utils:update_sets(Node, [Key], [{add, a}], TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [a], ignore, TxId, Bucket),
+    antidote_utils:update_sets(Node, [Key], [{add, a}], TxId),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [a], ignore, TxId),
 
-    antidote_utils:update_sets(Node, [Key], [{add, b}], TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [a, b], ignore, TxId, Bucket),
+    antidote_utils:update_sets(Node, [Key], [{add, b}], TxId),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [a, b], ignore, TxId),
 
-    antidote_utils:update_sets(Node, [Key], [{remove, a}], TxId, Bucket),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [b], ignore, TxId, Bucket),
+    antidote_utils:update_sets(Node, [Key], [{remove, a}], TxId),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [b], ignore, TxId),
 
-    {ok, CausalSnapshot} = rpc:call(Node, cure, commit_transaction, [TxId]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [b], CausalSnapshot, static, Bucket),
+    {ok, CausalSnapshot} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_set_aw, [b], CausalSnapshot, static),
     pass.
 
 
@@ -181,25 +180,25 @@ clocksi_test5(Config) ->
 %%      that executes multiple updates on same key and check the reads include
 %%      updates in correct order.
 clocksi_multiple_updates_per_txn_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clocksi_multiple_updates_per_txn_key1,
-    BoundObj = {Key, antidote_crdt_register_mv, Bucket},
+    BoundObj = {Key, antidote_crdt_register_mv},
 
-    {ok, TxId} = rpc:call(Node, cure, start_transaction, [ignore, []]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [], ignore, TxId, Bucket),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [], ignore, TxId),
 
     ok = rpc:call(Node, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"a">>], ignore, TxId, Bucket),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"a">>], ignore, TxId),
 
     ok = rpc:call(Node, cure, update_objects, [[{BoundObj, assign, <<"b">>}], TxId]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"b">>], ignore, TxId, Bucket),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"b">>], ignore, TxId),
 
     ok = rpc:call(Node, cure, update_objects, [[{BoundObj, assign, <<"c">>}], TxId]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"c">>], ignore, TxId, Bucket),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
-    {ok, CausalSnapshot} = rpc:call(Node, cure, commit_transaction, [TxId]),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static, Bucket),
+    {ok, CausalSnapshot} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
     pass.
 
 clocksi_read_write_write_txn_test(Config) ->
@@ -208,7 +207,7 @@ clocksi_read_write_write_txn_test(Config) ->
     Key1=clocksi_read_write_write_txn_key1,
     BoundObj = {Key1, antidote_crdt_register_mv, ?BUCKET},
 
-    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
+    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [], ignore, TxId),
 
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
@@ -217,7 +216,7 @@ clocksi_read_write_write_txn_test(Config) ->
 
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
-    End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
+    End = rpc:call(FirstNode, antidote, commit_transaction, [TxId]),
     ?assertMatch({ok, _}, End),
     {ok, CausalSnapshot} = End,
     antidote_utils:check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
@@ -227,28 +226,28 @@ clocksi_read_write_write_txn_test(Config) ->
 %% @doc The following function tests that ClockSI can run both a single
 %%      read and a bulk-update tx.
 clocksi_single_key_update_read_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clocksi_single_key_update_read_test_key1,
 
-    {ok, CommitTime} = antidote_utils:update_counters(Node, [Key, Key], [1, 1], ignore, static, Bucket),
-    antidote_utils:check_read_key(Node, Key, antidote_crdt_counter_pn, 2, CommitTime, static, Bucket),
+    {ok, CommitTime} = antidote_utils:update_counters(Node, [Key, Key], [1, 1], ignore, static),
+    antidote_utils:check_read_key(Node, Key, antidote_crdt_counter_pn, 2, CommitTime, static),
     pass.
 
 
 %% @doc Verify that multiple reads/writes are successful.
 clocksi_multiple_key_update_read_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
 
-    {ok, CommitTime} = antidote_utils:update_counters(Node, [Key1, Key2, Key3], [1, 10, 1], ignore, static, Bucket),
+    {ok, CommitTime} = antidote_utils:update_counters(Node, [Key1, Key2, Key3], [1, 10, 1], ignore, static),
 
-    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, CommitTime, static, Bucket),
-    antidote_utils:check_read_key(Node, Key2, antidote_crdt_counter_pn, 10, CommitTime, static, Bucket),
-    antidote_utils:check_read_key(Node, Key3, antidote_crdt_counter_pn, 1, CommitTime, static, Bucket),
+    antidote_utils:check_read_key(Node, Key1, antidote_crdt_counter_pn, 1, CommitTime, static),
+    antidote_utils:check_read_key(Node, Key2, antidote_crdt_counter_pn, 10, CommitTime, static),
+    antidote_utils:check_read_key(Node, Key3, antidote_crdt_counter_pn, 1, CommitTime, static),
     pass.
 
 
@@ -257,22 +256,22 @@ clocksi_multiple_key_update_read_test(Config) ->
 %%      inserted by a tx with higher commit timestamp than the snapshot time
 %%      of the reading tx.
 clocksi_test_read_wait(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clocksi_test_read_wait_key1,
     Type = antidote_crdt_counter_pn,
 
     %% Start a new tx, update a key read_wait_test, and send prepare.
-    {ok, TxId1} = rpc:call(Node, cure, start_transaction, [ignore, []]),
-    antidote_utils:update_counters(Node, [Key], [1], ignore, TxId1, Bucket),
+    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    antidote_utils:update_counters(Node, [Key], [1], ignore, TxId1),
 
     {ok, CommitTime1} = rpc:call(Node, cure, clocksi_iprepare, [TxId1]),
     ct:log("Tx1 sent prepare, assigned commitTime : ~p", [CommitTime1]),
 
     %% Start a different tx and try to read the key
-    {ok, TxId2} = rpc:call(Node, cure, start_transaction, [ignore, []]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     ct:log("Tx2 started with id : ~p", [TxId2]),
-    Pid = spawn(antidote_utils, spawn_read, [Node, TxId2, self(), Key, Type, Bucket]),
+    Pid = spawn(antidote_utils, spawn_read, [Node, TxId2, self(), Key, Type]),
 
     %% Delay first transaction
     timer:sleep(500),
@@ -294,29 +293,29 @@ clocksi_test_read_wait(Config) ->
 
 
 clocksi_test_no_update_property(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clockSI_test_no_update_property_key1,
     Type = antidote_crdt_counter_pn,
 
     {ok, _} = rpc:call(Node, antidote, update_objects,
-                      [ignore, [], [{{Key, Type, Bucket}, increment, 1}]]),
+                      [ignore, [], [{{Key, Type}, increment, 1}]]),
 
     pass.
 
 
 %% @doc Read an update a key multiple times.
 clocksi_multiple_read_update_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = antidote_utils:get_random_key(),
     Type = antidote_crdt_counter_pn,
     NTimes = 100,
-    Obj = {Key, Type, Bucket},
+    Obj = {Key, Type},
 
     {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     lists:foreach(fun(_)->
-                          read_update_run(Node, Key, Bucket) end,
+                          read_update_run(Node, Key) end,
                   lists:seq(1, NTimes)),
     {ok, [Result2], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
 
@@ -324,12 +323,12 @@ clocksi_multiple_read_update_test(Config) ->
     pass.
 
 %% @doc Test updating prior to a read.
-read_update_run(Node, Key, Bucket) ->
+read_update_run(Node, Key) ->
     Type = antidote_crdt_counter_pn,
-    Obj = {Key, Type, Bucket},
+    Obj = {Key, Type},
 
     {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
-    antidote_utils:update_counters(Node, [Key], [1], ignore, static, Bucket),
+    antidote_utils:update_counters(Node, [Key], [1], ignore, static),
     {ok, [Result2], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     ?assertEqual(Result1+1, Result2),
     pass.
@@ -338,19 +337,19 @@ read_update_run(Node, Key, Bucket) ->
 %% @doc The following function tests how two concurrent transactions work
 %%      when they are interleaved.
 clocksi_concurrency_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
     Key = clocksi_conc,
     Type = antidote_crdt_counter_pn,
 
     %% read txn starts before the write txn's prepare phase,
     {ok, TxId1} = rpc:call(Node, cure, start_transaction, [ignore, []]),
-    antidote_utils:update_counters(Node, [Key], [1], ignore, TxId1, Bucket),
+    antidote_utils:update_counters(Node, [Key], [1], ignore, TxId1),
     rpc:call(Node, cure, clocksi_iprepare, [TxId1]),
     {ok, TxId2} = rpc:call(Node, cure, start_transaction, [ignore, []]),
     Pid = self(),
     spawn( fun() ->
-                   antidote_utils:update_counters(Node, [Key], [1], ignore, TxId2, Bucket),
+                   antidote_utils:update_counters(Node, [Key], [1], ignore, TxId2),
                    rpc:call(Node, cure, clocksi_iprepare, [TxId2]),
                    {ok, _}= rpc:call(Node, cure, clocksi_icommit, [TxId2]),
                    Pid ! ok
@@ -359,7 +358,7 @@ clocksi_concurrency_test(Config) ->
     {ok, _}= rpc:call(Node, cure, clocksi_icommit, [TxId1]),
     receive
         ok ->
-            antidote_utils:check_read_key(Node, Key, Type, 2, ignore, static, Bucket),
+            antidote_utils:check_read_key(Node, Key, Type, 2, ignore, static),
             pass
     end.
 
@@ -368,13 +367,13 @@ clocksi_concurrency_test(Config) ->
 %% read/update_objects. It also checks that reads are returned
 %% in the same order they were sent.
 clocksi_parallel_ops_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
-    BoundObject1 = {parallel_key1, antidote_crdt_counter_pn, Bucket},
-    BoundObject2 = {parallel_key2, antidote_crdt_counter_pn, Bucket},
-    BoundObject3 = {parallel_key3, antidote_crdt_counter_pn, Bucket},
-    BoundObject4 = {parallel_key4, antidote_crdt_counter_pn, Bucket},
-    BoundObject5 = {parallel_key5, antidote_crdt_counter_pn, Bucket},
+    BoundObject1 = {parallel_key1, antidote_crdt_counter_pn},
+    BoundObject2 = {parallel_key2, antidote_crdt_counter_pn},
+    BoundObject3 = {parallel_key3, antidote_crdt_counter_pn},
+    BoundObject4 = {parallel_key4, antidote_crdt_counter_pn},
+    BoundObject5 = {parallel_key5, antidote_crdt_counter_pn},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
 
     %% update 5 different objects
@@ -418,13 +417,13 @@ clocksi_parallel_ops_test(Config) ->
 %% it also tests that the coordinator StaysAlive after the first transaction,
 %% and serves the request from the second one.
 clocksi_static_parallel_writes_test(Config) ->
-    Bucket = ?BUCKET,
+
     Node = proplists:get_value(node, Config),
-    BoundObject1 = {parallel_key6, antidote_crdt_counter_pn, Bucket},
-    BoundObject2 = {parallel_key7, antidote_crdt_counter_pn, Bucket},
-    BoundObject3 = {parallel_key8, antidote_crdt_counter_pn, Bucket},
-    BoundObject4 = {parallel_key9, antidote_crdt_counter_pn, Bucket},
-    BoundObject5 = {parallel_key10, antidote_crdt_counter_pn, Bucket},
+    BoundObject1 = {parallel_key6, antidote_crdt_counter_pn},
+    BoundObject2 = {parallel_key7, antidote_crdt_counter_pn},
+    BoundObject3 = {parallel_key8, antidote_crdt_counter_pn},
+    BoundObject4 = {parallel_key9, antidote_crdt_counter_pn},
+    BoundObject5 = {parallel_key10, antidote_crdt_counter_pn},
     %% update 5 different objects
     {ok, CT} = rpc:call(Node, cure, update_objects,
                         [ignore, [],

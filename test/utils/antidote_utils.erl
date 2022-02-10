@@ -30,59 +30,60 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(BUCKET, test_utils:bucket(append_bucket)).
 -define(TYPE_PNC, antidote_crdt_counter_pn).
 -define(TYPE_B, antidote_crdt_counter_b).
 
 %% API
 -export([
-    increment_pn_counter/3,
+    increment_pn_counter/2,
 
+    read_pn_counter/2,
     read_pn_counter/3,
-    read_pn_counter/4,
-    read_b_counter/3,
-    read_b_counter_commit/4,
+    read_b_counter/2,
+    read_b_counter_commit/3,
 
     %% clocksi
     check_read/5,
     check_read/6,
     check_read_key/7,
-    check_read_key/8,
-    check_read_keys/7,
+    check_read_key/6,
+    check_read_keys/6,
     update_counters/6,
-    update_counters/7,
-    update_sets/5,
+    update_counters/5,
+    update_sets/4,
     spawn_com/2,
-    spawn_read/6,
+    spawn_read/5,
     get_random_key/0,
     find_key_same_node/3,
-    atomic_write_txn/6,
-    atomic_read_txn/6
-    , update_sets_clock/5]).
+    atomic_write_txn/5,
+    atomic_read_txn/5
+    , update_sets_clock/4]).
 
 
-increment_pn_counter(Node, Key, Bucket) ->
-    Obj = {Key, ?TYPE_PNC, Bucket},
+increment_pn_counter(Node, Key) ->
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     WriteResult = rpc:call(Node, antidote, update_objects, [ignore, [], [{Obj, increment, 1}]]),
     {ok, Vectorclock} = WriteResult,
     Vectorclock.
 
 
-read_pn_counter(Node, Key, Bucket) ->
-    Obj = {Key, ?TYPE_PNC, Bucket},
+read_pn_counter(Node, Key) ->
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [ignore, [], [Obj]]),
     {Value, CommitTime}.
 
-read_pn_counter(Node, Key, Bucket, Clock) ->
-    Obj = {Key, ?TYPE_PNC, Bucket},
+read_pn_counter(Node, Key, Clock) ->
+    Obj = {Key, ?TYPE_PNC, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [Clock, [], [Obj]]),
     {Value, CommitTime}.
 
 
-read_b_counter(Node, Key, Bucket) ->
-    read_b_counter_commit(Node, Key, Bucket, ignore).
+read_b_counter(Node, Key) ->
+    read_b_counter_commit(Node, Key, ignore).
 
-read_b_counter_commit(Node, Key, Bucket, CommitTime) ->
-    Obj = {Key, ?TYPE_B, Bucket},
+read_b_counter_commit(Node, Key, CommitTime) ->
+    Obj = {Key, ?TYPE_B, ?BUCKET},
     {ok, [Value], CommitTime} = rpc:call(Node, antidote, read_objects, [CommitTime, [], [Obj]]),
     {?TYPE_B:permissions(Value), CommitTime}.
 
@@ -98,15 +99,15 @@ read_b_counter_commit(Node, Key, Bucket, CommitTime) ->
 %% From clocksi_SUITE
 %% ------------------
 
-check_read_key(Node, Key, Type, Expected, Clock, TxId, Bucket) ->
-    check_read(Node, [{Key, Type, Bucket}], [Expected], Clock, TxId).
+check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
+    check_read(Node, [{Key, Type}], [Expected], Clock, TxId).
 
-check_read_key(Node, Key, Type, Expected, Clock, TxId, Bucket, ProtocolModule) ->
-    check_read(Node, [{Key, Type, Bucket}], [Expected], Clock, TxId, ProtocolModule).
+check_read_key(Node, Key, Type, Expected, Clock, TxId, ProtocolModule) ->
+    check_read(Node, [{Key, Type}], [Expected], Clock, TxId, ProtocolModule).
 
-check_read_keys(Node, Keys, Type, Expected, Clock, TxId, Bucket) ->
+check_read_keys(Node, Keys, Type, Expected, Clock, TxId) ->
     Objects = lists:map(fun(Key) ->
-        {Key, Type, Bucket}
+        {Key, Type}
                         end,
         Keys
     ),
@@ -127,12 +128,12 @@ check_read(Node, Objects, Expected, Clock, TxId, ProtocolModule) ->
             {ok, Res}
     end.
 
-update_counters(Node, Keys, IncValues, Clock, TxId, Bucket) ->
-    update_counters(Node, Keys, IncValues, Clock, TxId, Bucket, cure).
+update_counters(Node, Keys, IncValues, Clock, TxId) ->
+    update_counters(Node, Keys, IncValues, Clock, TxId, cure).
 
-update_counters(Node, Keys, IncValues, Clock, TxId, Bucket, ProtocolModule) ->
+update_counters(Node, Keys, IncValues, Clock, TxId, ProtocolModule) ->
     Updates = lists:map(fun({Key, Inc}) ->
-        {{Key, antidote_crdt_counter_pn, Bucket}, increment, Inc}
+        {{Key, antidote_crdt_counter_pn}, increment, Inc}
                         end,
         lists:zip(Keys, IncValues)
     ),
@@ -147,9 +148,9 @@ update_counters(Node, Keys, IncValues, Clock, TxId, Bucket, ProtocolModule) ->
     end.
 
 
-update_sets(Node, Keys, Ops, TxId, Bucket) ->
+update_sets(Node, Keys, Ops, TxId) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-        {{Key, antidote_crdt_set_aw, Bucket}, Op, Param}
+        {{Key, antidote_crdt_set_aw}, Op, Param}
                         end,
         lists:zip(Keys, Ops)
     ),
@@ -157,9 +158,9 @@ update_sets(Node, Keys, Ops, TxId, Bucket) ->
     ok.
 
 
-update_sets_clock(Node, Keys, Ops, Clock, Bucket) ->
+update_sets_clock(Node, Keys, Ops, Clock) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-        {{Key, antidote_crdt_set_aw, Bucket}, Op, Param}
+        {{Key, antidote_crdt_set_aw}, Op, Param}
                         end,
         lists:zip(Keys, Ops)
     ),
@@ -173,8 +174,8 @@ spawn_com(FirstNode, TxId) ->
     ?assertMatch({ok, {_, _}}, End1).
 
 
-spawn_read(Node, TxId, Return, Key, Type, Bucket) ->
-    {ok, [Res]} = check_read_key(Node, Key, Type, 1, ignore, TxId, Bucket),
+spawn_read(Node, TxId, Return, Key, Type) ->
+    {ok, [Res]} = check_read_key(Node, Key, Type, 1, ignore, TxId),
     Return ! {self(), {ok, Res}}.
 
 
@@ -197,18 +198,18 @@ find_key_same_node(FirstNode, IndexNode, Num) ->
 
 %% inter dc utils
 
-atomic_write_txn(Node, Key1, Key2, Key3, _Type, Bucket) ->
-    antidote_utils:update_counters(Node, [Key1, Key2, Key3], [1, 1, 1], ignore, static, Bucket, antidote).
+atomic_write_txn(Node, Key1, Key2, Key3, _Type) ->
+    antidote_utils:update_counters(Node, [Key1, Key2, Key3], [1, 1, 1], ignore, static, antidote).
 
 
-atomic_read_txn(Node, Key1, Key2, Key3, Type, Bucket) ->
+atomic_read_txn(Node, Key1, Key2, Key3, Type) ->
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [R1]} = rpc:call(Node, antidote, read_objects,
-        [[{Key1, Type, Bucket}], TxId]),
+        [[{Key1, Type}], TxId]),
     {ok, [R2]} = rpc:call(Node, antidote, read_objects,
-        [[{Key2, Type, Bucket}], TxId]),
+        [[{Key2, Type}], TxId]),
     {ok, [R3]} = rpc:call(Node, antidote, read_objects,
-        [[{Key3, Type, Bucket}], TxId]),
+        [[{Key3, Type}], TxId]),
     rpc:call(Node, antidote, commit_transaction, [TxId]),
     ?assertEqual(R1, R2),
     ?assertEqual(R2, R3),

@@ -1,32 +1,33 @@
 %% -*- erlang -*-
 {application, antidote, [
-    {description, "A transactional CRDT database"},
-    {vsn, "0.2.2"},
-    {applications, [
-        kernel,
-        ranch,
-        stdlib,
-        riak_core,
-        erlzmq,
-        runtime_tools,
-        tools,
-        antidote_stats
-    ]},
-    {included_applications, [
-        vectorclock,
-        antidote_pb_codec,
-        antidote_crdt
-    ]},
+  {description, "A transactional CRDT database"},
+  {vsn, "0.2.2"},
+  {applications, [
+    kernel,
+    ranch,
+    stdlib,
+    riak_core,
+    erlzmq,
+    runtime_tools,
+    tools,
+    antidote_stats
+  ]},
+  {included_applications, [
+    vectorclock,
+    antidote_pb_codec,
+    antidote_crdt,
+    gingko
+  ]},
 
-    {mod, {antidote_app, []}},
+  {mod, {antidote_app, []}},
 
-    % Default values for sys.config options used for system tests which do not load config files
-    {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
-        {recover_meta_data_on_start, true}, {sync_log, false},
-        {enable_logging, true},
-        {auto_start_read_servers, true},
-        {data_dir, "data_antidote"},
-        {stats, true},
-        {extended_stats, true}
-    ]}
+  % Default values for sys.config options used for system tests which do not load config files
+  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
+    {recover_meta_data_on_start, true}, {sync_log, false},
+    {enable_logging, true},
+    {auto_start_read_servers, true},
+    {data_dir, "data_antidote"},
+    {stats, true},
+    {extended_stats, true}
+  ]}
 ]}.

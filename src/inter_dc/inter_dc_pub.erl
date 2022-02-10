@@ -76,9 +76,7 @@ init([]) ->
     %% TODO erlzmq pub bind IP
 %%    Ip = get_pub_bind_ip(),
     Port = get_pub_port(),
-
     Socket = zmq_utils:create_bind_socket(pub, false, Port),
-    ?LOG_NOTICE("InterDC publisher started on port ~p", [Port]),
     {ok, #state{socket = Socket}}.
 
 handle_call({publish, Message}, _From, State) ->

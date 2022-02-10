@@ -54,64 +54,52 @@ start_link() ->
 %% ===================================================================
 
 init(_Args) ->
-    LoggingMaster = {logging_vnode_master,
-                     {riak_core_vnode_master, start_link, [logging_vnode]},
-                     permanent, 5000, worker, [riak_core_vnode_master]},
+  Gingko = {gingko_vnode_master,
+      {riak_core_vnode_master, start_link, [gingko_vnode]},
+      permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSIMaster = { clocksi_vnode_master,
-                      {riak_core_vnode_master, start_link, [clocksi_vnode]},
-                      permanent, 5000, worker, [riak_core_vnode_master]},
+  ClockSIMaster = { clocksi_vnode_master,
+                    {riak_core_vnode_master, start_link, [clocksi_vnode]},
+                    permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSIiTxCoordSup =  { clocksi_interactive_coord_sup,
-                            {clocksi_interactive_coord_sup, start_link, []},
-                            permanent, 5000, supervisor,
-                            [clockSI_interactive_coord_sup]},
+  ClockSIiTxCoordSup =  { clocksi_interactive_coord_sup,
+                          {clocksi_interactive_coord_sup, start_link, []},
+                          permanent, 5000, supervisor,
+                          [clockSI_interactive_coord_sup]},
 
-    MaterializerMaster = {materializer_vnode_master,
-                          {riak_core_vnode_master,  start_link,
-                           [materializer_vnode]},
-                          permanent, 5000, worker, [riak_core_vnode_master]},
-
-    BCounterManager = ?CHILD(bcounter_mgr, worker, []),
-
-    StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
-
+  StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
     InterDcSup = {inter_dc_sup,
         {inter_dc_sup, start_link, []},
         permanent, 5000, supervisor,
         [inter_dc_sup]},
 
     MetaDataManagerSup = {meta_data_manager_sup,
-                          {meta_data_manager_sup, start_link, [stable_time_functions]},
-                          permanent, 5000, supervisor,
-                          [meta_data_manager_sup]},
+        {meta_data_manager_sup, start_link, [stable_time_functions]},
+        permanent, 5000, supervisor,
+        [meta_data_manager_sup]},
 
     MetaDataSenderSup = {meta_data_sender_sup,
-                         {meta_data_sender_sup, start_link, [[stable_time_functions]]},
-                         permanent, 5000, supervisor,
-                         [meta_data_sender_sup]},
+        {meta_data_sender_sup, start_link, [[stable_time_functions]]},
+        permanent, 5000, supervisor,
+        [meta_data_sender_sup]},
 
     PbSup = #{id => antidote_pb_sup,
-              start => {antidote_pb_sup, start_link, []},
-              restart => permanent,
-              shutdown => 5000,
-              type => supervisor,
-              modules => [antidote_pb_sup]},
+        start => {antidote_pb_sup, start_link, []},
+        restart => permanent,
+        shutdown => 5000,
+        type => supervisor,
+        modules => [antidote_pb_sup]},
 
-    AntidoteStats = ?CHILD(antidote_stats, worker, []),
 
-    {ok,
+  {ok,
      {{one_for_one, 5, 10},
       [
-       LoggingMaster,
-       ClockSIMaster,
-       ClockSIiTxCoordSup,
-       MaterializerMaster,
-       InterDcSup,
-       StableMetaData,
-       MetaDataManagerSup,
-       MetaDataSenderSup,
-       BCounterManager,
-       PbSup,
-       AntidoteStats
+          Gingko,
+          ClockSIMaster,
+          ClockSIiTxCoordSup,
+          InterDcSup,
+          StableMetaData,
+          MetaDataManagerSup,
+          MetaDataSenderSup,
+          PbSup
        ]}}.
