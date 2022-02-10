@@ -234,7 +234,7 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
         undefined ->
-            ?LOG_DEBUG("Wait for ~p to register", [Name]),
+            ?LOG_ERROR("Wait for ~p to register", [Name]),
             timer:sleep(100),
             check_registered(Name);
         _ ->
@@ -250,7 +250,7 @@ get_stable_snapshot() ->
         undefined ->
             %% The snapshot isn't ready yet, need to wait for startup
             %TODO: Extract into configuration constant
-            timer:sleep(10),
+            timer:sleep(?SPIN_WAIT),
             get_stable_snapshot();
         SS ->
             case application:get_env(antidote, txn_prot) of

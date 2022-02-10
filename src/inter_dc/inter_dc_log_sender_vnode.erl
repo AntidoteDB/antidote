@@ -100,9 +100,10 @@ send_stable_time(Partition, Time) ->
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
+    Buffer = log_txn_assembler:new_state(),
   {ok, #state{
     partition = Partition,
-    buffer = log_txn_assembler:new_state(),
+    buffer = Buffer,
     last_log_id = #op_number{},
     timer = none
   }}.

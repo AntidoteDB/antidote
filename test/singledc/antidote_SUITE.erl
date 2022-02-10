@@ -75,34 +75,32 @@ end_per_testcase(Name, _) ->
 
 all() ->
     [
-     static_txn_single_object
-     %static_txn_single_object_clock,
-     %static_txn_multi_objects,
-     %static_txn_multi_objects_clock,
-     %interactive_txn,
-     %interactive_txn_abort
+     static_txn_single_object,
+     static_txn_single_object_clock,
+     static_txn_multi_objects,
+     static_txn_multi_objects_clock,
+     interactive_txn,
+     interactive_txn_abort
     ].
 
 
 static_txn_single_object(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static1,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type, Bucket},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
 
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
     {ok, [Val], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Object]]),
-    ?assertEqual(0, Val).
+    ?assertEqual(1, Val).
 
 
 static_txn_single_object_clock(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Key = antidote_key_static2,
     Type = antidote_crdt_counter_pn,
-    Object = {Key, Type, Bucket},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
 
     {ok, Clock1} = rpc:call(Node, antidote, update_objects, [ignore, [], [Update]]),
@@ -114,13 +112,12 @@ static_txn_single_object_clock(Config) ->
 
 
 static_txn_multi_objects(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type, Bucket}
+                                {Key, Type, ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -133,13 +130,12 @@ static_txn_multi_objects(Config) ->
 
 
 static_txn_multi_objects_clock(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type, Bucket}
+                                {Key, Type,  ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -156,13 +152,12 @@ static_txn_multi_objects_clock(Config) ->
 
 
 interactive_txn(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
     IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
-                                {Key, Type, Bucket}
+                                {Key, Type, ?BUCKET}
                         end, Keys
                        ),
     Updates = lists:map(fun({Object, IncVal}) ->
@@ -183,11 +178,10 @@ interactive_txn(Config) ->
 
 
 interactive_txn_abort(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
     Type = antidote_crdt_counter_pn,
     Key = antidote_int_abort_m1,
-    Object = {Key, Type, Bucket},
+    Object = {Key, Type, ?BUCKET},
     Update = {Object, increment, 1},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     ok = rpc:call(Node, antidote, update_objects, [[Update], TxId]),

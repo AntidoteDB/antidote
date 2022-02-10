@@ -79,7 +79,8 @@ deliver_log_reader_resp(BinaryRep) ->
 
 %%%% VNode methods ----------------------------------------------------------+
 
-init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
+init([Partition]) ->
+    {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->

@@ -37,11 +37,11 @@
 -endif.
 
 %% API
--export([read_data_item/5,
-    async_read_data_item/6]).
-
-%% Internal
--export([perform_read_internal/5]).
+-export([
+    read_data_item/5,
+    async_read_data_item/5,
+    perform_read_internal/5
+]).
 
 %% Spawn
 -type read_property_list() :: [].
@@ -53,11 +53,10 @@
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
     rpc:call(Node, ?MODULE, perform_read_internal, [Key, Type, Transaction, PropertyList, Partition]).
-
--spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
-async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {fsm, Sender}) ->
+-spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
+async_read_data_item({Partition, Node}, Key, Type, Transaction, {fsm, Sender}) ->
     spawn_link(Node, fun() ->
-        {ok, Snapshot} = perform_read_internal(Key, Type, Transaction, PropertyList, Partition),
+        {ok, Snapshot} = perform_read_internal(Key, Type, Transaction, [], Partition),
         gen_statem:cast(Sender, {ok, Snapshot}) end),
     ok.
 
@@ -100,7 +99,7 @@ check_clock(Key, TxLocalStartTime, Partition) ->
 -spec check_prepared(key(), clock_time(), partition_id()) ->
                             ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key, TxLocalStartTime, Partition) ->
-    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition),
+    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_for_key(Key, Partition),
     check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
 -spec check_prepared_list(key(), clock_time(), [{txid(), clock_time()}]) ->
@@ -120,19 +119,4 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 -spec fetch_from_gingko(key(), type(), tx()) -> {ok, snapshot()}.
 fetch_from_gingko(Key, Type, Transaction) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    % AP: I have not used a transaction ID here because uncommitted operations are not written to the journal.
-    % And once the operation is committed, we do not care which transaction committed it.
-    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, ignore).
-    %materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
-
-
-
--ifdef(TEST).
-
-check_prepared_list_test() ->
-    ?assertEqual({not_ready, ?SPIN_WAIT}, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 50}])),
-    ?assertEqual(ready, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 101}])).
-
-
-
--endif.
+    gingko_vnode:get_version( Key, Type,Transaction#transaction.txn_id, VecSnapshotTime, VecSnapshotTime).

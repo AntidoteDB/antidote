@@ -80,9 +80,8 @@ end_per_testcase(Name, _) ->
 all() -> [ read_write_test, read_multiple_test ].
 
 read_write_test(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
-    BoundObject = {gr_rw_key, antidote_crdt_counter_pn, Bucket},
+    BoundObject = {gr_rw_key, antidote_crdt_counter_pn},
 
     {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [BoundObject]]),
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject, increment, 1}]]),
@@ -90,10 +89,9 @@ read_write_test(Config) ->
     ?assertMatch([1], Res).
 
 read_multiple_test(Config) ->
-    Bucket = ?BUCKET,
     Node = proplists:get_value(node, Config),
-    BoundObject1 = {gr_read_mult_key1, antidote_crdt_counter_pn, Bucket},
-    BoundObject2 = {o2, antidote_crdt_counter_pn, Bucket},
+    BoundObject1 = {gr_read_mult_key1, antidote_crdt_counter_pn},
+    BoundObject2 = {o2, antidote_crdt_counter_pn},
 
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject1, increment, 1}]]),
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{BoundObject2, increment, 1}]]),
