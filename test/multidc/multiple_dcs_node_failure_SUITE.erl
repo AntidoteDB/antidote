@@ -241,7 +241,7 @@ update_during_cluster_failure_test(Config) ->
 
 % Similar to the previous test, but uses more updates to better test log recovery
 update_during_cluster_failure_test2(Config) ->
-    ct:timetrap({seconds,240}),
+    ct:timetrap({seconds, 240}),
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
