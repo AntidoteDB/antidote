@@ -69,7 +69,6 @@ init_per_suite(InitialConfig) ->
 
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
-
     Config.
 
 end_per_suite(Config) ->
@@ -106,7 +105,7 @@ cluster_failure_test(Config) ->
         {ok, false} ->
             ct:pal("Logging is disabled!"),
             pass;
-        _ ->
+        {ok, true} ->
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
@@ -156,7 +155,7 @@ multiple_cluster_failure_test(Config) ->
         {ok, false} ->
             ct:pal("Logging is disabled!"),
             pass;
-        _ ->
+        {ok, true} ->
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
@@ -200,7 +199,7 @@ update_during_cluster_failure_test(Config) ->
         {ok, false} ->
             ct:pal("Logging is disabled!"),
             pass;
-        _ ->
+        {ok, true} ->
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),
@@ -242,6 +241,7 @@ update_during_cluster_failure_test(Config) ->
 
 % Similar to the previous test, but uses more updates to better test log recovery
 update_during_cluster_failure_test2(Config) ->
+    ct:timetrap({seconds, 240}),
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
@@ -252,7 +252,7 @@ update_during_cluster_failure_test2(Config) ->
         {ok, false} ->
             ct:pal("Logging is disabled!"),
             pass;
-        _ ->
+        {ok, true} ->
             {ok, CommitTime} = update_counter_n(Node1, Key, 1000, ignore, static, Bucket),
             ct:log("Done append in Node1"),
 
@@ -306,7 +306,7 @@ update_during_cluster_failure_test3(Config) ->
         {ok, false} ->
             ct:pal("Logging is disabled!"),
             pass;
-        _ ->
+        {ok, true} ->
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             update_counters(Node1, [Key], [1], ignore, static, Bucket),
             {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static, Bucket),

@@ -323,8 +323,8 @@ meck_test_() -> {
     fun test_init/0,
     fun test_cleanup/1,
     [
-        fun simple/0,
-        fun request_log_entries/0
+        {timeout, 15, fun simple/0},
+        {timeout, 15, fun request_log_entries/0}
 %%        fun request_log_entries_delay/0
     ]}.
 
