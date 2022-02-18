@@ -37,6 +37,7 @@
           start_transaction/2,
           read_objects/2,
           read_objects/3,
+          validate_or_read_objects/3,
           update_objects/2,
           update_objects/3,
           abort_transaction/1,
@@ -148,6 +149,13 @@ read_objects(Objects, TxId) ->
                   -> {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
     cure:read_objects(Clock, Properties, Objects).
+
+-spec validate_or_read_objects(Objects::[bound_object()],
+                               Tokens::[object_token()],
+                               TxId::txid())
+    -> {ok, {[term()], [object_token()]}} | {error, reason()}.
+validate_or_read_objects(Objects, Tokens, TxId) ->
+    cure:validate_or_read_objects(Objects, Tokens, TxId).
 
 %% Returns a list containing tuples of object state and commit time for each
 %% of those objects

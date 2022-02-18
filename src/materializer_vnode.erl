@@ -61,6 +61,7 @@
 -export([start_vnode/1,
          check_tables_ready/0,
          read/6,
+         validate_or_read/7,
          store_ss/3,
          update/2]).
 
@@ -105,6 +106,18 @@ read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
 
     State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
     internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State).
+
+-spec validate_or_read(key(), type(), object_token(),
+                       snapshot_time(), txid(), clocksi_readitem:read_property_list(),
+                       partition_id()) -> {ok, valid}
+                                          | {ok, {invalid, snapshot(), object_token()}}
+                                          | {error, reason()}.
+validate_or_read(Key, Type, Token, SnapshotTime, TxId, PropertyList, Partition) ->
+    OpsCache = get_cache_name(Partition, ops_cache),
+    SnapshotCache = get_cache_name(Partition, snapshot_cache),
+
+    State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
+    internal_validate_or_read(Key, Type, Token, SnapshotTime, TxId, PropertyList, false, State).
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
@@ -354,7 +367,38 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
     SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
 
     %% Now apply the operations to the snapshot, and return a materialized value
-    materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp).
+    case materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp) of
+        {ok, {_SnaphotTime, Snapshot}} -> {ok, Snapshot};
+        {error, Reason} -> {error, Reason}
+    end.
+
+-spec internal_validate_or_read(key(), type(), object_token(), snapshot_time(),
+                                txid() | ignore,
+                                clocksi_readitem:read_property_list(),
+                                boolean(), state()) -> {ok, valid}
+                                                        | {ok, {invalid, snapshot(), object_token()}}
+                                                        | {error, no_snapshot}.
+internal_validate_or_read(Key, Type, Token, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
+    SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
+
+    case materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp) of
+        {ok, {SnapshotTime, Snapshot}} ->
+            ReadToken = case SnapshotTime of
+                ignore -> ?INVALID_OBJECT_TOKEN;
+                _ -> erlang:term_to_binary(vectorclock:to_list(SnapshotTime))
+            end,
+
+            case {ReadToken =/= ?INVALID_OBJECT_TOKEN, ReadToken == Token} of
+                {true, true} ->
+                    {ok, valid};
+                {true, false} ->
+                    {ok, {invalid, Snapshot, ReadToken}};
+                {false, _} ->
+                    {ok, {invalid, Snapshot, ReadToken}}
+            end;
+        {error, Reason} -> {error, Reason}
+    end.
+
 
 %% @doc Get the most recent snapshot from the cache (smaller than the given commit time) for a given key.
 %%
@@ -444,28 +488,29 @@ fetch_updates_from_cache(OpsCache, Key) ->
     end.
 
 -spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), state(), snapshot_get_response())
-    -> {ok, snapshot_time()} | {error, reason()}.
+    -> {ok, {snapshot_time(), snapshot()}} | {error, reason()}.
 
-materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snapshot_get_response{
+materialize_snapshot(_TxId, _Key, _Type, _MinSnapshotTime, _ShouldGC, _State, #snapshot_get_response{
             number_of_ops=0,
-            materialized_snapshot=Snapshot
+            materialized_snapshot=Snapshot,
+            snapshot_time=SnapshotTime
         }) ->
-    {ok, Snapshot#materialized_snapshot.value};
+    {ok, {SnapshotTime, Snapshot#materialized_snapshot.value}};
 
-materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
+materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
             is_newest_snapshot=IsNewest
         }) ->
-    case clocksi_materializer:materialize(Type, TxId, SnapshotTime, SnapshotResponse) of
+    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotResponse) of
         {error, Reason} ->
             {error, Reason};
 
-        {ok, MaterializedSnapshot, NewLastOp, CommitTime, WasUpdated, OpsAdded} ->
+        {ok, MaterializedSnapshot, NewLastOp, SnapshotTime, WasUpdated, OpsAdded} ->
             %% the following checks for the case there were no snapshots and there were operations,
             %% but none was applicable for the given snapshot_time
             %% But is the snapshot not safe?
-            case CommitTime of
+            case SnapshotTime of
                 ignore ->
-                    {ok, MaterializedSnapshot};
+                    {ok, {ignore, MaterializedSnapshot}};
                 _ ->
                     %% Check if we need to refresh the cache
                     SufficientOps = OpsAdded >= ?MIN_OP_STORE_SS,
@@ -482,9 +527,9 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotRes
                                 last_op_id=NewLastOp,
                                 value=MaterializedSnapshot
                             },
-                            store_snapshot(TxId, Key, ToCache, CommitTime, ShouldGC, State)
+                            store_snapshot(TxId, Key, ToCache, SnapshotTime, ShouldGC, State)
                      end,
-                    {ok, MaterializedSnapshot}
+                    {ok, {SnapshotTime, MaterializedSnapshot}}
             end
     end.
 

@@ -63,6 +63,7 @@
     receive_committed/3,
     receive_logging_responses/3,
     receive_read_objects_result/3,
+    receive_validate_or_read_objects_result/3,
     receive_aborted/3,
     single_committing/3,
     receive_prepared/3,
@@ -365,6 +366,58 @@ receive_read_objects_result(info, {_EventType, EventValue}, State) ->
     receive_read_objects_result(cast, EventValue, State).
 
 
+receive_validate_or_read_objects_result(cast, {ok, {invalid, Key, Type, ReadSnapshot, Token}}, CoordState = #state{
+    num_to_read = NumToRead,
+    return_accumulator = ReadKeys,
+    updated_partitions = UpdatedPartitions
+}) ->
+    {Snapshot, EffectiveToken} = case length(UpdatedPartitions) > 0 of
+        true ->
+            % There are some local updates that must be applied.
+            % It is not safe to apply the update and to return
+            % the token returned by the vnode noor it is safe to return
+            % the updated state with a token specific to this uncommited
+            % transaction.
+            %
+            % In such case, always return a token that will be invalid so
+            % the client can know that returned value shouldn't be cached for
+            % later revalidation.
+            UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, ReadSnapshot),
+            {UpdatedSnapshot, ?INVALID_OBJECT_TOKEN};
+        false ->
+            {ReadSnapshot, Token}
+    end,
+
+    ReadValues = replace_first(ReadKeys, Key, {invalid, Snapshot, EffectiveToken}),
+
+    case NumToRead > 1 of
+        true ->
+            {next_state, receive_validate_or_read_objects_result, CoordState#state{
+                num_to_read = NumToRead - 1,
+                return_accumulator = ReadValues
+            }};
+        false ->
+            {next_state, execute_op, CoordState#state{num_to_read = 0},
+                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+    end;
+
+receive_validate_or_read_objects_result(cast, {ok, {valid, Key, _Type}}, CoordState = #state{
+    num_to_read = NumToRead,
+    return_accumulator = ReadKeys
+}) ->
+    ReadValues = replace_first(ReadKeys, Key, valid),
+
+    case NumToRead > 1 of
+        true ->
+            {next_state, receive_validate_or_read_objects_result, CoordState#state{
+                num_to_read = NumToRead - 1,
+                return_accumulator = ReadValues
+            }};
+        false ->
+            {next_state, execute_op, CoordState#state{num_to_read = 0},
+                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+    end.
+
 %%%== receive_logging_responses
 
 %% internal state timeout
@@ -564,6 +617,49 @@ execute_command(read_objects, Objects, Sender, State = #state{transaction=Transa
 
     {next_state, receive_read_objects_result, NewCoordState#state{from = Sender}};
 
+execute_command(validate_or_read, {Key, Type, Token}, Sender, State = #state{
+    transaction=Transaction,
+    updated_partitions=UpdatedPartitions
+}) ->
+    Partition = log_utilities:get_key_partition(Key),
+    EffectiveToken = case has_tx_updates(Partition, State) of
+        true -> ?INVALID_OBJECT_TOKEN;
+        false -> Token
+    end,
+
+    case perform_validate_or_read({Key, Type, EffectiveToken}, UpdatedPartitions, Transaction, Sender) of
+        {error, _} ->
+            abort(State);
+        ReadResult ->
+            {next_state, execute_op, State, {reply, Sender, {ok, ReadResult}}}
+    end;
+
+execute_command(validate_or_read_objects, {Objects, Tokens}, Sender, State = #state{transaction=Transaction}) ->
+    ExecuteReads = fun({{Key, Type}, Token}, AccState) ->
+        Partition = log_utilities:get_key_partition(Key),
+
+        % If there are some local update, there is not point on trying to
+        % validate the value as it will be invalidated here anyway.
+        %
+        % Send an invalid token and expect a full result.
+        EffectiveToken = case has_tx_updates(Partition, State) of
+            true -> ?INVALID_OBJECT_TOKEN;
+            false -> Token
+        end,
+
+        ok = clocksi_vnode:async_validate_or_read_data_item(Partition, Transaction, Key, Type, EffectiveToken),
+        ReadKeys = AccState#state.return_accumulator,
+        AccState#state{return_accumulator=[Key | ReadKeys]}
+    end,
+
+    NewCoordState = lists:foldl(
+        ExecuteReads,
+        State#state{num_to_read = length(Objects), return_accumulator=[]},
+        lists:zip(Objects, Tokens)
+    ),
+
+    {next_state, receive_validate_or_read_objects_result, NewCoordState#state{from = Sender}};
+
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Transaction}) ->
     ExecuteUpdates = fun(Op, AccState=#state{
@@ -678,6 +774,12 @@ apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
             clocksi_materializer:materialize_eager(Type, Snapshot, FilteredAndReversedUpdates)
     end.
 
+-spec has_tx_updates(index_node(), state()) -> boolean().
+has_tx_updates(Partition, CoordState) ->
+    case lists:keyfind(Partition, 1, CoordState#state.updated_partitions) of
+        false -> false;
+        _ -> true
+    end.
 
 %%@doc Set the transaction Snapshot Time to the maximum value of:
 %%     1.ClientClock, which is the last clock of the system the client
@@ -744,6 +846,22 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
             {error, Reason}
     end.
 
+perform_validate_or_read({Key, Type, Token}, UpdatedPartitions, Transaction, Sender) ->
+    Partition = log_utilities:get_key_partition(Key),
+
+    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
+        false -> [];
+        {Partition, WS} ->
+            ?INVALID_OBJECT_TOKEN = Token,
+            WS
+    end,
+
+    case clocksi_vnode:validate_or_read_data_item(Partition, Transaction, Key, Type, Token, WriteSet) of
+        {ok, Result} -> Result;
+        {error, Reason} ->
+            gen_statem:reply(Sender, {error, Reason}),
+            {error, Reason}
+    end.
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     ?STATS(operation_update),
@@ -961,6 +1079,7 @@ meck_load() ->
     % meck:expect(clocksi_vnode, single_commit_sync, fun(_,_) -> 0 end),
     meck:expect(clocksi_vnode, commit, fun(_, _, _) -> ok end),
     meck:expect(clocksi_vnode, read_data_item, fun(A, B, K, C, D) -> mock_partition:read_data_item(A, B, K, C, D) end),
+    meck:expect(clocksi_vnode, validate_or_read_data_item, fun(Node, TxId, Key, Type, Token, Updates) -> mock_partition:validate_or_read_data_item(Node, TxId, Key, Type, Token, Updates) end),
     meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, A) -> mock_partition:prepare(UpdatedPartition, A) end),
     meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, A) -> mock_partition:single_commit(UpdatedPartition, A) end),
     meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, A) -> mock_partition:abort(UpdatedPartition, A) end),
@@ -1005,6 +1124,11 @@ t_test_() ->
 
         fun read_single_fail_/0,
         fun read_success_/0,
+
+        fun validate_or_read_single_fail_no_token_/0,
+        fun validate_or_read_single_fail_with_token_/0,
+        fun validate_or_read_single_fail_invalid_token_/0,
+        fun validate_or_read_success_/0,
 
         fun downstream_fail_/0,
         fun get_snapshot_time_/0,
@@ -1066,6 +1190,46 @@ read_success_() ->
     ?assertEqual({ok, mock_value},
         gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
     ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
+
+validate_or_read_single_fail_no_token_() ->
+    Pid = whereis(srv),
+
+    ?assertEqual({error, mock_read_fail},
+        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, ?INVALID_OBJECT_TOKEN}}, infinity)).
+
+validate_or_read_single_fail_with_token_() ->
+    Pid = whereis(srv),
+
+    ?assertEqual({error, mock_read_fail},
+        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"valid">>}}, infinity)).
+
+validate_or_read_single_fail_invalid_token_() ->
+    Pid = whereis(srv),
+
+    ?assertEqual({error, mock_read_fail},
+        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"invalid">>}}, infinity)).
+
+validate_or_read_success_() ->
+    Pid = whereis(srv),
+
+    {ok, {invalid, State, Token}} = gen_statem:call(Pid,
+                                                    {validate_or_read,
+                                                     {counter,
+                                                      antidote_crdt_counter_pn,
+                                                      ?INVALID_OBJECT_TOKEN}}, infinity),
+    ?assertEqual(2, State),
+
+    {ok, valid} =  gen_statem:call(Pid,
+                                   {validate_or_read,
+                                   {counter,
+                                    antidote_crdt_counter_pn,
+                                    Token}}, infinity),
+
+    {ok, {invalid, State, Token}} = gen_statem:call(Pid,
+                                                    {validate_or_read,
+                                                    {counter,
+                                                     antidote_crdt_counter_pn,
+                                                     <<"past_token">>}}, infinity).
 
 downstream_fail_() ->
     Pid = whereis(srv),
