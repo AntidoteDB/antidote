@@ -1,16 +1,24 @@
-{"1.1.0",
+{"1.2.0",
 [{<<"accept">>,{pkg,<<"accept">>,<<"0.3.5">>},1},
  {<<"elli">>,{pkg,<<"elli">>,<<"3.3.0">>},0},
  {<<"elli_prometheus">>,{pkg,<<"elli_prometheus">>,<<"0.2.0">>},0},
- {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.6.0">>},0},
+ {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.8.1">>},0},
  {<<"prometheus_process_collector">>,
-  {pkg,<<"prometheus_process_collector">>,<<"1.6.0">>},
-  0}]}.
+  {git,"git://github.com/deadtrickster/prometheus_process_collector.git",
+       {ref,"78697537f01a858959a26a9c74db5aad2971b244"}},
+  0},
+ {<<"quantile_estimator">>,{pkg,<<"quantile_estimator">>,<<"0.2.1">>},1}]}.
 [
 {pkg_hash,[
  {<<"accept">>, <<"B33B127ABCA7CC948BBE6CAA4C263369ABF1347CFA9D8E699C6D214660F10CD1">>},
  {<<"elli">>, <<"089218762A7FF3D20AE81C8E911BD0F73EE4EE0ED85454226D1FC6B4FFF3B4F6">>},
  {<<"elli_prometheus">>, <<"FD2C34A024D52AED2E5C6DBB99CA749F846C844DA3C266B667E36A3D574BC9FB">>},
- {<<"prometheus">>, <<"20510F381DB1CCAB818B4CF2FAC5FA6AB5CC91BC364A154399901C001465F46F">>},
- {<<"prometheus_process_collector">>, <<"B169E224337497CD858DA16F9361EDABC5931B9D12201A97EE15D88EF5A6FCAA">>}]}
+ {<<"prometheus">>, <<"FA76B152555273739C14B06F09F485CF6D5D301FE4E9D31B7FF803D26025D7A0">>},
+ {<<"quantile_estimator">>, <<"EF50A361F11B5F26B5F16D0696E46A9E4661756492C981F7B2229EF42FF1CD15">>}]},
+{pkg_hash_ext,[
+ {<<"accept">>, <<"11B18C220BCC2EAB63B5470C038EF10EB6783BCB1FCDB11AA4137DEFA5AC1BB8">>},
+ {<<"elli">>, <<"698B13B33D05661DB9FE7EFCBA41B84825A379CCE86E486CF6AFF9285BE0CCF8">>},
+ {<<"elli_prometheus">>, <<"140F09B4B5368FF7D8E72CF1EE997B2AA149112FA7A07AE6A4251E144DDAE26F">>},
+ {<<"prometheus">>, <<"6EDFBE928D271C7F657A6F2C46258738086584BD6CAE4A000B8B9A6009BA23A5">>},
+ {<<"quantile_estimator">>, <<"282A8A323CA2A845C9E6F787D166348F776C1D4A41EDE63046D72D422E3DA946">>}]}
 ].
