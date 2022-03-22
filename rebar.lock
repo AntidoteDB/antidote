@@ -4,7 +4,7 @@
  {<<"elli_prometheus">>,{pkg,<<"elli_prometheus">>,<<"0.2.0">>},0},
  {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.8.1">>},0},
  {<<"prometheus_process_collector">>,
-  {git,"git://github.com/deadtrickster/prometheus_process_collector.git",
+  {git,"https://github.com/deadtrickster/prometheus_process_collector.git",
        {ref,"78697537f01a858959a26a9c74db5aad2971b244"}},
   0},
  {<<"quantile_estimator">>,{pkg,<<"quantile_estimator">>,<<"0.2.1">>},1}]}.
