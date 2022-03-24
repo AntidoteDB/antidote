@@ -8,7 +8,7 @@ This section assumes that you have at least one AntidoteDB node running. Check t
 The `antidotec_pb_socket` has several connection functions, but the simplest is `antidotec_pb_socket:start_link/2`, which takes in an address and port number and returns a connection wrapped in an Erlang Pid:
 
 ```erl
-Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+{ok, Pid} = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 ```
 
 If you are running a local instance of AntidoteDB, the default protocol buffers port number is `8087`.
@@ -20,7 +20,7 @@ Once you have acquired a `Pid` connection to an AntidoteDB node, you are ready t
 For coordinating Antidote instances, you can use the following operations via the Erlang client:
 
 ```erl
-Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+{ok, Pid} = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 %%
 ok = antidotec_pb_management:create_dc(Pid, [Node1, Node2]).
 {ok, Descriptor} = antidotec_pb_management:get_connection_descriptor(Pid).
@@ -53,7 +53,7 @@ The default transaction type is `interactive`. Currently you can create `static`
 Here is a simple example:
 
 ```erl
-Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+{ok, Pid}  = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 %% ignore leaves out the clock parameter in the following calls
 {ok, TxId1} = antidotec_pb:start_transaction(Pid, ignore). %% interactive transaction
 {ok, TxId2} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]). %% static transaction
@@ -67,11 +67,11 @@ tuples that identify the key, its type and the bucket it is being read from.
 Here is an example of a read-only static transaction:
 
 ```erl
-Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+{ok, Pid} = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
-RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
+RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_lww, <<"my_bucket">>}.
 %% start a static transaction
-{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
+{ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]).
 %% read values from antidote
 {ok, [Counter, Register]} = antidotec_pb:read_objects(Pid, [CounterBoundObj, RegisterBoundObj], TxId).
 %% get the actual values out of the CRDTs
@@ -86,22 +86,24 @@ include operations allowed on the CRDT type for the bound object. To clarify thi
 example below:
 
 ```erl
-Pid = antidotec_pb_socket:start_link("127.0.0.1", 8087).
+{ok, Pid} = antidotec_pb_socket:start_link("127.0.0.1", 8087).
 CounterBoundObj = {<<"my_antidote_counter">>, antidote_crdt_counter_pn, <<"my_bucket">>}.
-RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_mv, <<"my_bucket">>}.
+RegisterBoundObj = {<<"my_antidote_register">>, antidote_crdt_register_lww, <<"my_bucket">>}.
 %% start a static transaction
-{ok, TxId} = start_transaction(Pid, Clock, [{static, true}]).
+{ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]).
 %% Perform local updates
 %% Get a new counter object and increment its value by 5
-UpdatedCounter = antidotec_counter:increment(5, antidote_crdt_counter:new())
+UpdatedCounter = antidotec_counter:increment(5, antidotec_counter:new()).
 %% Get a new register object and assign it to some value
-UpdatedRegister = antidotec_reg:assign(antidote_crdt_reg:new(), "Antidote rules!")
+UpdatedRegister = antidotec_reg:assign(antidotec_reg:new(), "Antidote rules!").
 %% convert updated values into operations to be performed in the database
-CounterUpdateOps = antidotec_counter:to_ops(CounterBoundObj, UpdatedCounter),
-RegisterUpdateOps = antidotec_reg:to_ops(RegisterBoundObj, UpdatedRegister),
+CounterUpdateOps = antidotec_counter:to_ops(CounterBoundObj, UpdatedCounter).
+RegisterUpdateOps = antidotec_reg:to_ops(RegisterBoundObj, UpdatedRegister).
 %% write values to antidote
-antidotec_pb:read_objects(Pid, [CounterUpdateOps, RegisterUpdateOps], TxId).
+antidotec_pb:update_objects(Pid, CounterUpdateOps, TxId).
+antidotec_pb:update_objects(Pid, RegisterUpdateOps, TxId).
 %% get the actual values out of the CRDTs
+{ok, [Counter, Register]} = antidotec_pb:read_objects(Pid, [CounterBoundObj, RegisterBoundObj], TxId).
 CounterVal = antidotec_counter:value(Counter).
 RegisterVal = antidotec_reg:value(Register).
 ```
