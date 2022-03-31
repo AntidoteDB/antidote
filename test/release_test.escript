@@ -41,7 +41,7 @@ test_transaction(Tries) ->
                     io:format("Retrying to start transaction ...~n"),
                     test_transaction(Tries - 1);
                 {ok, [Val]} ->
-                    io:format("Commiting transaction~n"),
+                    io:format("Committing transaction~n"),
                     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx),
                     Value = antidotec_counter:value(Val),
                     true = Value >= 0,

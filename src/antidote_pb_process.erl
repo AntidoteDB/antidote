@@ -117,7 +117,7 @@ process(get_connection_descriptor) ->
        {get_connection_descriptor_response, {ok, term_to_binary(Descriptor)}}
     catch
       Error:Reason ->
-        ?LOG_ERROR("Get Conection Descriptor failed ~p : ~p", [Error, Reason]),
+        ?LOG_ERROR("Get Connection Descriptor failed ~p : ~p", [Error, Reason]),
         {get_connection_descriptor_response, {error, aborted}}
     end;
 

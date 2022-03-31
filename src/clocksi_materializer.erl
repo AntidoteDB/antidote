@@ -196,7 +196,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
                                MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
     end.
 
-%% @doc Check whether an udpate is included in a snapshot and also
+%% @doc Check whether an update is included in a snapshot and also
 %%      if that update is newer than a snapshot's commit time
 %%      Input:
 %%      TxId: Descriptor of the transaction requesting the snapshot
@@ -336,7 +336,7 @@ materializer_missing_op_test() ->
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).
 
 %% This test tests the case when there are updates that only snapshots that contain entries from one of the DCs.
-%% This can happen for example if an update is commited before the DCs have been connected.
+%% This can happen for example if an update is committed before the DCs have been connected.
 %% It ensures that when we read using a snapshot with and without all the DCs we still include the correct updates.
 materializer_missing_dc_test() ->
     Type = antidote_crdt_counter_pn,

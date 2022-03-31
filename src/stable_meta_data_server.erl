@@ -123,7 +123,7 @@ broadcast_meta_data_internal(Key, Value, IsEnv) ->
 
 %% Broadcasts a key, value pair to all nodes in the DC
 %% Uses the provided MergeFunc which should take as input two values to merge the new value
-%% with an exisiting value (if there is no existing value, it uses the InitFunc to create the value to merge with)
+%% with an existing value (if there is no existing value, it uses the InitFunc to create the value to merge with)
 -spec broadcast_meta_data_merge(term(), term(), function(), function()) -> ok.
 broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
     NodeList = dc_utilities:get_my_dc_nodes(),

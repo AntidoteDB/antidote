@@ -181,7 +181,7 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
                             end;
                         [_|_] -> %% Read Multiple objects  = read from a snapshot
                             %% Snapshot includes all updates committed at time GST
-                            %% from local and remore replicas
+                            %% from local and remote replicas
                             case gr_snapshot_obtain(Clock, Objects, StateOrValue) of
                                 {ok, Result, CommitTime} ->
                                     {ok, Result, CommitTime};
@@ -242,7 +242,7 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
         true ->
             %% Set all entries in snapshot as GST
             ST = vectorclock:set_all(GST, VST),
-            %% ST doesnot contain entry for local dc, hence explicitly
+            %% ST doesn't contain entry for local dc, hence explicitly
             %% add it in snapshot time
             SnapshotTime = vectorclock:set(DcId, GST, ST),
             {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}]),
@@ -267,7 +267,7 @@ format_update_params(Updates) ->
                       {{Key, Bucket}, Type, {Op, Param}}
               end, Updates).
 
-%% The following function are usefull for testing. They shouldn't be used in normal operations.
+%% The following function are useful for testing. They shouldn't be used in normal operations.
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare(TxId)->
     case gen_statem:call(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of

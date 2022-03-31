@@ -77,7 +77,7 @@
 %% Send the new operation to the log_sender.
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
-%% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
+%% WARNING: only LOCALLY COMMITTED operations (not from remote DCs) should be sent to log_sender_vnode.
 -spec send(partition_id(), log_record()) -> ok.
 send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
 

@@ -71,7 +71,7 @@ is_restart() ->
 store_meta_data_name(MetaDataName) ->
     stable_meta_data_server:broadcast_meta_data(meta_data_name, MetaDataName).
 
-%% For loading enviroment varialbes
+%% For loading environment varialbes
 -spec get_env_meta_data(atom(), term()) -> atom().
 get_env_meta_data(Name, Default) ->
     case stable_meta_data_server:read_meta_data({env, Name}) of
