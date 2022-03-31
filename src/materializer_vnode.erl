@@ -27,7 +27,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Provides an API to read and write to the materializer cache.
-%%      Materializer is partioned as per the CURE protocol.
+%%      Materializer is partitioned as per the CURE protocol.
 
 -module(materializer_vnode).
 
@@ -566,7 +566,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = Snapshot
                              HalfListLen = ListLen div 2,
                          case HalfListLen =< ?OPS_THRESHOLD of
                              true ->
-                                 %% Don't shrink list, already minimun size
+                                 %% Don't shrink list, already minimum size
                                  ListLen;
                              false ->
                                  %% Only shrink if shrinking would leave some space for new ops
@@ -819,7 +819,7 @@ large_list_test() ->
     Type = antidote_crdt_counter_pn,
     State = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
-    %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
+    %% Make 1000 updates to grow the list, without generating a snapshot to perform the gc
     {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, [], false, State),
     ?assertEqual(0, Type:value(Res0)),
 

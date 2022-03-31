@@ -30,7 +30,7 @@
 %% queries to other DCs, the types of messages that can be sent are found in
 %% include/antidote_message_types.hrl
 %% To perform a request, call the "perform_request" function below
-%% Then need to update the code of the recipiant of the query at inter_dc_query_router
+%% Then need to update the code of the recipient of the query at inter_dc_query_router
 
 %% The unanswered_query caching is there only for the purpose of disconnecting DCs.
 %% The reliability-related features like resending the query are handled by ZeroMQ.

@@ -376,7 +376,7 @@ receive_validate_or_read_objects_result(cast, {ok, {invalid, Key, Type, ReadSnap
             % There are some local updates that must be applied.
             % It is not safe to apply the update and to return
             % the token returned by the vnode noor it is safe to return
-            % the updated state with a token specific to this uncommited
+            % the updated state with a token specific to this uncommitted
             % transaction.
             %
             % In such case, always return a token that will be invalid so

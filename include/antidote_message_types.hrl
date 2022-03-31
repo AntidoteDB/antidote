@@ -13,7 +13,7 @@
 -define(ERROR_MSG,5).
 -define(BCOUNTER_REQUEST,6).
 
-%% The number of bytes a parition id is in a message
+%% The number of bytes a partition id is in a message
 -define(PARTITION_BYTE_LENGTH, 20).
 %% the number of bytes a message id is
 -define(REQUEST_ID_BYTE_LENGTH, 2).

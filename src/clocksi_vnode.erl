@@ -205,7 +205,7 @@ init([Partition]) ->
 
 %% @doc The table holding the prepared transactions is shared with concurrent
 %%      readers, so they can safely check if a key they are reading is being updated.
-%%      This function checks whether or not all tables have been intialized or not yet.
+%%      This function checks whether or not all tables have been initialized or not yet.
 %%      Returns true if the have, false otherwise.
 check_tables_ready() ->
     PartitionList = dc_utilities:get_all_partitions_nodes(),
@@ -462,8 +462,8 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     end.
 
 %% @doc clean_and_notify:
-%%      This function is used for cleanning the state a transaction
-%%      stores in the vnode while it is being procesed. Once a
+%%      This function is used for cleaning the state a transaction
+%%      stores in the vnode while it is being processed. Once a
 %%      transaction commits or aborts, it is necessary to clean the
 %%      prepared record of a transaction T. There are three possibility
 %%      when trying to clean a record:

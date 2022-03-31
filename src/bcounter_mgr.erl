@@ -75,7 +75,7 @@ init([]) ->
 
 %% @doc Processes a decrement operation for a bounded counter.
 %% If the operation is unsafe (i.e. the value of the counter can go
-%% below 0), operation fails, otherwhise a downstream for the decrement
+%% below 0), operation fails, otherwise a downstream for the decrement
 %% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
     MyDCId = dc_utilities:get_my_dc_id(),
@@ -87,7 +87,7 @@ generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
     MyDCId = dc_utilities:get_my_dc_id(),
     ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 
-%% @doc Processes a trasfer operation between two owners of the
+%% @doc Processes a transfer operation between two owners of the
 %% counter.
 generate_downstream(_Key, {transfer, {Amount, To, From}}, BCounter) ->
     ?DATA_TYPE:downstream({transfer, {Amount, To, From}}, BCounter).
