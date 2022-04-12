@@ -101,26 +101,31 @@
 }).
 -type commit_log_payload() :: #commit_log_payload{}.
 
+-record(start_log_payload, {}).
+
 -record(update_log_payload, {
     key :: key(),
     bucket :: bucket(),
     type :: type(),
     op :: op()
 }).
+
 -type update_log_payload() :: #update_log_payload{}.
 
 -record(abort_log_payload, {}).
 
 -record(prepare_log_payload, {prepare_time :: non_neg_integer()}).
 
--type any_log_payload() :: #update_log_payload{}
+-type any_log_payload() :: #start_log_payload{}
+                         | #update_log_payload{}
                          | #commit_log_payload{}
                          | #abort_log_payload{}
                          | #prepare_log_payload{}.
 
 -record(log_operation, {
     tx_id :: txid(),
-    op_type :: update
+    op_type :: start
+             | update
              | prepare
              | commit
              | abort
