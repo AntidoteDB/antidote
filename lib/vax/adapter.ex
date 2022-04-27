@@ -25,7 +25,7 @@ defmodule Vax.Adapter do
       id: ConnectionPool,
       start:
         {NimblePool, :start_link,
-         [[worker: {Vax.ConnectionPool, [address: address, port: port]}, size: pool_size]]}
+         [[worker: {ConnectionPool, [address: address, port: port]}, size: pool_size]]}
     }
 
     {:ok, child_spec, %{}}
@@ -64,8 +64,8 @@ defmodule Vax.Adapter do
   def execute_static_transaction(repo, fun) do
     meta = Ecto.Adapter.lookup_meta(repo)
 
-    Vax.Adapter.checkout(meta, [], fn ->
-      conn = Vax.Adapter.get_conn()
+    checkout(meta, [], fn ->
+      conn = get_conn()
 
       {:ok, tx_id} = :antidotec_pb.start_transaction(conn, :ignore, static: true)
 
@@ -74,7 +74,54 @@ defmodule Vax.Adapter do
   end
 
   @impl true
-  defmacro __before_compile__(env) do
-    env
+  defmacro __before_compile__(_env) do
+    quote do
+      @doc """
+      Increments a counter
+
+      See `Vax.Adapter.inc_counter/3` for more information
+      """
+      @spec inc_counter(key :: binary(), amount :: integer()) :: :ok
+      def inc_counter(key, amount) do
+        Vax.Adapter.inc_counter(__MODULE__, key, amount)
+      end
+
+      @doc """
+      Reads a counter
+
+      See `Vax.Adapter.read_counter/2` for more information
+      """
+      @spec read_counter(key :: binary()) :: integer()
+      def read_counter(key) do
+        Vax.Adapter.read_counter(__MODULE__, key)
+      end
+    end
+  end
+
+  @doc """
+  Reads a counter
+  """
+  @spec read_counter(repo :: atom() | pid(), key :: binary()) :: integer()
+  def read_counter(repo, key) do
+    execute_static_transaction(repo, fn conn, tx_id ->
+      obj = {key, :antidote_crdt_counter_pn, "my_bucket"}
+      {:ok, [result]} = :antidotec_pb.read_objects(conn, [obj], tx_id)
+
+      :antidotec_counter.value(result)
+    end)
+  end
+
+  @doc """
+  Increases a counter
+  """
+  @spec inc_counter(repo :: atom() | pid(), key :: binary(), amount :: integer()) :: :ok
+  def inc_counter(repo, key, amount) do
+    execute_static_transaction(repo, fn conn, tx_id ->
+      obj = {key, :antidote_crdt_counter_pn, "my_bucket"}
+      counter = :antidotec_counter.increment(amount, :antidotec_counter.new())
+      counter_update_ops = :antidotec_counter.to_ops(obj, counter)
+
+      :antidotec_pb.update_objects(conn, counter_update_ops, tx_id)
+    end)
   end
 end

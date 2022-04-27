@@ -1,6 +1,7 @@
 defmodule Vax.ConnectionPool do
   @behaviour NimblePool
 
+  @spec checkout(pid() | atom(), ({pid(), reference()}, pid() -> {term(), pid()})) :: term()
   def checkout(pool, fun, _opts \\ []) do
     NimblePool.checkout!(pool, :checkout, fun)
   end
