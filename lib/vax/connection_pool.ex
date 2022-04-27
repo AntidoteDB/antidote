@@ -11,6 +11,8 @@ defmodule Vax.ConnectionPool do
     address = Keyword.fetch!(pool_state, :address)
     port = Keyword.fetch!(pool_state, :port)
 
+    # Starting the protobuf socket is blocking, so we use NimblePool async
+    # initialization
     init_fun = fn ->
       {:ok, socket_pid} = :antidotec_pb_socket.start_link(address, port)
       %{pb_socket: socket_pid}

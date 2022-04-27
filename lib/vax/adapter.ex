@@ -7,6 +7,8 @@ defmodule Vax.Adapter do
 
   @behaviour Ecto.Adapter
 
+  @bucket "vax"
+
   @impl true
   def loaders(:binary_id, type), do: [type, Ecto.UUID]
   def loaders(_primitive_type, ecto_type), do: [ecto_type]
@@ -56,12 +58,12 @@ defmodule Vax.Adapter do
 
   @impl true
   def checked_out?(_adapter_meta) do
-    Process.get(:vax_checked_out_conn, nil)
+    not is_nil(Process.get(:vax_checked_out_conn))
   end
 
-  def get_conn(), do: Process.get(:vax_checked_out_conn) || raise("Missing connection")
+  defp get_conn(), do: Process.get(:vax_checked_out_conn) || raise("Missing connection")
 
-  def execute_static_transaction(repo, fun) do
+  defp execute_static_transaction(repo, fun) do
     meta = Ecto.Adapter.lookup_meta(repo)
 
     checkout(meta, [], fn ->
@@ -79,11 +81,11 @@ defmodule Vax.Adapter do
       @doc """
       Increments a counter
 
-      See `Vax.Adapter.inc_counter/3` for more information
+      See `Vax.Adapter.increment_counter/3` for more information
       """
-      @spec inc_counter(key :: binary(), amount :: integer()) :: :ok
-      def inc_counter(key, amount) do
-        Vax.Adapter.inc_counter(__MODULE__, key, amount)
+      @spec increment_counter(key :: binary(), amount :: integer()) :: :ok
+      def increment_counter(key, amount) do
+        Vax.Adapter.increment_counter(__MODULE__, key, amount)
       end
 
       @doc """
@@ -104,7 +106,7 @@ defmodule Vax.Adapter do
   @spec read_counter(repo :: atom() | pid(), key :: binary()) :: integer()
   def read_counter(repo, key) do
     execute_static_transaction(repo, fn conn, tx_id ->
-      obj = {key, :antidote_crdt_counter_pn, "my_bucket"}
+      obj = {key, :antidote_crdt_counter_pn, @bucket}
       {:ok, [result]} = :antidotec_pb.read_objects(conn, [obj], tx_id)
 
       :antidotec_counter.value(result)
@@ -114,10 +116,10 @@ defmodule Vax.Adapter do
   @doc """
   Increases a counter
   """
-  @spec inc_counter(repo :: atom() | pid(), key :: binary(), amount :: integer()) :: :ok
-  def inc_counter(repo, key, amount) do
+  @spec increment_counter(repo :: atom() | pid(), key :: binary(), amount :: integer()) :: :ok
+  def increment_counter(repo, key, amount) do
     execute_static_transaction(repo, fn conn, tx_id ->
-      obj = {key, :antidote_crdt_counter_pn, "my_bucket"}
+      obj = {key, :antidote_crdt_counter_pn, @bucket}
       counter = :antidotec_counter.increment(amount, :antidotec_counter.new())
       counter_update_ops = :antidotec_counter.to_ops(obj, counter)
 

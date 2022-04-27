@@ -6,7 +6,10 @@ defmodule Vax.AdapterIntegrationTest do
   end
 
   setup_all %{} do
-    start_supervised!({TestRepo, address: "localhost", port: 8087})
+    address = Application.get_env(:vax, :address)
+    port = Application.get_env(:vax, :port)
+
+    start_supervised!({TestRepo, address: address, port: port})
 
     :ok
   end
@@ -24,18 +27,18 @@ defmodule Vax.AdapterIntegrationTest do
   test "performing actions on checked out connection" do
     TestRepo.checkout(fn ->
       assert 0 = TestRepo.read_counter("bar")
-      assert :ok = TestRepo.inc_counter("bar", 10)
+      assert :ok = TestRepo.increment_counter("bar", 10)
       assert 10 = TestRepo.read_counter("bar")
-      assert :ok = TestRepo.inc_counter("bar", 20)
+      assert :ok = TestRepo.increment_counter("bar", 20)
       assert 30 = TestRepo.read_counter("bar")
     end)
   end
 
   test "reading and increasing a counter" do
     assert 0 = TestRepo.read_counter("foo")
-    assert :ok = TestRepo.inc_counter("foo", 10)
+    assert :ok = TestRepo.increment_counter("foo", 10)
     assert 10 = TestRepo.read_counter("foo")
-    assert :ok = TestRepo.inc_counter("foo", 20)
+    assert :ok = TestRepo.increment_counter("foo", 20)
     assert 30 = TestRepo.read_counter("foo")
   end
 end
