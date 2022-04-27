@@ -8,7 +8,8 @@ defmodule Vax.MixProject do
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      package: package()
+      package: package(),
+      test_paths: ["test", "integration_test"]
     ] ++ docs()
   end
 
@@ -23,7 +24,8 @@ defmodule Vax.MixProject do
   defp deps do
     [
       {:ecto, "~> 3.7.0"},
-      {:antidotec_pb, "~> 0.2.9"}
+      {:antidotec_pb, "~> 0.2.9"},
+      {:nimble_pool, "~> 0.2.6"}
     ]
   end
 

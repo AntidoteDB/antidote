@@ -1,0 +1,25 @@
+defmodule Vax.ConnectionPool do
+  @behaviour NimblePool
+
+  def checkout(pool, fun, _opts \\ []) do
+    NimblePool.checkout!(pool, :checkout, fun)
+  end
+
+  @impl true
+  def init_worker(pool_state) do
+    address = Keyword.fetch!(pool_state, :address)
+    port = Keyword.fetch!(pool_state, :port)
+
+    init_fun = fn ->
+      {:ok, socket_pid} = :antidotec_pb_socket.start_link(address, port)
+      %{pb_socket: socket_pid}
+    end
+
+    {:async, init_fun, pool_state}
+  end
+
+  @impl true
+  def handle_checkout(_maybe_wrapped_command, _from, worker_state, pool_state) do
+    {:ok, worker_state.pb_socket, worker_state, pool_state}
+  end
+end
