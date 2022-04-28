@@ -1,4 +1,4 @@
-REBAR = $(shell pwd)/rebar3
+REBAR?= $(shell pwd)/rebar3
 COVERPATH = $(shell pwd)/_build/test/cover
 .PHONY: rel test relgentlerain docker-build docker-run
 
