@@ -43,7 +43,7 @@
 -export([
     start_link/0,
     append/3,
-    async_append/4,
+    asyn_append/4,
     get_my_dc_id/0,
     get/2,
     get_preflist_from_key/1,
@@ -88,7 +88,7 @@ start_link() ->
 append(_Node, _LogId, _LogRecord) ->
     {ok, {0, node}}.
 
-async_append(_Node, _LogId, _LogRecord, ReplyTo) ->
+asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
     case ReplyTo of
         ignore -> ok;
         {_, _, Pid} -> gen_statem:cast(Pid, {ok, 0})
