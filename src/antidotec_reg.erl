@@ -36,7 +36,8 @@
         ]).
 
 -record(antidote_reg, {
-            value
+            value,
+            new_value
          }).
 
 -export_type([antidote_reg/0]).
@@ -58,7 +59,8 @@ new(Value) ->
 -spec value(antidote_reg()) -> [term()].
 value(#antidote_reg{value=Value}) -> Value.
 
-dirty_value(#antidote_reg{value=Value}) -> Value.
+dirty_value(#antidote_reg{value=Value, new_value=undefined}) -> Value;
+dirty_value(#antidote_reg{new_value=NewValue}) -> NewValue.
 
 %% @doc Determines whether the passed term is a reg container.
 -spec is_type(term()) -> boolean().
@@ -69,12 +71,14 @@ is_type(T) ->
 -spec type() -> reg.
 type() -> reg.
 
--spec to_ops(term(), term()) -> [].
-to_ops(_, _) ->
-    [].
+to_ops(_, #antidote_reg{new_value=undefined}) ->
+  [];
 
-assign(_, Value) ->
-    #antidote_reg{value=Value}.
+to_ops(BoundObject, #antidote_reg{new_value=NewValue}) ->
+    [{BoundObject, assign, NewValue}].
+
+assign(Reg, Value) ->
+    Reg#antidote_reg{new_value=Value}.
 
 
 %% ===================================================================
