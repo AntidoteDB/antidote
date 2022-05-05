@@ -24,7 +24,7 @@ defmodule Vax.MixProject do
   defp deps do
     [
       {:ecto, "~> 3.7.0"},
-      {:antidotec_pb, "~> 0.2.9"},
+      {:antidotec_pb, github: "vaxine-io/antidote-erlang-client", branch: "master"},
       {:nimble_pool, "~> 0.2.6"}
     ]
   end
