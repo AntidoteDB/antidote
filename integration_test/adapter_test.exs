@@ -81,6 +81,78 @@ defmodule Vax.AdapterIntegrationTest do
     assert is_nil(TestRepo.get(MySchema, Ecto.UUID.generate()))
   end
 
+  describe "all" do
+    import Ecto.Query
+
+    setup do
+      {:ok, entry_a} = TestRepo.insert(%MySchema{name: "John", age: 19})
+      {:ok, entry_b} = TestRepo.insert(%MySchema{name: "Alice", age: 22})
+
+      {:ok, entry_a: entry_a, entry_b: entry_b}
+    end
+
+    test "can handle `where` with `:==`", %{entry_a: entry_a} do
+      assert [] = from(MySchema, where: [id: ^Ecto.UUID.generate()]) |> TestRepo.all()
+      assert [%MySchema{} = result] = from(MySchema, where: [id: ^entry_a.id]) |> TestRepo.all()
+      assert entry_a.id == result.id
+    end
+
+    test "can handle `where` with `in`", %{entry_a: entry_a, entry_b: entry_b} do
+      list = [entry_a.id, entry_b.id, Ecto.UUID.generate()]
+
+      assert [result_a, result_b] =
+               from(MySchema)
+               |> where([m], m.id in ^list)
+               |> TestRepo.all()
+
+      assert result_a.id in [entry_a.id, entry_b.id]
+      assert result_b.id in [entry_a.id, entry_b.id]
+    end
+
+    test "can handle `where` expressions with `or`", %{entry_a: entry_a, entry_b: entry_b} do
+      [result_a, result_b] =
+        from(MySchema)
+        |> where([m], m.id == ^entry_a.id or m.id == ^entry_b.id)
+        |> TestRepo.all()
+
+      assert result_a.id in [entry_a.id, entry_b.id]
+      assert result_b.id in [entry_a.id, entry_b.id]
+    end
+
+    test "raises if trying to use `where` with non pk field" do
+      assert_raise(
+        RuntimeError,
+        "Vax only supports filtering by primary key in where expressions",
+        fn ->
+          from(MySchema)
+          |> where([m], m.age == ^10)
+          |> TestRepo.all()
+        end
+      )
+    end
+
+    test "raises if trying to use multiple `where` expressions", %{
+      entry_a: entry_a,
+      entry_b: entry_b
+    } do
+      assert_raise(RuntimeError, ~r/Vax only supports a single/, fn ->
+        from(MySchema)
+        |> where([m], m.id == ^entry_a.id)
+        |> where([m], m.id == ^entry_b.id)
+        |> TestRepo.all()
+      end)
+    end
+
+    test "raises if trying to use invalid `where` expression", %{entry_a: entry_a} do
+      assert_raise(RuntimeError, ~r/Unsupported expression/, fn ->
+        # `and` is one of the unsupported expressions
+        from(MySchema)
+        |> where([m], m.id == ^entry_a.id and m.id == ^entry_a.id)
+        |> TestRepo.all()
+      end)
+    end
+  end
+
   # FIXME: reset operation seem to be sent correctly, but doesn't take effect
   test "deleting a schema entry" do
     {:ok, %{id: id} = entry} = TestRepo.insert(%MySchema{name: "Carl", age: 25})

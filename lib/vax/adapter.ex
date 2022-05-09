@@ -5,11 +5,46 @@ defmodule Vax.Adapter do
 
   alias Vax.ConnectionPool
   alias Vax.Adapter.Helpers
+  alias Vax.Adapter.Query
+
+  @bucket "vax"
 
   @behaviour Ecto.Adapter
   @behaviour Ecto.Adapter.Schema
+  @behaviour Ecto.Adapter.Queryable
 
-  @bucket "vax"
+  @impl Ecto.Adapter.Queryable
+  def stream(_adapter_meta, _query_meta, _query_cache, _params, _options) do
+    raise "Not implemented"
+  end
+
+  @impl Ecto.Adapter.Queryable
+  def prepare(:update_all, _query), do: raise("Not implemented")
+  def prepare(:delete_all, _query), do: raise("Not implemented")
+
+  def prepare(:all, query) do
+    {:nocache, query}
+  end
+
+  @impl Ecto.Adapter.Queryable
+  def execute(adapter_meta, query_meta, {:nocache, query}, params, _options) do
+    objs = Query.query_to_objs(query, params, @bucket)
+    fields = Query.select_fields(query_meta)
+
+    execute_static_transaction(adapter_meta.repo, fn conn, tx_id ->
+      {:ok, results} = :antidotec_pb.read_objects(conn, objs, tx_id)
+
+      results =
+        for result <- results,
+            result_value = :antidotec_map.value(result),
+            result_value != %{} do
+          map = Map.new(result_value, fn {{k, _t}, v} -> {String.to_atom(k), v} end)
+          Enum.map(fields, &Map.get(map, &1))
+        end
+
+      {Enum.count(results), results}
+    end)
+  end
 
   @impl Ecto.Adapter
   def loaders(:binary_id, type), do: [Ecto.UUID, type]
@@ -19,10 +54,25 @@ defmodule Vax.Adapter do
   @impl Ecto.Adapter
   def dumpers(:binary_id, type), do: [type, Ecto.UUID]
   def dumpers(:string, :string), do: [:string]
+  def dumpers({:in, _primitive_type}, {:in, ecto_type}), do: [&dump_inner(&1, ecto_type)]
   def dumpers(_primitive_type, ecto_type), do: [ecto_type, &term_to_binary/1]
 
   defp term_to_binary(term), do: {:ok, :erlang.term_to_binary(term)}
   defp binary_to_term(binary), do: {:ok, :erlang.binary_to_term(binary)}
+
+  defp dump_inner(values, ecto_type) do
+    values
+    |> Enum.reduce_while([], fn v, acc ->
+      case Ecto.Type.adapter_dump(__MODULE__, ecto_type, v) do
+        {:ok, v} -> {:cont, [v | acc]}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      :error -> :error
+      list -> {:ok, Enum.reverse(list)}
+    end
+  end
 
   @impl Ecto.Adapter
   def init(config) do
@@ -71,11 +121,6 @@ defmodule Vax.Adapter do
   @impl Ecto.Adapter
   defmacro __before_compile__(_env) do
     quote do
-      @impl Ecto.Repo
-      def get(schema, id, opts \\ []) do
-        Vax.Adapter.get(__MODULE__, schema, id, opts)
-      end
-
       @doc """
       Increments a counter
 
@@ -105,17 +150,6 @@ defmodule Vax.Adapter do
         Vax.Adapter.execute_static_transaction(__MODULE__, fun)
       end
     end
-  end
-
-  def get(repo, schema, pk, _opts) do
-    execute_static_transaction(repo, fn conn, tx_id ->
-      pk = Ecto.UUID.dump!(pk)
-      object = Helpers.build_object(schema.__schema__(:source), pk, @bucket)
-
-      {:ok, [result]} = :antidotec_pb.read_objects(conn, [object], tx_id)
-
-      Helpers.load_map(repo, schema, result)
-    end)
   end
 
   @doc """
