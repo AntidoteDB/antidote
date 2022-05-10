@@ -4,13 +4,11 @@ defmodule Vax.Adapter do
   """
 
   alias Vax.ConnectionPool
-  alias Vax.Adapter.Helpers
   alias Vax.Adapter.Query
 
   @bucket "vax"
 
   @behaviour Ecto.Adapter
-  @behaviour Ecto.Adapter.Schema
   @behaviour Ecto.Adapter.Queryable
 
   @impl Ecto.Adapter.Queryable
@@ -47,12 +45,19 @@ defmodule Vax.Adapter do
   end
 
   @impl Ecto.Adapter
-  def loaders(:binary_id, type), do: [Ecto.UUID, type]
+  def loaders(:binary_id, type), do: [type]
   def loaders(:string, :string), do: [:string]
-  def loaders(_primitive_type, ecto_type), do: [&binary_to_term/1, ecto_type]
+
+  def loaders(_primitive_type, ecto_type) do
+    if Vax.Type.base_or_composite?(ecto_type) do
+      [&binary_to_term/1, ecto_type]
+    else
+      [ecto_type]
+    end
+  end
 
   @impl Ecto.Adapter
-  def dumpers(:binary_id, type), do: [type, Ecto.UUID]
+  def dumpers(:binary_id, type), do: [type]
   def dumpers(:string, :string), do: [:string]
   def dumpers({:in, _primitive_type}, {:in, ecto_type}), do: [&dump_inner(&1, ecto_type)]
   def dumpers(_primitive_type, ecto_type), do: [ecto_type, &term_to_binary/1]
@@ -141,6 +146,38 @@ defmodule Vax.Adapter do
         Vax.Adapter.read_counter(__MODULE__, key)
       end
 
+      def insert(changeset_or_struct, opts \\ []) do
+        Vax.Adapter.Schema.insert(__MODULE__, changeset_or_struct, opts)
+      end
+
+      def update(changeset, opts \\ []) do
+        Vax.Adapter.Schema.update(__MODULE__, changeset, opts)
+      end
+
+      def insert_or_update(changeset, opts \\ []) do
+        Vax.Adapter.Schema.insert_or_update(__MODULE__, changeset, opts)
+      end
+
+      def delete(schema, opts \\ []) do
+        Vax.Adapter.Schema.delete(__MODULE__, schema, opts)
+      end
+
+      def insert!(changeset_or_struct, opts \\ []) do
+        Vax.Adapter.Schema.insert!(__MODULE__, changeset_or_struct, opts)
+      end
+
+      def update!(changeset, opts \\ []) do
+        Vax.Adapter.Schema.update!(__MODULE__, changeset, opts)
+      end
+
+      def insert_or_update!(changeset, opts \\ []) do
+        Vax.Adapter.Schema.insert_or_update!(__MODULE__, changeset, opts)
+      end
+
+      def delete!(schema, opts \\ []) do
+        Vax.Adapter.Schema.delete!(__MODULE__, schema, opts)
+      end
+
       @doc """
       Executes a static transaction
       """
@@ -176,72 +213,6 @@ defmodule Vax.Adapter do
       counter_update_ops = :antidotec_counter.to_ops(obj, counter)
 
       :antidotec_pb.update_objects(conn, counter_update_ops, tx_id)
-    end)
-  end
-
-  @impl Ecto.Adapter.Schema
-  def autogenerate(_type), do: Ecto.UUID.generate() |> Ecto.UUID.dump!()
-
-  @impl Ecto.Adapter.Schema
-  def delete(adapter_meta, schema_meta, filters, _options) do
-    execute_static_transaction(adapter_meta, fn conn, tx_id ->
-      schema_primary_key = Helpers.schema_primary_key!(schema_meta.schema)
-      primary_key = Keyword.get(filters, schema_primary_key)
-      object = Helpers.build_object(schema_meta.source, primary_key, @bucket)
-
-      :ok = :antidotec_pb.update_objects(conn, [{object, :reset, {}}], tx_id)
-
-      {:ok, []}
-    end)
-  end
-
-  @impl Ecto.Adapter.Schema
-  def insert(adapter_meta, schema_meta, fields, _on_conflict, _returning, _options) do
-    execute_static_transaction(adapter_meta, fn conn, tx_id ->
-      schema_primary_key = Helpers.schema_primary_key!(schema_meta.schema)
-
-      primary_key =
-        Keyword.get_lazy(fields, schema_primary_key, fn ->
-          Ecto.UUID.generate() |> Ecto.UUID.dump!()
-        end)
-
-      object = Helpers.build_object(schema_meta.source, primary_key, @bucket)
-      map = Helpers.build_update_map(adapter_meta.repo, schema_meta.schema, fields)
-
-      ops = :antidotec_map.to_ops(object, map)
-      :ok = :antidotec_pb.update_objects(conn, ops, tx_id)
-
-      {:ok, []}
-    end)
-  end
-
-  @impl Ecto.Adapter.Schema
-  def insert_all(
-        _adapter_meta,
-        _schema_meta,
-        _header,
-        _list,
-        _on_conflict,
-        _returning,
-        _placeholders,
-        _options
-      ) do
-    raise "Not implemented"
-  end
-
-  @impl Ecto.Adapter.Schema
-  def update(adapter_meta, schema_meta, fields, filters, _returning, _options) do
-    execute_static_transaction(adapter_meta, fn conn, tx_id ->
-      schema_primary_key = Helpers.schema_primary_key!(schema_meta.schema)
-      primary_key = Keyword.get(filters, schema_primary_key)
-      object = Helpers.build_object(schema_meta.source, primary_key, @bucket)
-
-      map = Helpers.build_update_map(adapter_meta.repo, schema_meta.schema, fields)
-
-      ops = :antidotec_map.to_ops(object, map)
-      :ok = :antidotec_pb.update_objects(conn, ops, tx_id)
-
-      {:ok, []}
     end)
   end
 
