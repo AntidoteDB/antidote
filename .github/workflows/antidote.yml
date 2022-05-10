@@ -1,11 +1,14 @@
-name: Erlang CI
+name: Antidote CI
 
 on:
   push:
   pull_request:
 
-jobs:
+defaults:
+ run:
+  working-directory: ./antidote
 
+jobs:
   build:
     runs-on: ubuntu-latest
     strategy: 
