@@ -4,6 +4,7 @@ defmodule Vax.Adapter do
   """
 
   alias Vax.ConnectionPool
+  alias Vax.Adapter.AntidoteClient
   alias Vax.Adapter.Query
 
   @bucket "vax"
@@ -30,7 +31,7 @@ defmodule Vax.Adapter do
     fields = Query.select_fields(query_meta)
 
     execute_static_transaction(adapter_meta.repo, fn conn, tx_id ->
-      {:ok, results} = :antidotec_pb.read_objects(conn, objs, tx_id)
+      {:ok, results} = AntidoteClient.read_objects(conn, objs, tx_id)
 
       results =
         for result <- results,
@@ -84,6 +85,7 @@ defmodule Vax.Adapter do
     address = Keyword.fetch!(config, :address) |> String.to_charlist()
     port = Keyword.get(config, :port, 8087)
     pool_size = Keyword.get(config, :pool_size, 10)
+    log? = Keyword.get(config, :log, true)
 
     child_spec = %{
       id: ConnectionPool,
@@ -91,6 +93,8 @@ defmodule Vax.Adapter do
         {NimblePool, :start_link,
          [[worker: {ConnectionPool, [address: address, port: port]}, size: pool_size]]}
     }
+
+    if log?, do: Vax.Adapter.Logger.attach()
 
     {:ok, child_spec, %{}}
   end
@@ -196,7 +200,7 @@ defmodule Vax.Adapter do
   def read_counter(repo, key) do
     execute_static_transaction(repo, fn conn, tx_id ->
       obj = {key, :antidote_crdt_counter_pn, @bucket}
-      {:ok, [result]} = :antidotec_pb.read_objects(conn, [obj], tx_id)
+      {:ok, [result]} = AntidoteClient.read_objects(conn, [obj], tx_id)
 
       :antidotec_counter.value(result)
     end)
@@ -212,7 +216,7 @@ defmodule Vax.Adapter do
       counter = :antidotec_counter.increment(amount, :antidotec_counter.new())
       counter_update_ops = :antidotec_counter.to_ops(obj, counter)
 
-      :antidotec_pb.update_objects(conn, counter_update_ops, tx_id)
+      AntidoteClient.update_objects(conn, counter_update_ops, tx_id)
     end)
   end
 
@@ -227,7 +231,7 @@ defmodule Vax.Adapter do
     checkout(meta, [], fn ->
       conn = get_conn()
 
-      {:ok, tx_id} = :antidotec_pb.start_transaction(conn, :ignore, static: true)
+      {:ok, tx_id} = AntidoteClient.start_transaction(conn, :ignore, static: true)
 
       fun.(conn, tx_id)
     end)

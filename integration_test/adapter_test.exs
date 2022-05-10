@@ -21,7 +21,7 @@ defmodule Vax.AdapterIntegrationTest do
     address = Application.get_env(:vax, :address)
     port = Application.get_env(:vax, :port)
 
-    start_supervised!({TestRepo, address: address, port: port})
+    start_supervised!({TestRepo, address: address, port: port, log: true})
 
     :ok
   end

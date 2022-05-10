@@ -4,6 +4,7 @@ defmodule Vax.Adapter.Schema do
   @bucket "vax"
 
   alias Vax.Adapter
+  alias Vax.Adapter.AntidoteClient
   alias Vax.Adapter.Helpers
 
   def insert(_repo, %Ecto.Changeset{valid?: false} = changeset, _opts) do
@@ -72,7 +73,7 @@ defmodule Vax.Adapter.Schema do
       primary_key = Map.get(schema, schema_primary_key)
       object = Helpers.build_object(schema.__meta__.source, primary_key, @bucket)
 
-      :ok = :antidotec_pb.update_objects(conn, [{object, :reset, {}}], tx_id)
+      :ok = AntidoteClient.update_objects(conn, [{object, :reset, {}}], tx_id)
 
       {:ok, schema}
     end)
@@ -131,8 +132,8 @@ defmodule Vax.Adapter.Schema do
     ops = :antidotec_map.to_ops(object, map)
 
     Adapter.execute_static_transaction(repo, fn conn, tx_id ->
-      :ok = :antidotec_pb.update_objects(conn, ops, tx_id)
-      {:ok, [result]} = :antidotec_pb.read_objects(conn, [object], tx_id)
+      :ok = AntidoteClient.update_objects(conn, ops, tx_id)
+      {:ok, [result]} = AntidoteClient.read_objects(conn, [object], tx_id)
       schema = Helpers.load_map(repo, schema.__struct__, result)
 
       {:ok, schema}
