@@ -1,0 +1,17 @@
+{application, antidote_stats,
+    [{description, "Antidote stats server"},
+        {vsn, "0.1.0"},
+        {mod, {antidote_stats_app, []}},
+        {applications,
+            [kernel,
+                stdlib,
+                prometheus,
+                elli,
+                elli_prometheus,
+                prometheus_process_collector
+            ]},
+        {env, [
+            {metrics_port, 3001}
+        ]},
+        {licenses, ["Apache 2.0"]}
+    ]}.

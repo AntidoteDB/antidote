@@ -1,0 +1,8 @@
+deps/
+ebin/
+_build/
+*.xml
+logs/
+*.beam
+*.o
+erl_crash.dump

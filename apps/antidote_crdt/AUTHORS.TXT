@@ -1,0 +1,30 @@
+Antidote software has been developed by:
+=====================================
+
+Annette Bieniusa (Technische Universität Kaiserslautern, Germany)
+Deepthi Akkoorath (Technische Universität Kaiserslautern, Germany)
+Christopher S. MeikleJohn (Université catholique de Louvain (UCL), Belgique)
+Tyler Crain (Université Pierre et Marie Curie / Sorbonne-Université, France)
+Alejandro Tomsic (Université Pierre et Marie Curie / Sorbonne-Université, France)
+Zhongmiao Li (Université catholique de Louvain (UCL), Belgique)
+Manuel Bravo (Université catholique de Louvain (UCL), Belgique)
+Michał Jabczyński
+Albert Schimpf (Technische Universität Kaiserslautern, Germany)
+Peter Zeller (Technische Universität Kaiserslautern, Germany)
+Valter Balegas (Universidade NOVA de Lisboa, Portugal)
+Santiago Alvarez Colombo
+Mathias Weber (Technische Universität Kaiserslautern, Germany)
+Diogo Serra
+Mike Rudek
+Roger Pueyo
+Borja
+Shraddha Barke (Technische Universität Kaiserslautern)
+Vitor Enes (Universidade do Minho & INESC TEC, Portugal)
+Georges Younes (Universidade do Minho & INESC TEC, Portugal)
+Goncalo Tomas
+João Neto
+Ilyas Toumlilt
+Paolo Viotti
+Nuno Preguiça (Universidade NOVA de Lisboa, Portugal)
+Carlos Baquero (Universidade do Minho & INESC TEC, Portugal)
+Marc Shapiro (Université Pierre et Marie Curie / Sorbonne-Université, France)
