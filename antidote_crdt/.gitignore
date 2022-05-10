@@ -1,0 +1,8 @@
+_build/
+test/.rebar3/
+TEST-*.xml
+*.swp
+src/*.swp
+test/*.swp
+*.beam
+doc/

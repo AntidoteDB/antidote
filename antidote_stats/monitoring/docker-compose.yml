@@ -1,0 +1,23 @@
+version: '2'
+
+services:
+  prometheus:
+    network_mode: host
+    container_name: prometheus
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - "./prometheus-config:/data"
+    command: "--config.file=/data/prometheus.yml"
+  grafana:
+    network_mode: host
+    container_name: grafana
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - "./grafana-config/provisioning:/etc/grafana/provisioning"
+      - "./grafana-config/dashboards:/var/lib/grafana/dashboards/provisioning"
+    depends_on:
+      - prometheus
