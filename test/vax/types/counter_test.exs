@@ -27,4 +27,14 @@ defmodule Vax.Types.CounterTest do
       assert {:counter, 10, 15} = Counter.compute_change(old_counter, 25)
     end
   end
+
+  describe "cast_increment/3" do
+    test "properly increments the value of a counter" do
+      changeset =
+        {%{counter: 3}, %{counter: Counter}}
+        |> Counter.cast_increment(:counter, 2)
+
+      assert 5 = Ecto.Changeset.get_field(changeset, :counter)
+    end
+  end
 end

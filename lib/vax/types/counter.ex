@@ -47,4 +47,24 @@ defmodule Vax.Types.Counter do
       :antidotec_counter.increment(new_value - old_value, antidotec_counter)
     end
   end
+
+  @doc """
+  Increments a value of counter type
+  """
+  @spec cast_increment(Ecto.Changeset.t(), atom(), integer()) :: Ecto.Changeset.t()
+  def cast_increment(changeset, field, value) do
+    changeset = Ecto.Changeset.change(changeset)
+    current_value = Ecto.Changeset.get_field(changeset, field) || 0
+    Ecto.Changeset.put_change(changeset, field, current_value + value)
+  end
+
+  @doc """
+  Decrements a value of counter type
+  """
+  @spec cast_decrement(Ecto.Changeset.t(), atom(), integer()) :: Ecto.Changeset.t()
+  def cast_decrement(changeset, field, value) do
+    changeset = Ecto.Changeset.change(changeset)
+    current_value = Ecto.Changeset.get_field(changeset, field) || 0
+    Ecto.Changeset.put_change(changeset, field, current_value - value)
+  end
 end
