@@ -11,6 +11,7 @@ defmodule Vax.Adapter do
 
   @behaviour Ecto.Adapter
   @behaviour Ecto.Adapter.Queryable
+  @behaviour Ecto.Adapter.Storage
 
   @impl Ecto.Adapter.Queryable
   def stream(_adapter_meta, _query_meta, _query_cache, _params, _options) do
@@ -191,6 +192,21 @@ defmodule Vax.Adapter do
         Vax.Adapter.execute_static_transaction(__MODULE__, fun)
       end
     end
+  end
+
+  @impl Ecto.Adapter.Storage
+  def storage_up(_) do
+    :ok
+  end
+
+  @impl Ecto.Adapter.Storage
+  def storage_down(_) do
+    :ok
+  end
+
+  @impl Ecto.Adapter.Storage
+  def storage_status(_) do
+    :ok
   end
 
   @doc """
