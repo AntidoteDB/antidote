@@ -60,10 +60,9 @@ defmodule Vax.AdapterIntegrationTest do
     test "inserts raw struct" do
       id = Ecto.UUID.generate()
 
-      assert {:ok, %MySchema{id: ^id}} =
-               TestRepo.insert(%MySchema{id: id, name: "Carl", age: 26, likes_given: 3})
+      assert {:ok, %MySchema{id: ^id}} = TestRepo.insert(%MySchema{id: id, name: "Carl", age: 26})
 
-      assert %MySchema{id: ^id, name: "Carl", age: 26, likes_given: 3} =
+      assert %MySchema{id: ^id, name: "Carl", age: 26, likes_given: 0} =
                TestRepo.get(MySchema, id)
     end
 

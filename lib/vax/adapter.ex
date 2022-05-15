@@ -30,6 +30,7 @@ defmodule Vax.Adapter do
   def execute(adapter_meta, query_meta, {:nocache, query}, params, _options) do
     objs = Query.query_to_objs(query, params, @bucket)
     fields = Query.select_fields(query_meta)
+    defaults = query |> Query.select_schema() |> struct()
 
     execute_static_transaction(adapter_meta.repo, fn conn, tx_id ->
       {:ok, results} = AntidoteClient.read_objects(conn, objs, tx_id)
@@ -39,7 +40,7 @@ defmodule Vax.Adapter do
             result_value = :antidotec_map.value(result),
             result_value != %{} do
           map = Map.new(result_value, fn {{k, _t}, v} -> {String.to_atom(k), v} end)
-          Enum.map(fields, &Map.get(map, &1))
+          Enum.map(fields, &Map.get_lazy(map, &1, fn -> Map.get(defaults, &1) end))
         end
 
       {Enum.count(results), results}
