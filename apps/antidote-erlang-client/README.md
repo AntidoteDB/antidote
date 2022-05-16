@@ -1,6 +1,4 @@
 # Antidote Erlang Client Library
-[![Build Status](https://travis-ci.org/AntidoteDB/antidote-erlang-client.svg?branch=master)](https://travis-ci.org/AntidoteDB/antidote-erlang-client)
-[![Coverage Status](https://coveralls.io/repos/github/AntidoteDB/antidote-erlang-client/badge.svg?branch=master)](https://coveralls.io/github/AntidoteDB/antidote-erlang-client?branch=master)
 
 ## Connecting to Antidote
 This section assumes that you have at least one AntidoteDB node running. Check the documentation in the [main repository][antidote-repo] for instructions on how to launch AntidoteDB instances.
