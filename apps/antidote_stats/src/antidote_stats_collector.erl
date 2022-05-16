@@ -192,7 +192,7 @@ handle_cast({ring_member_availability, Node, Value}, State) ->
 
 
 handle_cast(StatRequest, State) ->
-    logger:notice("Unknown stat update requested: ~p",[StatRequest]),
+    logger:notice("Unknown stat update requested: ~p", [StatRequest]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->

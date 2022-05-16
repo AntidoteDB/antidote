@@ -10,5 +10,5 @@
         {env, []},
         {modules, []},
         {licenses, ["Apache 2.0"]},
-        {links,[{"Github","https://github.com/AntidoteDB/antidote_pb_codec"}]}
+        {links,[{"Github","https://github.com/AntidoteDB/antidote"}]}
     ]}.

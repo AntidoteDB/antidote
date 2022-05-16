@@ -10,19 +10,6 @@ clean:
 	rm -rf ebin/* test/*.beam logs log _build/gpb
 	$(REBAR) clean
 
-test:
-	$(REBAR) eunit
-
-dialyzer:
-	$(REBAR) dialyzer
-
-shell:
-	$(REBAR) shell
-
-# style checks
-lint:
-	${REBAR} as lint lint
-
 _build/gpb:
 	mkdir -p _build/
 	(cd _build/ && git clone https://github.com/tomas-abrahamsson/gpb && cd gpb && git checkout 4.10.2)

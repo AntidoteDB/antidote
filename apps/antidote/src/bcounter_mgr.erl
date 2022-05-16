@@ -118,7 +118,7 @@ handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue
     MyDCId = dc_utilities:get_my_dc_id(),
     case ?DATA_TYPE:generate_downstream_check({Op, Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
-            Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
+            Available = ?DATA_TYPE:local_permissions(MyDCId, BCounter),
             UpdtQueue=queue_request(Key, Amount - Available, RQ),
             {reply, FailedResult, State#state{req_queue=UpdtQueue}};
         Result ->
@@ -197,7 +197,7 @@ pref_list(Obj) ->
     MyDCId = dc_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
     OtherDCIds = [ Id || #descriptor{dcid=Id} <- OtherDCDescriptors, Id /= MyDCId ],
-    OtherDCPermissions = [ {Id, ?DATA_TYPE:localPermissions(Id, Obj)} || Id <- OtherDCIds],
+    OtherDCPermissions = [ {Id, ?DATA_TYPE:local_permissions(Id, Obj)} || Id <- OtherDCIds],
     lists:sort(fun({_, A}, {_, B}) -> A =< B end, OtherDCPermissions).
 
 %% Request response - do nothing.

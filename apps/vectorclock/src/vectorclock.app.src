@@ -1,13 +1,10 @@
 {application, vectorclock,
  [{description, "A vectorclock library for Erlang"},
   {vsn, "0.2.0"},
-  {registered, []},
   {applications,
    [kernel,
     stdlib
    ]},
-  {env,[]},
-  {modules, []},
   {licenses, ["Apache 2.0"]},
-  {links,[{"Github","https://github.com/AntidoteDB/vectorclock"}]}
+  {links,[{"Github","https://github.com/AntidoteDB/antidote"}]}
  ]}.
