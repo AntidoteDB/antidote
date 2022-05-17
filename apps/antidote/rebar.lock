@@ -1,10 +1,5 @@
 {"1.2.0",
 [{<<"antidote_crdt">>,
-  {path,"../antidote_crdt",{mtime,<<"2022-05-16T17:34:05Z">>}},
-  0},
- {<<"antidote_pb_codec">>,
-  {path,"../antidote_pb_codec",{mtime,<<"2022-05-16T17:23:24Z">>}},
-  0},
  {<<"antidotec_pb">>,{pkg,<<"antidotec_pb">>,<<"0.2.9">>},0},
  {<<"erlzmq">>,
   {git,"https://github.com/zeromq/erlzmq2",
@@ -12,10 +7,8 @@
   0},
  {<<"poolboy">>,{pkg,<<"poolboy">>,<<"1.5.2">>},1},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"2.0.0">>},0},
- {<<"riak_core">>,{pkg,<<"riak_core_lite">>,<<"0.10.1">>},0},
- {<<"vectorclock">>,
-  {path,"../vectorclock",{mtime,<<"2022-05-16T17:20:24Z">>}},
-  0}]}.
+ {<<"riak_core">>,{pkg,<<"riak_core_lite">>,<<"0.10.1">>},0}
+ ]}.
 [
 {pkg_hash,[
  {<<"antidotec_pb">>, <<"40CD2A0A5F63284E6BB46C84B9D806A7682C79117CFC96154082A4C80759DD01">>},
