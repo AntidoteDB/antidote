@@ -43,6 +43,7 @@
           keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
           last_commit_time :: term() % temporarily store for static transactions
          }).
+-type state() :: #state{}.
 
 
 -export([start_link/2,
@@ -63,6 +64,7 @@
         ]).
 
 %% @private
+-spec init([term()]) -> {ok, state()} | {stop, {tcp, any()}}.
 init([Address, Port, _Options]) ->
     State = #state{address = Address, port = Port, active = undefined, sock = undefined},
     case connect(State) of

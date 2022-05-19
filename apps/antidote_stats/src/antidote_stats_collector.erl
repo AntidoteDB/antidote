@@ -32,6 +32,9 @@
 
 -behaviour(gen_server).
 
+-record(state, {}).
+-type state() :: #state{}.
+
 %% API
 -export([start_link/0]).
 
@@ -41,10 +44,11 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([term()]) -> {ok, state()}.
 init([]) ->
     logger:info("Initialized stats process"),
     init_metrics(),
-    {ok, []}.
+    {ok, #state{}}.
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.

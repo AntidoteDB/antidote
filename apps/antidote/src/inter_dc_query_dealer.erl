@@ -66,6 +66,7 @@
   req_id :: non_neg_integer(),
     unanswered_queries = create_queries_table()
 }).
+-type state() :: #state{}.
 
 %%%% API --------------------------------------------------------------------+
 
@@ -94,6 +95,7 @@ del_dc(DCID) ->
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec init([]) -> {ok, state()}.
 init([]) ->
     {ok, #state{sockets = dict:new(), req_id = 1}}.
 

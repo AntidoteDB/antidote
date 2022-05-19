@@ -58,6 +58,7 @@
 
 %% State
 -record(state, {socket :: zmq_socket(), next, id}).
+-type state() :: #state{}.
 
 %%%% API --------------------------------------------------------------------+
 
@@ -101,6 +102,7 @@ send_response(BinaryResponse, QueryState = #inter_dc_query_state{local_pid=Sende
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     Ip = get_router_bind_ip(),
     {_, Port} = get_address(),

@@ -48,6 +48,7 @@
 
 %% State
 -record(state, {sockets :: dict:dict(dcid(), zmq_socket())}).
+-type state() :: #state{}.
 
 %%%% API --------------------------------------------------------------------+
 
@@ -64,6 +65,7 @@ del_dc(DCID) ->
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     {ok, #state{sockets = dict:new()}}.
 

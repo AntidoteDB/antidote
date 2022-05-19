@@ -58,6 +58,7 @@
       last_result :: term(),
       name :: atom(),
       should_check_nodes :: boolean()}).
+-type state() :: #state{}.
 
 %% ===================================================================
 %% Public API
@@ -125,6 +126,7 @@ get_merged_data(Name, Default) ->
 %% gen_statem callbacks
 %% ===================================================================
 
+-spec init([term()]) -> {ok, any(), state()}.
 init([Name]) ->
     _MetaTable = antidote_ets_meta_data:create_meta_data_table(Name),
     _StableTable = antidote_ets_meta_data:create_meta_data_sender_table(Name),

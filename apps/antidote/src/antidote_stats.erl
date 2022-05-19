@@ -57,10 +57,12 @@
     timer_expensive :: any(),
     monitored_processes :: list()
 }).
+-type state() :: #state{}.
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     % start the timer for updating the calculated metrics
     TimerCheap = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),

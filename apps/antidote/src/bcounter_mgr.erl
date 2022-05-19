@@ -57,6 +57,7 @@
 -record(state, {req_queue :: orddict:orddict(),
                 last_transfers :: orddict:orddict(),
                 transfer_timer :: reference()}).
+-type state() :: #state{}.
 -define(LOG_UTIL, log_utilities).
 -define(DATA_TYPE, antidote_crdt_counter_b).
 
@@ -69,6 +70,7 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.

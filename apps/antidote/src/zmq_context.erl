@@ -29,6 +29,9 @@
 -module(zmq_context).
 -behaviour(gen_server).
 
+-record(state, {ctx}).
+-type state() :: #state{ctx :: erlzmq:erlzmq_context()}.
+
 %% ZMQ context manager
 %% In order to use ZeroMQ, a common context instance is needed (http://api.zeromq.org/4-0:zmq-ctx-new).
 %% The sole purpose of this gen_server is to provide this instance, and to terminate it gracefully.
@@ -39,22 +42,25 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-init([]) -> erlzmq:context().
+-spec init([term()]) -> {ok, state()}.
+init([]) ->
+    {ok, Ctx} = erlzmq:context(),
+    {ok, #state{ctx = Ctx}}.
 
-handle_call(get_context, _From, Ctx) ->
-    {reply, Ctx, Ctx}.
+handle_call(get_context, _From, State = #state{ctx = Ctx}) ->
+    {reply, Ctx, State}.
 
-handle_cast(_Request, Ctx) ->
-    {noreply, Ctx}.
+handle_cast(_Request, State) ->
+    {noreply, State}.
 
-handle_info(_Info, Ctx) ->
-    {noreply, Ctx}.
+handle_info(_Info, State) ->
+    {noreply, State}.
 
-terminate(_Reason, Ctx) ->
+terminate(_Reason, _State = #state{ctx = Ctx}) ->
     erlzmq:term(Ctx).
 
-code_change(_OldVsn, Ctx, _Extra) ->
-    {ok, Ctx}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %% Context is a NIF object handle
 get() ->

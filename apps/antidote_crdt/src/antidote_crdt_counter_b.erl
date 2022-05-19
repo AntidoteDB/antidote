@@ -243,7 +243,7 @@ increment_test() ->
     ?assertEqual(15, permissions(Counter2)).
 
 %% Tests the function `local_permissions()'.
-localPermisisons_test() ->
+local_permisisons_test() ->
     Counter0 = new(),
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test replica with positive amount of permissions.

@@ -43,6 +43,7 @@
          code_change/3]).
 
 -record(state, {table :: ets:tid()}).
+-type state() :: #state{}.
 
 %% ===================================================================
 %% Public API
@@ -75,6 +76,7 @@ add_node(Name, NodeId, Initial) ->
 %% gen_server callbacks
 %% ===================================================================
 
+-spec init([term()]) -> {ok, state()}.
 init([Name]) ->
     Table = antidote_ets_meta_data:create_remote_meta_data_table(Name),
     {ok, #state{table = Table}}.

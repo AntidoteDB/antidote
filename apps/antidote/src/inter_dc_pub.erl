@@ -47,6 +47,7 @@
 
 %% State
 -record(state, {socket :: zmq_socket()}).
+-type state() :: #state{}.
 
 %%%% API --------------------------------------------------------------------+
 
@@ -71,6 +72,7 @@ get_address_list() ->
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     % bind on ip and port
     %% TODO erlzmq pub bind IP

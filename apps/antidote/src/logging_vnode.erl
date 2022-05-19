@@ -1261,7 +1261,7 @@ read_from_to_internal_test() ->
         ?assertEqual(Ops, ReadOps)
     end).
 
-read_from_to_internal_2_test() ->
+read_from_to_internal2_test() ->
     test_with_log(2, fun(State) ->
         LogId = [0],
         {_, NewState} = append_log_record(LogId, node1(), 1, 2000, State),
@@ -1278,7 +1278,7 @@ read_from_to_internal_2_test() ->
         ?assertEqual(filter_operations(Ops, 2001, 4000), filter_operations(ReadOps2, 2001, 4000))
     end).
 
-read_from_to_internal_3_test() ->
+read_from_to_internal3_test() ->
     test_with_log(3, fun(State) ->
         LogId = [0],
         {_, NewState} = append_log_record(LogId, node1(), 1, 2, State),

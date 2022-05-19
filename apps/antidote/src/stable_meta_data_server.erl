@@ -63,6 +63,7 @@
      code_change/3]).
 
 -record(state, {table, dets_table}).
+-type state() :: #state{table:: ets:tab(), dets_table :: dets:tab_name()}.
 
 %%% --------------------------------------------------------------+
 
@@ -134,6 +135,7 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 
 %% -------------------------------------------------------------------+
 
+-spec init([]) -> {ok, state()}.
 init([]) ->
     {ok, DataDir} = application:get_env(antidote, data_dir),
     Path = filename:join(DataDir, ?TABLE_NAME),

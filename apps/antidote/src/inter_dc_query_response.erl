@@ -49,6 +49,7 @@
 
 -record(state, {
       id :: non_neg_integer()}).
+-type state() :: #state{}.
 
 %% ===================================================================
 %% Public API
@@ -70,6 +71,7 @@ request_permissions(BinaryRequest, QueryState) ->
 %% gen_server callbacks
 %% ===================================================================
 
+-spec init([Num]) -> {ok, state()} when Num :: any().
 init([Num]) ->
     {ok, #state{id=Num}}.
 
