@@ -37,6 +37,9 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 -include_lib("kernel/include/logger.hrl").
 
+% TODO issue
+-dialyzer({nowarn_function, internal_validate_or_read/8}).
+
 
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
