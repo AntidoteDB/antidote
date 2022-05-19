@@ -46,6 +46,9 @@ stage :
 test:
 	${REBAR} eunit
 
+proper:
+	${REBAR} proper
+
 coverage:
 	${REBAR} cover --verbose
 
