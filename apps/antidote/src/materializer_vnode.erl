@@ -383,12 +383,11 @@ internal_validate_or_read(Key, Type, Token, MinSnapshotTime, TxId, _PropertyList
 
     case materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp) of
         {ok, {SnapshotTime, Snapshot}} ->
-            ReadToken = erlang:term_to_binary(vectorclock:to_list(SnapshotTime)),
-            % TODO dialyzer says this can never happen
-            %case SnapshotTime of
-            %    ignore -> ?INVALID_OBJECT_TOKEN;
-            %    _ -> erlang:term_to_binary(vectorclock:to_list(SnapshotTime))
-            %end,
+            ReadToken = 
+            case SnapshotTime of
+                ignore -> ?INVALID_OBJECT_TOKEN;
+                _ -> erlang:term_to_binary(vectorclock:to_list(SnapshotTime))
+            end,
 
             case {ReadToken =/= ?INVALID_OBJECT_TOKEN, ReadToken == Token} of
                 {true, true} ->
