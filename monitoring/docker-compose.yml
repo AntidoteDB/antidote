@@ -1,8 +1,13 @@
 version: '2'
 
 services:
+  antidotedb:
+    ports:
+      - "8087:8087"
+    container_name: antidotedb-1
+    image: antidotedb:local-build
+
   prometheus:
-    network_mode: host
     container_name: prometheus
     image: prom/prometheus
     ports:
@@ -10,8 +15,8 @@ services:
     volumes:
       - "./prometheus-config:/data"
     command: "--config.file=/data/prometheus.yml"
+
   grafana:
-    network_mode: host
     container_name: grafana
     image: grafana/grafana
     ports:

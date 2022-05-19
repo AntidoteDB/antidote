@@ -5,7 +5,7 @@ datasources:
   org_id: 1
   # locally reachable prometheus endpoint if on host network
   # docker container name if in docker network
-  url: 'http://localhost:9090'
+  url: 'prometheus:9090'
   is_default: true
   version: 1
   editable: false
