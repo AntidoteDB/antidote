@@ -30,17 +30,27 @@ defmodule Vax.Adapter do
   def execute(adapter_meta, query_meta, {:nocache, query}, params, _options) do
     objs = Query.query_to_objs(query, params, @bucket)
     fields = Query.select_fields(query_meta)
-    defaults = query |> Query.select_schema() |> struct()
+    schema = Query.select_schema(query)
+    defaults = struct(schema)
 
     execute_static_transaction(adapter_meta.repo, fn conn, tx_id ->
       {:ok, results} = AntidoteClient.read_objects(conn, objs, tx_id)
 
       results =
         for result <- results,
-            result_value = :antidotec_map.value(result),
-            result_value != %{} do
-          map = Map.new(result_value, fn {{k, _t}, v} -> {String.to_atom(k), v} end)
-          Enum.map(fields, &Map.get_lazy(map, &1, fn -> Map.get(defaults, &1) end))
+            {:antidote_map, values, _adds, _removes} = result,
+            values != %{} do
+          Enum.map(fields, fn field ->
+            field_type = schema.__schema__(:type, field)
+            field_default = Map.get(defaults, field)
+
+            Vax.Adapter.Helpers.get_antidote_map_field_or_default(
+              result,
+              Atom.to_string(field),
+              field_type,
+              field_default
+            )
+          end)
         end
 
       {Enum.count(results), results}
@@ -48,12 +58,12 @@ defmodule Vax.Adapter do
   end
 
   @impl Ecto.Adapter
-  def loaders(:binary_id, type), do: [type]
-  def loaders(:string, :string), do: [:string]
+  def loaders(_primitive_type, :string), do: [&Vax.Type.client_load/1, :string]
+  def loaders(_primitive_type, :binary_id), do: [&Vax.Type.client_load/1, :binary_id]
 
   def loaders(_primitive_type, ecto_type) do
     if Vax.Type.base_or_composite?(ecto_type) do
-      [&binary_to_term/1, ecto_type]
+      [&Vax.Type.client_load/1, &binary_to_term/1, ecto_type]
     else
       [ecto_type]
     end
@@ -66,6 +76,8 @@ defmodule Vax.Adapter do
   def dumpers(_primitive_type, ecto_type), do: [ecto_type, &term_to_binary/1]
 
   defp term_to_binary(term), do: {:ok, :erlang.term_to_binary(term)}
+  defp binary_to_term(nil), do: {:ok, nil}
+  defp binary_to_term([]), do: {:ok, nil}
   defp binary_to_term(binary), do: {:ok, :erlang.binary_to_term(binary)}
 
   defp dump_inner(values, ecto_type) do

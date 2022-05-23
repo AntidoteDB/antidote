@@ -34,7 +34,6 @@ defmodule Vax.Adapter.Helpers do
         ) :: struct() | nil
   def load_map(repo, schema, map) do
     map
-    |> :antidotec_map.value()
     |> Enum.map(fn {{k, _t}, v} -> {String.to_atom(k), v} end)
     |> case do
       [] -> nil
@@ -71,35 +70,17 @@ defmodule Vax.Adapter.Helpers do
 
     antidotec_value = get_antidote_map_field_or_default(map, field, field_type, field_default)
     map_key = {Atom.to_string(field), Vax.Type.crdt_type(field_type)}
-
-    cond do
-      Vax.Type.base_or_composite?(field_type) ->
-        {:ok, dumped_value} = Ecto.Type.adapter_dump(Vax.Adapter, field_type, new_value)
-        register = :antidotec_reg.assign(antidotec_value, dumped_value)
-        :antidotec_map.add_or_update(map, map_key, register)
-
-      function_exported?(field_type, :compute_change, 2) ->
-        value = field_type.compute_change(antidotec_value, new_value)
-        :antidotec_map.add_or_update(map, map_key, value)
-    end
+    value = Vax.Type.compute_change(field_type, antidotec_value, new_value)
+    :antidotec_map.add_or_update(map, map_key, value)
   end
 
-  defp get_antidote_map_field_or_default(map, field, field_type, field_default) do
+  def get_antidote_map_field_or_default(map, field, field_type, field_default) do
     map
     |> elem(1)
     |> Enum.find(fn {{key, _type}, _value} -> key == field end)
     |> case do
       nil ->
-        mod =
-          field_type
-          |> Vax.Type.crdt_type()
-          |> :antidotec_datatype.module_for_crdt_type()
-
-        if field_default do
-          mod.new(field_default)
-        else
-          mod.new()
-        end
+        Vax.Type.client_dump(field_type, field_default)
 
       {{_key, _type}, value} ->
         value
@@ -116,11 +97,16 @@ defmodule Vax.Adapter.Helpers do
   defp to_antidotec_map(schema, schema_types) do
     crdt_types = Map.new(schema_types, fn {key, type} -> {key, Vax.Type.crdt_type(type)} end)
 
-    schema
-    |> Map.take(schema.__struct__.__schema__(:fields))
-    |> Enum.map(fn {key, value} ->
-      {{key, crdt_types[key]}, value}
-    end)
-    |> :antidotec_map.new()
+    # TODO: maybe hook a better interface in antidote client
+    map = :antidotec_map.new()
+
+    map_values =
+      schema
+      |> Map.take(schema.__struct__.__schema__(:fields))
+      |> Map.new(fn {key, value} ->
+        {{key, crdt_types[key]}, Vax.Type.client_dump(schema_types[key], value)}
+      end)
+
+    {elem(map, 0), map_values, elem(map, 2), elem(map, 3)}
   end
 end

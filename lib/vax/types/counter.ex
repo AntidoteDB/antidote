@@ -9,7 +9,7 @@ defmodule Vax.Types.Counter do
 
   @impl Ecto.Type
   def load(value) do
-    {:ok, value}
+    {:ok, :antidotec_counter.value(value)}
   end
 
   @impl Ecto.Type
@@ -36,6 +36,10 @@ defmodule Vax.Types.Counter do
 
   @impl Vax.Type
   def antidote_crdt_type, do: :antidote_crdt_counter_pn
+
+  @impl Vax.Type
+  def client_dump(nil), do: :antidotec_counter.new()
+  def client_dump(value), do: :antidotec_counter.new(value)
 
   @impl Vax.Type
   def compute_change(antidotec_counter, new_value) do

@@ -133,10 +133,7 @@ defmodule Vax.Adapter.Schema do
 
     Adapter.execute_static_transaction(repo, fn conn, tx_id ->
       :ok = AntidoteClient.update_objects(conn, ops, tx_id)
-      {:ok, [result]} = AntidoteClient.read_objects(conn, [object], tx_id)
-      schema = Helpers.load_map(repo, schema.__struct__, result)
-
-      {:ok, schema}
+      {:ok, repo.reload(schema)}
     end)
   end
 end
