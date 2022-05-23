@@ -23,7 +23,7 @@ defmodule Vax.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ecto, "~> 3.7.0"},
+      {:ecto, "~> 3.7"},
       {:antidotec_pb, github: "vaxine-io/antidote-erlang-client", branch: "master"},
       {:nimble_pool, "~> 0.2.6"}
     ]
