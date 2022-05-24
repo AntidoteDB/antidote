@@ -46,11 +46,9 @@ defmodule Vax.Adapter.Helpers do
           :antidotec_map.antidote_map()
   def build_insert_map(_repo, schema) do
     schema_types = schema_types(schema)
-    schema_fields = Enum.reject(schema.__schema__(:fields), &schema.__schema__(:virtual_type, &1))
 
     schema
-    |> Map.from_struct()
-    |> Map.take(schema_fields)
+    |> Map.take(schema.__struct__.__schema__(:fields))
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Enum.reduce(:antidotec_map.new(), fn {field, value}, map ->
       update_map_value(map, schema_types, field, value, schema.__struct__)
@@ -119,8 +117,7 @@ defmodule Vax.Adapter.Helpers do
     crdt_types = Map.new(schema_types, fn {key, type} -> {key, Vax.Type.crdt_type(type)} end)
 
     schema
-    |> Map.from_struct()
-    |> Map.drop([:__struct__, :__meta__])
+    |> Map.take(schema.__struct__.__schema__(:fields))
     |> Enum.map(fn {key, value} ->
       {{key, crdt_types[key]}, value}
     end)
