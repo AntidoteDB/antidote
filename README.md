@@ -13,14 +13,14 @@ After that, you can create a repo, such as:
 # lib/my_app/repo.ex
 defmodule MyApp.Repo do
   use Ecto.Repo,
-    otp_app: :room,
+    otp_app: :my_app,
     adapter: Vax.Adapter
 end
 ```
 And the config for this repo:
 ```elixir
 # config/dev.exs
-config :room, Room.Repo, address: "localhost", port: 8087
+config :my_app, MyApp.Repo, address: "localhost", port: 8087
 ```
 And you're ready to go and use Vax!
 
@@ -40,7 +40,7 @@ end
 Fields are, by default, LWW registers. Custom vax types provide types that have
 more interesting properties. For example, `Vax.Types.Counter` uses a
 **Positive-negative CRDT counter**. You can read more about CRDTs on
-[our website](vaxine.io).
+[our website](https://vaxine.io).
 
 Once you have a schema, you can use the regular `Repo` functions. Please
 note that this is a work in progress and many features are still not supported!
