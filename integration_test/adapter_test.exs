@@ -18,10 +18,10 @@ defmodule Vax.AdapterIntegrationTest do
   end
 
   setup_all %{} do
-    address = Application.get_env(:vax, :address)
+    hostname = Application.get_env(:vax, :hostname)
     port = Application.get_env(:vax, :port)
 
-    start_supervised!({TestRepo, address: address, port: port, log: true})
+    start_supervised!({TestRepo, hostname: hostname, port: port, log: true})
 
     :ok
   end

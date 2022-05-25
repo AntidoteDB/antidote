@@ -20,7 +20,7 @@ end
 And the config for this repo:
 ```elixir
 # config/dev.exs
-config :my_app, MyApp.Repo, address: "localhost", port: 8087
+config :my_app, MyApp.Repo, hostname: "localhost", port: 8087
 ```
 And you're ready to go and use Vax!
 

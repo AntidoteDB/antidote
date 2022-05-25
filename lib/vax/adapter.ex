@@ -84,7 +84,7 @@ defmodule Vax.Adapter do
 
   @impl Ecto.Adapter
   def init(config) do
-    address = Keyword.fetch!(config, :address) |> String.to_charlist()
+    hostname = Keyword.fetch!(config, :hostname) |> String.to_charlist()
     port = Keyword.get(config, :port, 8087)
     pool_size = Keyword.get(config, :pool_size, 10)
     log? = Keyword.get(config, :log, true)
@@ -93,7 +93,7 @@ defmodule Vax.Adapter do
       id: ConnectionPool,
       start:
         {NimblePool, :start_link,
-         [[worker: {ConnectionPool, [address: address, port: port]}, size: pool_size]]}
+         [[worker: {ConnectionPool, [hostname: hostname, port: port]}, size: pool_size]]}
     }
 
     if log?, do: Vax.Adapter.Logger.attach()
