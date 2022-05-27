@@ -82,8 +82,9 @@ start(_StartType, _StartArgs) ->
                 {ok, true} ->
                     %% start read servers
                     inter_dc_manager:start_bg_processes(stable_time_functions);
-                _->
-                    ok %dont_start_read_servers
+                _ ->
+                    %don't start read servers
+                    ok
             end,
             {ok, Pid};
         {error, Reason} ->
@@ -93,15 +94,17 @@ start(_StartType, _StartArgs) ->
 validate_data_dir() ->
     {ok, DataDir} = application:get_env(antidote, data_dir),
     case filelib:ensure_dir(filename:join(DataDir, "dummy")) of
-        ok -> ok;
+        ok ->
+            ok;
         {error, Reason} ->
-            ?LOG_CRITICAL("Data directory ~p does not exist, and could not be created: ~p", [DataDir, Reason]),
+            ?LOG_CRITICAL("Data directory ~p does not exist, and could not be created: ~p", [
+                DataDir, Reason
+            ]),
             throw({error, invalid_data_dir})
     end.
 
 stop(_State) ->
     ok.
-
 
 %% ===================================================================
 %% Unit Tests

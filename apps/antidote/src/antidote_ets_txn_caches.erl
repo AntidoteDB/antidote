@@ -38,9 +38,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
-
--export([has_prepared_txns_cache/1,
+-export([
+    has_prepared_txns_cache/1,
     get_prepared_txns_by_key/2,
     get_prepared_txn_by_key_and_table/2,
     create_prepared_txns_cache/1,
@@ -48,7 +47,8 @@
     is_prepared_txn_by_table/2,
     delete_prepared_txn_by_table/2,
     insert_prepared_txn_by_table/3,
-    get_prepared_cache_name/1]).
+    get_prepared_cache_name/1
+]).
 
 %%%===================================================================
 %%% API
@@ -95,8 +95,10 @@ insert_prepared_txn_by_table(Table, Key, List) ->
 create_prepared_txns_cache(Partition) ->
     case has_prepared_txns_cache(Partition) of
         false ->
-            ets:new(get_prepared_cache_name(Partition),
-                [set, protected, named_table, ?TABLE_CONCURRENCY]);
+            ets:new(
+                get_prepared_cache_name(Partition),
+                [set, protected, named_table, ?TABLE_CONCURRENCY]
+            );
         true ->
             %% Other vnode hasn't finished closing tables
             ?LOG_DEBUG("Unable to open ets table in clocksi vnode, retrying"),

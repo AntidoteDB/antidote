@@ -31,6 +31,7 @@ reltest: rel
 # style checks
 lint:
 	${REBAR} lint
+	${REBAR} fmt --check
 
 check: distclean test reltest dialyzer lint
 

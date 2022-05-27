@@ -26,7 +26,6 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
-
 %% This module exports methods to build a data center of multiple nodes and
 %% connect data centers to start replication among them.
 %%
@@ -64,7 +63,6 @@
     subscribe_updates_from/1
 ]).
 
-
 %% Command this node to leave the current data center
 -spec leave_dc() -> ok | {error, term()}.
 leave_dc() -> riak_core:leave().
@@ -78,7 +76,6 @@ add_nodes_to_dc(Nodes) ->
         _ -> {error, ring_not_ready}
     end.
 
-
 %% Start receiving updates from other DCs
 -spec subscribe_updates_from([descriptor()]) -> ok.
 subscribe_updates_from(DCDescriptors) ->
@@ -87,12 +84,10 @@ subscribe_updates_from(DCDescriptors) ->
     ok = inter_dc_manager:dc_successfully_started(),
     ok.
 
-
 %% Get the DC connection descriptor to be given to other DCs
 -spec get_connection_descriptor() -> {ok, descriptor()}.
 get_connection_descriptor() ->
     inter_dc_manager:get_descriptor().
-
 
 %% ---------- Internal Functions --------------
 
@@ -106,24 +101,33 @@ join_new_nodes(Nodes) ->
     NewNodeMembers = [NewNode || NewNode <- Nodes, not lists:member(NewNode, CurrentNodeMembers)],
     plan_and_commit(NewNodeMembers).
 
-
 -spec plan_and_commit([node()]) -> ok.
-plan_and_commit([]) -> ?LOG_WARNING("No new nodes added to the ring of ~p", [node()]);
+plan_and_commit([]) ->
+    ?LOG_WARNING("No new nodes added to the ring of ~p", [node()]);
 plan_and_commit(NewNodeMembers) ->
-    lists:foreach(fun(Node) ->
-        ?LOG_INFO("Checking if Node ~p is reachable (from ~p)", [Node, node()]),
-        pong = net_adm:ping(Node)
-                  end, NewNodeMembers),
+    lists:foreach(
+        fun(Node) ->
+            ?LOG_INFO("Checking if Node ~p is reachable (from ~p)", [Node, node()]),
+            pong = net_adm:ping(Node)
+        end,
+        NewNodeMembers
+    ),
 
-    lists:foreach(fun(Node) ->
-        ?LOG_INFO("Node ~p is joining my ring (~p)", [Node, node()]),
-        ok = rpc:call(Node, riak_core, staged_join, [node()])
-                  end, NewNodeMembers),
+    lists:foreach(
+        fun(Node) ->
+            ?LOG_INFO("Node ~p is joining my ring (~p)", [Node, node()]),
+            ok = rpc:call(Node, riak_core, staged_join, [node()])
+        end,
+        NewNodeMembers
+    ),
 
-    lists:foreach(fun(Node) ->
-        ?LOG_INFO("Checking if node ring is ready (~p)", [Node]),
-        wait_until_ring_ready(Node)
-                  end, NewNodeMembers),
+    lists:foreach(
+        fun(Node) ->
+            ?LOG_INFO("Checking if node ring is ready (~p)", [Node]),
+            wait_until_ring_ready(Node)
+        end,
+        NewNodeMembers
+    ),
 
     {ok, Actions, Transitions} = riak_core_claimant:plan(),
     ?LOG_DEBUG("Actions planned: ~p", [Actions]),
@@ -133,7 +137,9 @@ plan_and_commit(NewNodeMembers) ->
     %% even if nothing changes, it returns {error, nothing_planned} indicating some serious error
     %% could return {error, nothing_planned} if staged joins are disabled
     ok = riak_core_claimant:commit(),
-    ?LOG_NOTICE("Ring committed and ring structure is changing. New ring members: ~p", [NewNodeMembers]),
+    ?LOG_NOTICE("Ring committed and ring structure is changing. New ring members: ~p", [
+        NewNodeMembers
+    ]),
 
     %% wait until ring is ready
     wait_until_ring_ready(node()),
@@ -144,11 +150,9 @@ plan_and_commit(NewNodeMembers) ->
     %% FIXME this can be removed when #401 and #203 is fixed
     wait_until_ring_no_pending_changes(),
 
-
     %% start periodic heart beat
     ok = inter_dc_manager:start_bg_processes(stable_time_functions),
     ok.
-
 
 %% @doc Wait until all nodes in this ring believe there are no
 %% on-going or pending ownership transfers.
@@ -161,21 +165,27 @@ wait_until_ring_no_pending_changes() ->
     F = fun() ->
         _ = rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
         {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
-        Changes = [ riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings ],
-        BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)
-        end,
+        Changes = [riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings],
+        BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso
+            lists:all(fun(T) -> T end, Changes)
+    end,
     case F() of
-        true -> ok;
-        _ -> timer:sleep(500), wait_until_ring_no_pending_changes()
+        true ->
+            ok;
+        _ ->
+            timer:sleep(500),
+            wait_until_ring_no_pending_changes()
     end.
-
 
 -spec wait_until_ring_ready(node()) -> ok.
 wait_until_ring_ready(Node) ->
     Status = rpc:call(Node, riak_core_ring, ring_ready, []),
     case Status of
-        true -> ok;
-        false -> timer:sleep(100), wait_until_ring_ready(Node)
+        true ->
+            ok;
+        false ->
+            timer:sleep(100),
+            wait_until_ring_ready(Node)
     end.
 
 %% backwards compatible function for add_nodes_to_dc

@@ -35,31 +35,31 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([
-  get_my_dc_id/0,
-  get_my_dc_nodes/0,
-  call_vnode_sync/3,
-  bcast_vnode_sync/2,
-  bcast_my_vnode_sync/2,
-  partition_to_indexnode/1,
-  call_vnode/3,
-  call_local_vnode/3,
-  call_local_vnode_sync/3,
-  get_all_partitions/0,
-  get_all_partitions_nodes/0,
-  bcast_vnode/2,
-  get_my_partitions/0,
-  ensure_all_vnodes_running/1,
-  ensure_local_vnodes_running_master/1,
-  ensure_all_vnodes_running_master/1,
-  get_partitions_num/0,
-  check_staleness/0,
-  check_registered/1,
-  get_scalar_stable_time/0,
-  get_stable_snapshot/0,
-  check_registered_global/1,
-  now_microsec/0,
-  now_millisec/0]).
-
+    get_my_dc_id/0,
+    get_my_dc_nodes/0,
+    call_vnode_sync/3,
+    bcast_vnode_sync/2,
+    bcast_my_vnode_sync/2,
+    partition_to_indexnode/1,
+    call_vnode/3,
+    call_local_vnode/3,
+    call_local_vnode_sync/3,
+    get_all_partitions/0,
+    get_all_partitions_nodes/0,
+    bcast_vnode/2,
+    get_my_partitions/0,
+    ensure_all_vnodes_running/1,
+    ensure_local_vnodes_running_master/1,
+    ensure_all_vnodes_running_master/1,
+    get_partitions_num/0,
+    check_staleness/0,
+    check_registered/1,
+    get_scalar_stable_time/0,
+    get_stable_snapshot/0,
+    check_registered_global/1,
+    now_microsec/0,
+    now_millisec/0
+]).
 
 %% Returns the ID of the current DC.
 -spec get_my_dc_id() -> dcid().
@@ -116,8 +116,8 @@ get_all_partitions_nodes() ->
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].
 get_my_partitions() ->
-  {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-  riak_core_ring:my_indices(Ring).
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:my_indices(Ring).
 
 %% Returns the number of partitions.
 -spec get_partitions_num() -> non_neg_integer().
@@ -170,9 +170,12 @@ ensure_all_vnodes_running(VnodeType) ->
     Partitions = get_partitions_num(),
     Running = length(riak_core_vnode_manager:all_vnodes(VnodeType)),
     case Partitions == Running of
-        true -> ok;
+        true ->
+            ok;
         false ->
-            ?LOG_DEBUG("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            ?LOG_DEBUG("Waiting for vnode ~p: required ~p, spawned ~p", [
+                VnodeType, Partitions, Running
+            ]),
             %TODO: Extract into configuration constant
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
@@ -182,24 +185,25 @@ ensure_all_vnodes_running(VnodeType) ->
 -spec bcast_vnode_check_up(atom(), {hello}, [partition_id()]) -> ok.
 bcast_vnode_check_up(_VMaster, _Request, []) ->
     ok;
-bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
-    Err = try
-              case call_vnode_sync(P, VMaster, Request) of
-                  ok ->
-                      false;
-                  _Msg ->
-                      true
-              end
-          catch
-              _Ex:_Res ->
-                  true
-          end,
+bcast_vnode_check_up(VMaster, Request, [P | Rest]) ->
+    Err =
+        try
+            case call_vnode_sync(P, VMaster, Request) of
+                ok ->
+                    false;
+                _Msg ->
+                    true
+            end
+        catch
+            _Ex:_Res ->
+                true
+        end,
     case Err of
         true ->
             ?LOG_DEBUG("Vnode not up retrying, ~p, ~p", [VMaster, P]),
             %TODO: Extract into configuration constant
             timer:sleep(1000),
-            bcast_vnode_check_up(VMaster, Request, [P|Rest]);
+            bcast_vnode_check_up(VMaster, Request, [P | Rest]);
         false ->
             bcast_vnode_check_up(VMaster, Request, Rest)
     end.
@@ -225,7 +229,8 @@ check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
     PrintFun = fun(DcId, Time) ->
-        ?LOG_DEBUG("~w staleness: ~w ms", [DcId, (Now-Time)/1000]) end,
+        ?LOG_DEBUG("~w staleness: ~w ms", [DcId, (Now - Time) / 1000])
+    end,
     _ = vectorclock:map(PrintFun, SS),
     ok.
 
@@ -303,12 +308,11 @@ check_registered_global(Name) ->
             ok
     end.
 
-
-
 -spec now_microsec() -> non_neg_integer().
 now_microsec() ->
-  erlang:system_time(micro_seconds). % TODO 19 this is not correct, since it is not monotonic (Question: must it be unique as well?)
+    % TODO 19 this is not correct, since it is not monotonic (Question: must it be unique as well?)
+    erlang:system_time(micro_seconds).
 
 -spec now_millisec() -> non_neg_integer().
 now_millisec() ->
-  now_microsec() div 1000.
+    now_microsec() div 1000.

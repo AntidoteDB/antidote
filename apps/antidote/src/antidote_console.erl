@@ -32,20 +32,28 @@
 -module(antidote_console).
 -include_lib("kernel/include/logger.hrl").
 
--export([staged_join/1,
-         down/1,
-         ringready/1]).
+-export([
+    staged_join/1,
+    down/1,
+    ringready/1
+]).
 
--ignore_xref([join/1,
-              leave/1,
-              remove/1,
-              ringready/1]).
+-ignore_xref([
+    join/1,
+    leave/1,
+    remove/1,
+    ringready/1
+]).
 
 %% @doc Staged join operations against a cluster.
 staged_join([NodeStr]) ->
     Node = list_to_atom(NodeStr),
-    join(NodeStr, fun riak_core:staged_join/1,
-         "Success: staged join request for ~p to ~p~n", [node(), Node]).
+    join(
+        NodeStr,
+        fun riak_core:staged_join/1,
+        "Success: staged join request for ~p to ~p~n",
+        [node(), Node]
+    ).
 
 %% @doc Join a node to a cluster.
 join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
@@ -58,24 +66,34 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
                 ?LOG_ERROR("Node ~s is not reachable", [NodeStr]),
                 error;
             {error, different_ring_sizes} ->
-                ?LOG_ERROR("Failed: ~s has a different ring_creation_size",
-                          [NodeStr]),
+                ?LOG_ERROR(
+                    "Failed: ~s has a different ring_creation_size",
+                    [NodeStr]
+                ),
                 error;
             {error, unable_to_get_join_ring} ->
-                ?LOG_ERROR("Failed: Unable to get ring from ~s",
-                          [NodeStr]),
+                ?LOG_ERROR(
+                    "Failed: Unable to get ring from ~s",
+                    [NodeStr]
+                ),
                 error;
             {error, not_single_node} ->
-                ?LOG_ERROR("Failed: This node is already a member of a "
-                          "cluster"),
+                ?LOG_ERROR(
+                    "Failed: This node is already a member of a "
+                    "cluster"
+                ),
                 error;
             {error, self_join} ->
-                ?LOG_ERROR("Failed: This node cannot join itself in a "
-                          "cluster"),
+                ?LOG_ERROR(
+                    "Failed: This node cannot join itself in a "
+                    "cluster"
+                ),
                 error;
             {error, _} ->
-                ?LOG_ERROR("Join failed. Try again in a few moments.",
-                          []),
+                ?LOG_ERROR(
+                    "Join failed. Try again in a few moments.",
+                    []
+                ),
                 error
         end
     catch
@@ -95,8 +113,10 @@ down([Node]) ->
                 ?LOG_ERROR("Failed: ~s is up", [Node]),
                 error;
             {error, not_member} ->
-                ?LOG_ERROR("Failed: ~p is not a member of the cluster.",
-                          [Node]),
+                ?LOG_ERROR(
+                    "Failed: ~p is not a member of the cluster.",
+                    [Node]
+                ),
                 error;
             {error, only_member} ->
                 ?LOG_ERROR("Failed: ~p is the only member.", [Node]),
@@ -113,20 +133,28 @@ ringready([]) ->
     try
         case riak_core_status:ringready() of
             {ok, Nodes} ->
-                ?LOG_INFO("All nodes ~p agree on the ring",
-                          [Nodes]);
+                ?LOG_INFO(
+                    "All nodes ~p agree on the ring",
+                    [Nodes]
+                );
             {error, {different_owners, N1, N2}} ->
-                ?LOG_ERROR("Node ~p and ~p list different partition owners",
-                          [N1, N2]),
+                ?LOG_ERROR(
+                    "Node ~p and ~p list different partition owners",
+                    [N1, N2]
+                ),
                 error;
             {error, {nodes_down, Down}} ->
-                ?LOG_ERROR("Node ~p is down",
-                          [Down]),
+                ?LOG_ERROR(
+                    "Node ~p is down",
+                    [Down]
+                ),
                 error
         end
     catch
         Exception:Reason ->
-            ?LOG_ERROR("Ring-ready failed with exception ~p: ~p",
-                        [Exception, Reason]),
+            ?LOG_ERROR(
+                "Ring-ready failed with exception ~p: ~p",
+                [Exception, Reason]
+            ),
             error
     end.

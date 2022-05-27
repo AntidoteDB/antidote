@@ -39,7 +39,6 @@
 -include("antidote.hrl").
 -include_lib("kernel/include/logger.hrl").
 
-
 %% API
 -export([
     start_link/0,
@@ -77,12 +76,10 @@
 %%% API
 %%%===================================================================
 
-
 % called by clocksi_interactive_coord_sup:start_fm
 -spec start_link() -> {ok, pid()}.
 start_link() ->
     gen_statem:start_link(?MODULE, [], []).
-
 
 %% TODO spec
 stop(Pid) -> gen_statem:stop(Pid).
@@ -92,7 +89,9 @@ stop(Pid) -> gen_statem:stop(Pid).
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
 %%      It either returns the object value or the object state.
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem:read_property_list()) ->
+-spec perform_singleitem_operation(
+    snapshot_time() | ignore, key(), type(), clocksi_readitem:read_property_list()
+) ->
     {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Clock, Key, Type, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
@@ -108,34 +107,41 @@ perform_singleitem_operation(Clock, Key, Type, Properties) ->
             {ok, Snapshot, CommitTime}
     end.
 
-
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+-spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {atom(), term()}, list()) ->
+    {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     Transaction = create_transaction_record(Clock, true, Properties),
     Partition = log_utilities:get_key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case clocksi_downstream:generate_downstream_op(Transaction, Partition, Key, Type, Params1, []) of
+            case
+                clocksi_downstream:generate_downstream_op(
+                    Transaction, Partition, Key, Type, Params1, []
+                )
+            of
                 {ok, DownstreamRecord} ->
                     UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{
-                        tx_id=TxId,
-                        op_type=update,
-                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
+                        tx_id = TxId,
+                        op_type = update,
+                        log_payload = #update_log_payload{
+                            key = Key, type = Type, op = DownstreamRecord
+                        }
                     },
                     LogId = log_utilities:get_logid_from_key(Key),
                     case logging_vnode:append(Partition, LogId, LogRecord) of
                         {ok, _} ->
                             case clocksi_vnode:single_commit_sync(UpdatedPartitions, Transaction) of
                                 {committed, CommitTime} ->
-
                                     %% Execute post commit hook
-                                    case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                    case
+                                        antidote_hooks:execute_post_commit_hook(Key, Type, Params1)
+                                    of
                                         {error, Reason} ->
                                             ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
                                         _ ->
@@ -152,22 +158,18 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     ),
 
                                     {ok, {TxId, [], CausalClock}};
-
                                 abort ->
                                     % TODO increment aborted transaction metrics?
                                     {error, aborted};
                                 {error, Reason} ->
                                     {error, Reason}
                             end;
-
                         Error ->
                             {error, Error}
                     end;
-
                 {error, Reason} ->
                     {error, Reason}
             end;
-
         {error, Reason} ->
             {error, Reason}
     end.
@@ -199,15 +201,21 @@ finish_op(From, Key, Result) ->
     from :: undefined | gen_statem:from(),
     transaction :: undefined | tx(),
     updated_partitions :: list(),
-    client_ops :: list(), % list of upstream updates, used for post commit hooks
+    % list of upstream updates, used for post commit hooks
+    client_ops :: list(),
     num_to_ack :: non_neg_integer(),
     num_to_read :: non_neg_integer(),
     prepare_time :: undefined | clock_time(),
     commit_time :: undefined | clock_time(),
     commit_protocol :: term(),
-    state :: active | prepared | committing
-    | committed | committed_read_only
-    | undefined | aborted,
+    state ::
+        active
+        | prepared
+        | committing
+        | committed
+        | committed_read_only
+        | undefined
+        | aborted,
     operations :: undefined | list() | {update_objects, list()},
     return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
@@ -227,13 +235,11 @@ finish_op(From, Key, Result) ->
 init([]) ->
     {ok, wait_for_start_transaction, ignore}.
 
-
 wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, _State) ->
     BaseState = init_state(false, false, Properties),
     {ok, State} = start_tx_internal(ClientClock, Properties, BaseState),
     TxnId = (State#state.transaction)#transaction.txn_id,
     {next_state, execute_op, State, {reply, Sender, {ok, TxnId}}}.
-
 
 %%%== execute_op
 
@@ -241,12 +247,15 @@ wait_for_start_transaction({call, Sender}, {start_tx, ClientClock, Properties}, 
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% internal state timeout
--spec execute_op({call, gen_statem:from()}, {update | update_objects | read_objects | read | abort | prepare, list()}, state()) -> gen_statem:event_handler_result(state()).
+-spec execute_op(
+    {call, gen_statem:from()},
+    {update | update_objects | read_objects | read | abort | prepare, list()},
+    state()
+) -> gen_statem:event_handler_result(state()).
 
 %% update kept for backwards compatibility with tests.
 execute_op({call, Sender}, {update, Args}, State) ->
     execute_op({call, Sender}, {update_objects, [Args]}, State);
-
 execute_op({call, Sender}, {OpType, Args}, State) ->
     execute_command(OpType, Args, Sender, State).
 
@@ -257,17 +266,13 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
 %%      of the received prepare_time).
 receive_prepared(cast, {prepared, ReceivedPrepareTime}, State) ->
     process_prepared(ReceivedPrepareTime, State);
-
 receive_prepared(cast, abort, State) ->
     receive_prepared(cast, timeout, State);
-
 receive_prepared(cast, timeout, State) ->
     abort(State);
-
 %% capture regular events (e.g. logging_vnode responses)
 receive_prepared(info, {_EventType, EventValue}, State) ->
     receive_prepared(cast, EventValue, State).
-
 
 %%%== committing
 
@@ -275,43 +280,54 @@ receive_prepared(info, {_EventType, EventValue}, State) ->
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state is used when no commit message from the client is
 %%      expected
-committing({call, Sender}, commit, State = #state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions,
-    commit_time = Commit_time}) ->
+committing(
+    {call, Sender},
+    commit,
+    State = #state{
+        transaction = Transaction,
+        updated_partitions = UpdatedPartitions,
+        commit_time = Commit_time
+    }
+) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
             reply_to_client(State#state{state = committed_read_only, from = Sender});
         _ ->
             ok = clocksi_vnode:commit(UpdatedPartitions, Transaction, Commit_time),
-            {next_state, receive_committed,
-                State#state{num_to_ack = NumToAck, from = Sender, state = committing}}
+            {next_state, receive_committed, State#state{
+                num_to_ack = NumToAck, from = Sender, state = committing
+            }}
     end.
 
 %%%== single_committing
 
 %% @doc TODO
--spec single_committing(cast, {committed | clock_time()} | abort | timeout, state()) -> gen_statem:event_handler_result(state());
+-spec single_committing
+    (cast, {committed | clock_time()} | abort | timeout, state()) ->
+        gen_statem:event_handler_result(state());
     (info, {any(), any()}, state()) -> gen_statem:event_handler_result(state()).
-single_committing(cast, {committed, CommitTime}, State = #state{from = From, full_commit = FullCommit}) ->
+single_committing(
+    cast, {committed, CommitTime}, State = #state{from = From, full_commit = FullCommit}
+) ->
     case FullCommit of
         false ->
-            {next_state, committing_single, State#state{commit_time = CommitTime, state = committing},
-                [{reply, From, {ok, CommitTime}}]};
+            {next_state, committing_single,
+                State#state{commit_time = CommitTime, state = committing}, [
+                    {reply, From, {ok, CommitTime}}
+                ]};
         true ->
-            reply_to_client(State#state{prepare_time = CommitTime, commit_time = CommitTime, state = committed})
+            reply_to_client(State#state{
+                prepare_time = CommitTime, commit_time = CommitTime, state = committed
+            })
     end;
-
 single_committing(cast, abort, State) ->
     single_committing(cast, timeout, State);
-
 single_committing(cast, timeout, State) ->
     abort(State);
-
 %% capture regular events (e.g. logging_vnode responses)
 single_committing(info, {_EventType, EventValue}, State) ->
     single_committing(cast, EventValue, State).
-
 
 %%%== receive_aborted
 
@@ -327,21 +343,23 @@ receive_aborted(cast, ack_abort, State = #state{num_to_ack = NumToAck}) ->
         _ ->
             {next_state, receive_aborted, State#state{num_to_ack = NumToAck - 1}}
     end;
-
-receive_aborted(cast, _, State) -> {next_state, receive_aborted, State};
-
+receive_aborted(cast, _, State) ->
+    {next_state, receive_aborted, State};
 %% capture regular events (e.g. logging_vnode responses)
 receive_aborted(info, {_EventType, EventValue}, State) ->
     receive_aborted(cast, EventValue, State).
 
-
 %%%== receive_read_objects_result
 
 %% @doc After asynchronously reading a batch of keys, collect the responses here
-receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #state{
-    num_to_read = NumToRead,
-    return_accumulator = ReadKeys
-}) ->
+receive_read_objects_result(
+    cast,
+    {ok, {Key, Type, Snapshot}},
+    CoordState = #state{
+        num_to_read = NumToRead,
+        return_accumulator = ReadKeys
+    }
+) ->
     %% Apply local updates to the read snapshot
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
 
@@ -355,38 +373,41 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #sta
                 num_to_read = NumToRead - 1,
                 return_accumulator = ReadValues
             }};
-
         false ->
-            {next_state, execute_op, CoordState#state{num_to_read = 0},
-                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+            {next_state, execute_op, CoordState#state{num_to_read = 0}, [
+                {reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}
+            ]}
     end;
-
 %% capture regular events (e.g. logging_vnode responses)
 receive_read_objects_result(info, {_EventType, EventValue}, State) ->
     receive_read_objects_result(cast, EventValue, State).
 
-
-receive_validate_or_read_objects_result(cast, {ok, {invalid, Key, Type, ReadSnapshot, Token}}, CoordState = #state{
-    num_to_read = NumToRead,
-    return_accumulator = ReadKeys,
-    updated_partitions = UpdatedPartitions
-}) ->
-    {Snapshot, EffectiveToken} = case length(UpdatedPartitions) > 0 of
-        true ->
-            % There are some local updates that must be applied.
-            % It is not safe to apply the update and to return
-            % the token returned by the vnode noor it is safe to return
-            % the updated state with a token specific to this uncommitted
-            % transaction.
-            %
-            % In such case, always return a token that will be invalid so
-            % the client can know that returned value shouldn't be cached for
-            % later revalidation.
-            UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, ReadSnapshot),
-            {UpdatedSnapshot, ?INVALID_OBJECT_TOKEN};
-        false ->
-            {ReadSnapshot, Token}
-    end,
+receive_validate_or_read_objects_result(
+    cast,
+    {ok, {invalid, Key, Type, ReadSnapshot, Token}},
+    CoordState = #state{
+        num_to_read = NumToRead,
+        return_accumulator = ReadKeys,
+        updated_partitions = UpdatedPartitions
+    }
+) ->
+    {Snapshot, EffectiveToken} =
+        case length(UpdatedPartitions) > 0 of
+            true ->
+                % There are some local updates that must be applied.
+                % It is not safe to apply the update and to return
+                % the token returned by the vnode noor it is safe to return
+                % the updated state with a token specific to this uncommitted
+                % transaction.
+                %
+                % In such case, always return a token that will be invalid so
+                % the client can know that returned value shouldn't be cached for
+                % later revalidation.
+                UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, ReadSnapshot),
+                {UpdatedSnapshot, ?INVALID_OBJECT_TOKEN};
+            false ->
+                {ReadSnapshot, Token}
+        end,
 
     ReadValues = replace_first(ReadKeys, Key, {invalid, Snapshot, EffectiveToken}),
 
@@ -397,14 +418,18 @@ receive_validate_or_read_objects_result(cast, {ok, {invalid, Key, Type, ReadSnap
                 return_accumulator = ReadValues
             }};
         false ->
-            {next_state, execute_op, CoordState#state{num_to_read = 0},
-                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+            {next_state, execute_op, CoordState#state{num_to_read = 0}, [
+                {reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}
+            ]}
     end;
-
-receive_validate_or_read_objects_result(cast, {ok, {valid, Key, _Type}}, CoordState = #state{
-    num_to_read = NumToRead,
-    return_accumulator = ReadKeys
-}) ->
+receive_validate_or_read_objects_result(
+    cast,
+    {ok, {valid, Key, _Type}},
+    CoordState = #state{
+        num_to_read = NumToRead,
+        return_accumulator = ReadKeys
+    }
+) ->
     ReadValues = replace_first(ReadKeys, Key, valid),
 
     case NumToRead > 1 of
@@ -414,8 +439,9 @@ receive_validate_or_read_objects_result(cast, {ok, {valid, Key, _Type}}, CoordSt
                 return_accumulator = ReadValues
             }};
         false ->
-            {next_state, execute_op, CoordState#state{num_to_read = 0},
-                [{reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}]}
+            {next_state, execute_op, CoordState#state{num_to_read = 0}, [
+                {reply, CoordState#state.from, {ok, lists:reverse(ReadValues)}}
+            ]}
     end.
 
 %%%== receive_logging_responses
@@ -428,26 +454,29 @@ receive_logging_responses(state_timeout, timeout, State) ->
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
-receive_logging_responses(cast, Response, State = #state{
-    is_static = IsStatic,
-    num_to_read = NumToReply,
-    return_accumulator = ReturnAcc
-}) ->
-
-    NewAcc = case Response of
-                 {error, _r} = Err -> Err;
-                 {ok, _OpId} -> ReturnAcc;
-                 timeout -> ReturnAcc
-             end,
+receive_logging_responses(
+    cast,
+    Response,
+    State = #state{
+        is_static = IsStatic,
+        num_to_read = NumToReply,
+        return_accumulator = ReturnAcc
+    }
+) ->
+    NewAcc =
+        case Response of
+            {error, _r} = Err -> Err;
+            {ok, _OpId} -> ReturnAcc;
+            timeout -> ReturnAcc
+        end,
 
     %% Loop back to the same state until we process all the replies
     case NumToReply > 1 of
         true ->
             {next_state, receive_logging_responses, State#state{
-                num_to_read=NumToReply - 1,
-                return_accumulator=NewAcc
+                num_to_read = NumToReply - 1,
+                return_accumulator = NewAcc
             }};
-
         false ->
             case NewAcc of
                 ok ->
@@ -455,19 +484,18 @@ receive_logging_responses(cast, Response, State = #state{
                         true ->
                             prepare(State);
                         false ->
-                            {next_state, execute_op, State#state{num_to_read=0, return_accumulator=[]},
-                                [{reply, State#state.from, NewAcc}]}
+                            {next_state, execute_op,
+                                State#state{num_to_read = 0, return_accumulator = []}, [
+                                    {reply, State#state.from, NewAcc}
+                                ]}
                     end;
-
                 _ ->
                     abort(State)
             end
     end;
-
 %% capture regular events (e.g. logging_vnode responses)
 receive_logging_responses(info, {_EventType, EventValue}, State) ->
     receive_logging_responses(cast, EventValue, State).
-
 
 %%%== receive_committed
 
@@ -483,11 +511,9 @@ receive_committed(cast, committed, State = #state{num_to_ack = NumToAck}) ->
         _ ->
             {next_state, receive_committed, State#state{num_to_ack = NumToAck - 1}}
     end;
-
 %% capture regular events (e.g. logging_vnode responses)
 receive_committed(info, {_EventType, EventValue}, State) ->
     receive_committed(cast, EventValue, State).
-
 
 %%%== committing_single
 
@@ -541,100 +567,116 @@ init_state(FullCommit, IsStatic, Properties) ->
         properties = Properties
     }.
 
-
 %% @doc TODO
--spec start_tx_internal(snapshot_time(), proplists:proplist(), state()) -> {ok, state()} | {error, any()}.
+-spec start_tx_internal(snapshot_time(), proplists:proplist(), state()) ->
+    {ok, state()} | {error, any()}.
 start_tx_internal(ClientClock, Properties, State = #state{}) ->
     TransactionRecord = create_transaction_record(ClientClock, false, Properties),
     % a new transaction was started, increment metrics
     ?STATS(open_transaction),
     {ok, State#state{transaction = TransactionRecord, num_to_read = 0, properties = Properties}}.
 
-
 %% @doc TODO
 -spec create_transaction_record(snapshot_time() | ignore, boolean(), txn_properties()) -> tx().
 %%noinspection ErlangUnresolvedFunction
 create_transaction_record(ClientClock, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    _Res = rand:seed(exsplus, {erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()}),
-    {ok, SnapshotTime} = case ClientClock of
-                             ignore ->
-                                 get_snapshot_time();
-                             _ ->
-                                 case antidote:get_txn_property(update_clock, Properties) of
-                                     update_clock ->
-                                         get_snapshot_time(ClientClock);
-                                     no_update_clock ->
-                                         {ok, ClientClock}
-                                 end
-                         end,
+    _Res = rand:seed(exsplus, {
+        erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()
+    }),
+    {ok, SnapshotTime} =
+        case ClientClock of
+            ignore ->
+                get_snapshot_time();
+            _ ->
+                case antidote:get_txn_property(update_clock, Properties) of
+                    update_clock ->
+                        get_snapshot_time(ClientClock);
+                    no_update_clock ->
+                        {ok, ClientClock}
+                end
+        end,
     DcId = dc_utilities:get_my_dc_id(),
     LocalClock = vectorclock:get(DcId, SnapshotTime),
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = self()},
-    #transaction{snapshot_time_local = LocalClock,
+    #transaction{
+        snapshot_time_local = LocalClock,
         vec_snapshot_time = SnapshotTime,
         txn_id = TransactionId,
-        properties = Properties}.
-
+        properties = Properties
+    }.
 
 %% @doc Execute the commit protocol
--spec execute_command(atom(), term(), gen_statem:from(), state()) -> gen_statem:event_handler_result(state()).
+-spec execute_command(atom(), term(), gen_statem:from(), state()) ->
+    gen_statem:event_handler_result(state()).
 execute_command(prepare, Protocol, Sender, State0) ->
-    State = State0#state{from=Sender, commit_protocol=Protocol},
+    State = State0#state{from = Sender, commit_protocol = Protocol},
     prepare(State);
-
 %% @doc Abort the current transaction
 execute_command(abort, _Protocol, Sender, State) ->
-    abort(State#state{from=Sender});
-
+    abort(State#state{from = Sender});
 %% @doc Perform a single read, synchronous
-execute_command(read, {Key, Type}, Sender, State = #state{
-    transaction=Transaction,
-    updated_partitions=UpdatedPartitions
-}) ->
+execute_command(
+    read,
+    {Key, Type},
+    Sender,
+    State = #state{
+        transaction = Transaction,
+        updated_partitions = UpdatedPartitions
+    }
+) ->
     case perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) of
         {error, _} ->
             abort(State);
         ReadResult ->
             {next_state, execute_op, State, {reply, Sender, {ok, ReadResult}}}
     end;
-
 %% @doc Read a batch of objects, asynchronous
-execute_command(read_objects, Objects, Sender, State = #state{transaction=Transaction}) ->
+execute_command(read_objects, Objects, Sender, State = #state{transaction = Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
         ?STATS(operation_read_async),
         Partition = log_utilities:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#state.return_accumulator,
-        AccState#state{return_accumulator=[Key | ReadKeys]}
-                   end,
+        AccState#state{return_accumulator = [Key | ReadKeys]}
+    end,
 
     NewCoordState = lists:foldl(
         ExecuteReads,
-        State#state{num_to_read = length(Objects), return_accumulator=[]},
+        State#state{num_to_read = length(Objects), return_accumulator = []},
         Objects
     ),
 
     {next_state, receive_read_objects_result, NewCoordState#state{from = Sender}};
-
-execute_command(validate_or_read, {Key, Type, Token}, Sender, State = #state{
-    transaction=Transaction,
-    updated_partitions=UpdatedPartitions
-}) ->
+execute_command(
+    validate_or_read,
+    {Key, Type, Token},
+    Sender,
+    State = #state{
+        transaction = Transaction,
+        updated_partitions = UpdatedPartitions
+    }
+) ->
     Partition = log_utilities:get_key_partition(Key),
-    EffectiveToken = case has_tx_updates(Partition, State) of
-        true -> ?INVALID_OBJECT_TOKEN;
-        false -> Token
-    end,
+    EffectiveToken =
+        case has_tx_updates(Partition, State) of
+            true -> ?INVALID_OBJECT_TOKEN;
+            false -> Token
+        end,
 
-    case perform_validate_or_read({Key, Type, EffectiveToken}, UpdatedPartitions, Transaction, Sender) of
+    case
+        perform_validate_or_read(
+            {Key, Type, EffectiveToken}, UpdatedPartitions, Transaction, Sender
+        )
+    of
         {error, _} ->
             abort(State);
         ReadResult ->
             {next_state, execute_op, State, {reply, Sender, {ok, ReadResult}}}
     end;
-
-execute_command(validate_or_read_objects, {Objects, Tokens}, Sender, State = #state{transaction=Transaction}) ->
+execute_command(
+    validate_or_read_objects, {Objects, Tokens}, Sender, State = #state{transaction = Transaction}
+) ->
     ExecuteReads = fun({{Key, Type}, Token}, AccState) ->
         Partition = log_utilities:get_key_partition(Key),
 
@@ -642,51 +684,55 @@ execute_command(validate_or_read_objects, {Objects, Tokens}, Sender, State = #st
         % validate the value as it will be invalidated here anyway.
         %
         % Send an invalid token and expect a full result.
-        EffectiveToken = case has_tx_updates(Partition, State) of
-            true -> ?INVALID_OBJECT_TOKEN;
-            false -> Token
-        end,
+        EffectiveToken =
+            case has_tx_updates(Partition, State) of
+                true -> ?INVALID_OBJECT_TOKEN;
+                false -> Token
+            end,
 
-        ok = clocksi_vnode:async_validate_or_read_data_item(Partition, Transaction, Key, Type, EffectiveToken),
+        ok = clocksi_vnode:async_validate_or_read_data_item(
+            Partition, Transaction, Key, Type, EffectiveToken
+        ),
         ReadKeys = AccState#state.return_accumulator,
-        AccState#state{return_accumulator=[Key | ReadKeys]}
+        AccState#state{return_accumulator = [Key | ReadKeys]}
     end,
 
     NewCoordState = lists:foldl(
         ExecuteReads,
-        State#state{num_to_read = length(Objects), return_accumulator=[]},
+        State#state{num_to_read = length(Objects), return_accumulator = []},
         lists:zip(Objects, Tokens)
     ),
 
     {next_state, receive_validate_or_read_objects_result, NewCoordState#state{from = Sender}};
-
 %% @doc Perform update operations on a batch of Objects
-execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Transaction}) ->
-    ExecuteUpdates = fun(Op, AccState=#state{
-        client_ops = ClientOps0,
-        updated_partitions = UpdatedPartitions0
-    }) ->
+execute_command(update_objects, UpdateOps, Sender, State = #state{transaction = Transaction}) ->
+    ExecuteUpdates = fun(
+        Op,
+        AccState = #state{
+            client_ops = ClientOps0,
+            updated_partitions = UpdatedPartitions0
+        }
+    ) ->
         case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0) of
             {error, _} = Err ->
                 AccState#state{return_accumulator = Err};
-
             {UpdatedPartitions, ClientOps} ->
                 NumToRead = AccState#state.num_to_read,
                 AccState#state{
-                    client_ops=ClientOps,
-                    num_to_read=NumToRead + 1,
-                    updated_partitions=UpdatedPartitions
+                    client_ops = ClientOps,
+                    num_to_read = NumToRead + 1,
+                    updated_partitions = UpdatedPartitions
                 }
         end
-                     end,
+    end,
 
     NewCoordState = lists:foldl(
         ExecuteUpdates,
-        State#state{num_to_read=0, return_accumulator=ok},
+        State#state{num_to_read = 0, return_accumulator = ok},
         UpdateOps
     ),
 
-    LoggingState = NewCoordState#state{from=Sender},
+    LoggingState = NewCoordState#state{from = Sender},
     case LoggingState#state.num_to_read > 0 of
         true ->
             {next_state, receive_logging_responses, LoggingState};
@@ -694,47 +740,50 @@ execute_command(update_objects, UpdateOps, Sender, State = #state{transaction=Tr
             {next_state, receive_logging_responses, LoggingState, [{state_timeout, 0, timeout}]}
     end.
 
-
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(State = #state{
-    from=From,
-    state=TxState,
-    is_static=IsStatic,
-    client_ops=ClientOps,
-    commit_time=CommitTime,
-    transaction=Transaction,
-    return_accumulator=ReturnAcc
-}) ->
+reply_to_client(
+    State = #state{
+        from = From,
+        state = TxState,
+        is_static = IsStatic,
+        client_ops = ClientOps,
+        commit_time = CommitTime,
+        transaction = Transaction,
+        return_accumulator = ReturnAcc
+    }
+) ->
     TxId = Transaction#transaction.txn_id,
-    _ = case From of
-        undefined ->
-            ok;
-
-        {_Pid, _Tag} ->
-
-            Reply = case TxState of
+    _ =
+        case From of
+            undefined ->
+                ok;
+            {_Pid, _Tag} ->
+                Reply =
+                    case TxState of
                         committed_read_only ->
                             case IsStatic of
                                 false ->
                                     {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
                                 true ->
-                                    {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
+                                    {ok,
+                                        {TxId, ReturnAcc,
+                                            Transaction#transaction.vec_snapshot_time}}
                             end;
-
                         committed ->
                             %% Execute post_commit_hooks
                             _Result = execute_post_commit_hooks(ClientOps),
                             %% TODO: What happens if commit hook fails?
                             DcId = dc_utilities:get_my_dc_id(),
-                            CausalClock = vectorclock:set(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                            CausalClock = vectorclock:set(
+                                DcId, CommitTime, Transaction#transaction.vec_snapshot_time
+                            ),
                             case IsStatic of
                                 false ->
                                     {ok, {TxId, CausalClock}};
                                 true ->
                                     {ok, CausalClock}
                             end;
-
                         aborted ->
                             ?STATS(transaction_aborted),
                             case ReturnAcc of
@@ -745,32 +794,29 @@ reply_to_client(State = #state{
                             end
 
                         %% can never match (dialyzer)
-%%                        Reason ->
-%%                            {TxId, Reason}
+                        %%                        Reason ->
+                        %%                            {TxId, Reason}
                     end,
-            gen_statem:reply(From, Reply)
-    end,
+                gen_statem:reply(From, Reply)
+        end,
 
     % transaction is finished, decrement count
     ?STATS(transaction_finished),
 
-
     {stop, normal, State}.
-
 
 %% @doc The following function is used to apply the updates that were performed by the running
 %% transaction, to the result returned by a read.
 -spec apply_tx_updates_to_snapshot(key(), state(), type(), snapshot()) -> snapshot().
-apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
+apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot) ->
     Partition = log_utilities:get_key_partition(Key),
     Found = lists:keyfind(Partition, 1, CoordState#state.updated_partitions),
 
     case Found of
         false ->
             Snapshot;
-
         {Partition, WS} ->
-            FilteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
+            FilteredAndReversedUpdates = clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
             clocksi_materializer:materialize_eager(Type, Snapshot, FilteredAndReversedUpdates)
     end.
 
@@ -789,7 +835,6 @@ has_tx_updates(Partition, CoordState) ->
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
-
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
@@ -797,7 +842,6 @@ get_snapshot_time() ->
     DcId = dc_utilities:get_my_dc_id(),
     SnapshotTime = vectorclock:set(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
-
 
 -spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
 wait_for_clock(Clock) ->
@@ -813,34 +857,30 @@ wait_for_clock(Clock) ->
             wait_for_clock(Clock)
     end.
 
-
 %% Replaces the first occurrence of an entry;
 %% yields error if there the element to be replaced is not in the list
 replace_first([], _, _) ->
     error;
-
-replace_first([Key|Rest], Key, NewKey) ->
-    [NewKey|Rest];
-
-replace_first([NotMyKey|Rest], Key, NewKey) ->
-    [NotMyKey|replace_first(Rest, Key, NewKey)].
-
+replace_first([Key | Rest], Key, NewKey) ->
+    [NewKey | Rest];
+replace_first([NotMyKey | Rest], Key, NewKey) ->
+    [NotMyKey | replace_first(Rest, Key, NewKey)].
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     ?STATS(operation_read),
     Partition = log_utilities:get_key_partition(Key),
 
-    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
-                   false ->
-                       [];
-                   {Partition, WS} ->
-                       WS
-               end,
+    WriteSet =
+        case lists:keyfind(Partition, 1, UpdatedPartitions) of
+            false ->
+                [];
+            {Partition, WS} ->
+                WS
+        end,
 
     case clocksi_vnode:read_data_item(Partition, Transaction, Key, Type, WriteSet) of
         {ok, Snapshot} ->
             Snapshot;
-
         {error, Reason} ->
             gen_statem:reply(Sender, {error, Reason}),
             {error, Reason}
@@ -849,15 +889,20 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 perform_validate_or_read({Key, Type, Token}, UpdatedPartitions, Transaction, Sender) ->
     Partition = log_utilities:get_key_partition(Key),
 
-    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
-        false -> [];
-        {Partition, WS} ->
-            ?INVALID_OBJECT_TOKEN = Token,
-            WS
-    end,
+    WriteSet =
+        case lists:keyfind(Partition, 1, UpdatedPartitions) of
+            false ->
+                [];
+            {Partition, WS} ->
+                ?INVALID_OBJECT_TOKEN = Token,
+                WS
+        end,
 
-    case clocksi_vnode:validate_or_read_data_item(Partition, Transaction, Key, Type, Token, WriteSet) of
-        {ok, Result} -> Result;
+    case
+        clocksi_vnode:validate_or_read_data_item(Partition, Transaction, Key, Type, Token, WriteSet)
+    of
+        {ok, Result} ->
+            Result;
         {error, Reason} ->
             gen_statem:reply(Sender, {error, Reason}),
             {error, Reason}
@@ -868,21 +913,20 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
     {Key, Type, Update} = Op,
     Partition = log_utilities:get_key_partition(Key),
 
-    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
-                   false ->
-                       [];
-                   {Partition, WS} ->
-                       WS
-               end,
+    WriteSet =
+        case lists:keyfind(Partition, 1, UpdatedPartitions) of
+            false ->
+                [];
+            {Partition, WS} ->
+                WS
+        end,
 
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Update) of
         {error, Reason} ->
             ?LOG_DEBUG("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};
-
         {Key, Type, PostHookUpdate} ->
-
             %% Generate the appropriate state operations based on older snapshots
             GenerateResult = clocksi_downstream:generate_downstream_op(
                 Transaction,
@@ -896,9 +940,10 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
             case GenerateResult of
                 {error, Reason} ->
                     {error, Reason};
-
                 {ok, DownstreamOp} ->
-                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
+                    ok = async_log_propagation(
+                        Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp
+                    ),
 
                     %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},
@@ -920,39 +965,39 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps) ->
 %%
 append_updated_partitions(UpdatedPartitions, [], Partition, Update) ->
     [{Partition, [Update]} | UpdatedPartitions];
-
 append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
     %% Update the write set entry with the new record
     AllUpdates = {Partition, [Update | WriteSet]},
     lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
 
-
 -spec async_log_propagation(index_node(), txid(), key(), type(), effect()) -> ok.
 async_log_propagation(Partition, TxId, Key, Type, Record) ->
     LogRecord = #log_operation{
-        op_type=update,
-        tx_id=TxId,
-        log_payload=#update_log_payload{key=Key, type=Type, op=Record}
+        op_type = update,
+        tx_id = TxId,
+        log_payload = #update_log_payload{key = Key, type = Type, op = Record}
     },
 
     LogId = log_utilities:get_logid_from_key(Key),
     logging_vnode:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
-
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 -spec prepare(state()) -> gen_statem:event_handler_result(state()).
-prepare(State = #state{
-    num_to_read=NumToRead,
-    full_commit=FullCommit,
-    transaction=Transaction,
-    updated_partitions = UpdatedPartitions,
-    commit_protocol = CommitProtocol
-}) ->
+prepare(
+    State = #state{
+        num_to_read = NumToRead,
+        full_commit = FullCommit,
+        transaction = Transaction,
+        updated_partitions = UpdatedPartitions,
+        commit_protocol = CommitProtocol
+    }
+) ->
     case UpdatedPartitions of
         [] ->
             if
-                CommitProtocol == two_phase orelse NumToRead == 0 -> %TODO explain this condition, it makes no sense
+                %TODO explain this condition, it makes no sense
+                CommitProtocol == two_phase orelse NumToRead == 0 ->
                     case FullCommit of
                         true ->
                             prepare_done(State, commit_read_only);
@@ -964,15 +1009,13 @@ prepare(State = #state{
                 true ->
                     {next_state, receive_prepared, State#state{state = prepared}}
             end;
-
         [_] when CommitProtocol /= two_phase ->
             prepare_done(State, single_committing);
-        [_|_] ->
+        [_ | _] ->
             ok = clocksi_vnode:prepare(UpdatedPartitions, Transaction),
             Num_to_ack = length(UpdatedPartitions),
             {next_state, receive_prepared, State#state{num_to_ack = Num_to_ack, state = prepared}}
     end.
-
 
 %% This function is called when we are done with the prepare phase.
 %% There are different options to continue the commit phase:
@@ -980,8 +1023,12 @@ prepare(State = #state{
 %% commit_read_only: special case for when we have not updated anything
 %% {reply_and_then_commit, clock_time()}: first reply that we have successfully committed and then try to commit TODO rly?
 %% {normal_commit, clock_time(): wait until all participants have acknowledged the commit and then reply to the client
--spec prepare_done(state(), Action) -> gen_statem:event_handler_result(state())
-    when Action :: single_committing | commit_read_only | {reply_and_then_commit, clock_time()} | {normal_commit, clock_time()}.
+-spec prepare_done(state(), Action) -> gen_statem:event_handler_result(state()) when
+    Action ::
+        single_committing
+        | commit_read_only
+        | {reply_and_then_commit, clock_time()}
+        | {normal_commit, clock_time()}.
 prepare_done(State, Action) ->
     case Action of
         single_committing ->
@@ -993,27 +1040,31 @@ prepare_done(State, Action) ->
             reply_to_client(State#state{state = committed_read_only});
         {reply_and_then_commit, CommitSnapshotTime} ->
             From = State#state.from,
-            {next_state, committing, State#state{
-                state = committing,
-                commit_time = CommitSnapshotTime},
+            {next_state, committing,
+                State#state{
+                    state = committing,
+                    commit_time = CommitSnapshotTime
+                },
                 [{reply, From, {ok, CommitSnapshotTime}}]};
         {normal_commit, MaxPrepareTime} ->
             UpdatedPartitions = State#state.updated_partitions,
             Transaction = State#state.transaction,
-                        ok = clocksi_vnode:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
-            {next_state, receive_committed,
-                            State#state{
-                                num_to_ack = length(UpdatedPartitions),
-                                commit_time = MaxPrepareTime,
-                                state = committing}}
+            ok = clocksi_vnode:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
+            {next_state, receive_committed, State#state{
+                num_to_ack = length(UpdatedPartitions),
+                commit_time = MaxPrepareTime,
+                state = committing
+            }}
     end.
 
-
-
-
-process_prepared(ReceivedPrepareTime, State = #state{num_to_ack = NumToAck,
-    full_commit = FullCommit,
-    prepare_time = PrepareTime}) ->
+process_prepared(
+    ReceivedPrepareTime,
+    State = #state{
+        num_to_ack = NumToAck,
+        full_commit = FullCommit,
+        prepare_time = PrepareTime
+    }
+) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of
         1 ->
@@ -1023,16 +1074,21 @@ process_prepared(ReceivedPrepareTime, State = #state{num_to_ack = NumToAck,
                     prepare_done(State, {normal_commit, MaxPrepareTime});
                 false ->
                     prepare_done(State, {reply_and_then_commit, MaxPrepareTime})
-        end;
+            end;
         _ ->
-            {next_state, receive_prepared, State#state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
+            {next_state, receive_prepared, State#state{
+                num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime
+            }}
     end.
-
 
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
-abort(State = #state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
+abort(
+    State = #state{
+        transaction = Transaction,
+        updated_partitions = UpdatedPartitions
+    }
+) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -1042,15 +1098,18 @@ abort(State = #state{transaction = Transaction,
             {next_state, receive_aborted, State#state{num_to_ack = NumToAck, state = aborted}}
     end.
 
-
 execute_post_commit_hooks(Ops) ->
-    lists:foreach(fun({Key, Type, Update}) ->
-        case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
-            {error, Reason} ->
-                ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
-            _ -> ok
-        end
-                  end, lists:reverse(Ops)).
+    lists:foreach(
+        fun({Key, Type, Update}) ->
+            case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+                {error, Reason} ->
+                    ?LOG_INFO("Post commit hook failed. Reason ~p", [Reason]);
+                _ ->
+                    ok
+            end
+        end,
+        lists:reverse(Ops)
+    ).
 
 %%%===================================================================
 %%% Unit Tests
@@ -1073,21 +1132,39 @@ meck_load() ->
     meck:expect(vectorclock, get, fun(_, _) -> 0 end),
 
     meck:expect(log_utilities, get_key_partition, fun(A) -> mock_partition:get_key_partition(A) end),
-    meck:expect(log_utilities, get_logid_from_key, fun(A) -> mock_partition:get_logid_from_key(A) end),
+    meck:expect(log_utilities, get_logid_from_key, fun(A) ->
+        mock_partition:get_logid_from_key(A)
+    end),
 
     % this is not implemented in mock_partition!
     % meck:expect(clocksi_vnode, single_commit_sync, fun(_,_) -> 0 end),
     meck:expect(clocksi_vnode, commit, fun(_, _, _) -> ok end),
-    meck:expect(clocksi_vnode, read_data_item, fun(A, B, K, C, D) -> mock_partition:read_data_item(A, B, K, C, D) end),
-    meck:expect(clocksi_vnode, validate_or_read_data_item, fun(Node, TxId, Key, Type, Token, Updates) -> mock_partition:validate_or_read_data_item(Node, TxId, Key, Type, Token, Updates) end),
-    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, A) -> mock_partition:prepare(UpdatedPartition, A) end),
-    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, A) -> mock_partition:single_commit(UpdatedPartition, A) end),
-    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, A) -> mock_partition:abort(UpdatedPartition, A) end),
+    meck:expect(clocksi_vnode, read_data_item, fun(A, B, K, C, D) ->
+        mock_partition:read_data_item(A, B, K, C, D)
+    end),
+    meck:expect(clocksi_vnode, validate_or_read_data_item, fun(
+        Node, TxId, Key, Type, Token, Updates
+    ) ->
+        mock_partition:validate_or_read_data_item(Node, TxId, Key, Type, Token, Updates)
+    end),
+    meck:expect(clocksi_vnode, prepare, fun(UpdatedPartition, A) ->
+        mock_partition:prepare(UpdatedPartition, A)
+    end),
+    meck:expect(clocksi_vnode, single_commit, fun(UpdatedPartition, A) ->
+        mock_partition:single_commit(UpdatedPartition, A)
+    end),
+    meck:expect(clocksi_vnode, abort, fun(UpdatedPartition, A) ->
+        mock_partition:abort(UpdatedPartition, A)
+    end),
 
-    meck:expect(clocksi_downstream, generate_downstream_op, fun(A, B, Key, C, D, E) -> mock_partition:generate_downstream_op(A, B, Key, C, D, E) end),
+    meck:expect(clocksi_downstream, generate_downstream_op, fun(A, B, Key, C, D, E) ->
+        mock_partition:generate_downstream_op(A, B, Key, C, D, E)
+    end),
 
     meck:expect(logging_vnode, append, fun(_, _, _) -> {ok, {0, node}} end),
-    meck:expect(logging_vnode, asyn_append, fun(A, B, C, ReplyTo) -> mock_partition:asyn_append(A, B, C, ReplyTo) end).
+    meck:expect(logging_vnode, asyn_append, fun(A, B, C, ReplyTo) ->
+        mock_partition:asyn_append(A, B, C, ReplyTo)
+    end).
 
 meck_unload() ->
     meck:unload(dc_utilities),
@@ -1105,15 +1182,14 @@ top_setup() ->
     Pid.
 
 top_cleanup(Pid) ->
-    case process_info(Pid) of undefined -> io:format("Already crashed");
-        _ -> clocksi_interactive_coord:stop(Pid) end,
+    case process_info(Pid) of
+        undefined -> io:format("Already crashed");
+        _ -> clocksi_interactive_coord:stop(Pid)
+    end,
     meck_unload().
 
 t_test_() ->
-    {foreach,
-     fun top_setup/0,
-     fun top_cleanup/1,
-     [
+    {foreach, fun top_setup/0, fun top_cleanup/1, [
         fun empty_prepare_/0,
         fun timeout_/0,
         fun update_single_abort_/0,
@@ -1134,7 +1210,6 @@ t_test_() ->
         fun get_snapshot_time_/0,
         fun wait_for_clock_/0
     ]}.
-
 
 empty_prepare_() ->
     Pid = whereis(srv),
@@ -1177,64 +1252,82 @@ update_multi_success_() ->
 
 read_single_fail_() ->
     Pid = whereis(srv),
-    ?assertEqual({error, mock_read_fail},
-        gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity)).
+    ?assertEqual(
+        {error, mock_read_fail},
+        gen_statem:call(Pid, {read, {read_fail, nothing}}, infinity)
+    ).
 
 read_success_() ->
     Pid = whereis(srv),
     {ok, State} = gen_statem:call(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
-    ?assertEqual({ok, 2},
-        {ok, antidote_crdt_counter_pn:value(State)}),
-    ?assertEqual({ok, [a]},
-        gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
-    ?assertEqual({ok, mock_value},
-        gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+    ?assertEqual(
+        {ok, 2},
+        {ok, antidote_crdt_counter_pn:value(State)}
+    ),
+    ?assertEqual(
+        {ok, [a]},
+        gen_statem:call(Pid, {read, {set, antidote_crdt_set_go}}, infinity)
+    ),
+    ?assertEqual(
+        {ok, mock_value},
+        gen_statem:call(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)
+    ),
     ?assertMatch({ok, _}, gen_statem:call(Pid, {prepare, empty}, infinity)).
 
 validate_or_read_single_fail_no_token_() ->
     Pid = whereis(srv),
 
-    ?assertEqual({error, mock_read_fail},
-        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, ?INVALID_OBJECT_TOKEN}}, infinity)).
+    ?assertEqual(
+        {error, mock_read_fail},
+        gen_statem:call(
+            Pid, {validate_or_read, {read_fail, nothing, ?INVALID_OBJECT_TOKEN}}, infinity
+        )
+    ).
 
 validate_or_read_single_fail_with_token_() ->
     Pid = whereis(srv),
 
-    ?assertEqual({error, mock_read_fail},
-        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"valid">>}}, infinity)).
+    ?assertEqual(
+        {error, mock_read_fail},
+        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"valid">>}}, infinity)
+    ).
 
 validate_or_read_single_fail_invalid_token_() ->
     Pid = whereis(srv),
 
-    ?assertEqual({error, mock_read_fail},
-        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"invalid">>}}, infinity)).
+    ?assertEqual(
+        {error, mock_read_fail},
+        gen_statem:call(Pid, {validate_or_read, {read_fail, nothing, <<"invalid">>}}, infinity)
+    ).
 
 validate_or_read_success_() ->
     Pid = whereis(srv),
 
-    {ok, {invalid, State, Token}} = gen_statem:call(Pid,
-                                                    {validate_or_read,
-                                                     {counter,
-                                                      antidote_crdt_counter_pn,
-                                                      ?INVALID_OBJECT_TOKEN}}, infinity),
+    {ok, {invalid, State, Token}} = gen_statem:call(
+        Pid,
+        {validate_or_read, {counter, antidote_crdt_counter_pn, ?INVALID_OBJECT_TOKEN}},
+        infinity
+    ),
     ?assertEqual(2, State),
 
-    {ok, valid} =  gen_statem:call(Pid,
-                                   {validate_or_read,
-                                   {counter,
-                                    antidote_crdt_counter_pn,
-                                    Token}}, infinity),
+    {ok, valid} = gen_statem:call(
+        Pid,
+        {validate_or_read, {counter, antidote_crdt_counter_pn, Token}},
+        infinity
+    ),
 
-    {ok, {invalid, State, Token}} = gen_statem:call(Pid,
-                                                    {validate_or_read,
-                                                    {counter,
-                                                     antidote_crdt_counter_pn,
-                                                     <<"past_token">>}}, infinity).
+    {ok, {invalid, State, Token}} = gen_statem:call(
+        Pid,
+        {validate_or_read, {counter, antidote_crdt_counter_pn, <<"past_token">>}},
+        infinity
+    ).
 
 downstream_fail_() ->
     Pid = whereis(srv),
-    ?assertMatch({error, _},
-        gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity)).
+    ?assertMatch(
+        {error, _},
+        gen_statem:call(Pid, {update, {downstream_fail, nothing, nothing}}, infinity)
+    ).
 
 get_snapshot_time_() ->
     {ok, SnapshotTime} = get_snapshot_time(),
@@ -1246,6 +1339,5 @@ wait_for_clock_() ->
     VecClock = dc_utilities:now_microsec(),
     {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
     ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2)).
-
 
 -endif.

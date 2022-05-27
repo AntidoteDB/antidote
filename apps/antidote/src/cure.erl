@@ -39,30 +39,27 @@
 
 -include("antidote.hrl").
 
-
 -export([
-         start_transaction/2,
-         commit_transaction/1,
-         abort_transaction/1,
-         read_objects/2,
-         validate_or_read_objects/3,
-         get_objects/2,
-         read_objects/3,
-         get_objects/3,
-         update_objects/2,
-         update_objects/3,
-         obtain_objects/4,
-         %% Following functions should be only used for testing
-         clocksi_iprepare/1,
-         clocksi_icommit/1
-        ]).
+    start_transaction/2,
+    commit_transaction/1,
+    abort_transaction/1,
+    read_objects/2,
+    validate_or_read_objects/3,
+    get_objects/2,
+    read_objects/3,
+    get_objects/3,
+    update_objects/2,
+    update_objects/3,
+    obtain_objects/4,
+    %% Following functions should be only used for testing
+    clocksi_iprepare/1,
+    clocksi_icommit/1
+]).
 
-
--spec start_transaction(snapshot_time() | ignore, txn_properties())
-                       -> {ok, txid()} | {error, reason()}.
+-spec start_transaction(snapshot_time() | ignore, txn_properties()) ->
+    {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties) ->
     clocksi_istart_tx(Clock, Properties).
-
 
 -spec abort_transaction(txid()) -> ok | {error, reason()}.
 abort_transaction(TxId) ->
@@ -72,7 +69,7 @@ abort_transaction(TxId) ->
     end.
 
 -spec commit_transaction(txid()) ->
-                                {ok, snapshot_time()} | {error, reason()}.
+    {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
     case clocksi_full_icommit(TxId) of
         {ok, {_TxId, CommitTime}} ->
@@ -90,26 +87,36 @@ read_objects(Objects, TxId) ->
 get_objects(Objects, TxId) ->
     obtain_objects(Objects, TxId, object_state).
 
--spec validate_or_read_objects([bound_object()], [binary()], txid()) -> {ok, [valid | {invalid, term(), binary()}]} | {error, reason()}.
+-spec validate_or_read_objects([bound_object()], [binary()], txid()) ->
+    {ok, [valid | {invalid, term(), binary()}]} | {error, reason()}.
 validate_or_read_objects(Objects, Tokens, TxId) ->
     FormattedObjects = format_read_params(Objects),
-    case gen_statem:call(TxId#tx_id.server_pid, {validate_or_read_objects, {FormattedObjects, Tokens}}, ?OP_TIMEOUT) of
+    case
+        gen_statem:call(
+            TxId#tx_id.server_pid,
+            {validate_or_read_objects, {FormattedObjects, Tokens}},
+            ?OP_TIMEOUT
+        )
+    of
         {ok, Results} ->
             {ok, transform_reads_from_validate_or_reads(Results, Objects)};
-        {error, Reason} -> {error, Reason}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
+-spec obtain_objects([bound_object()], txid(), object_value | object_state) ->
+    {ok, [term()]} | {error, reason()}.
 obtain_objects(Objects, TxId, StateOrValue) ->
     FormattedObjects = format_read_params(Objects),
     case gen_statem:call(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
         {ok, Res} ->
             {ok, transform_reads(Res, StateOrValue, Objects)};
-        {error, Reason} -> {error, Reason}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec update_objects([{bound_object(), op_name(), op_param()}], txid())
-                    -> ok | {error, reason()}.
+-spec update_objects([{bound_object(), op_name(), op_param()}], txid()) ->
+    ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     FormattedUpdates = format_update_params(Updates),
     case gen_statem:call(TxId#tx_id.server_pid, {update_objects, FormattedUpdates}, ?OP_TIMEOUT) of
@@ -122,8 +129,8 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}]) ->
-                            {ok, snapshot_time()} | {error, reason()}.
+-spec update_objects(snapshot_time() | ignore, list(), [{bound_object(), op_name(), op_param()}]) ->
+    {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, []) ->
     {ok, vectorclock:new()};
 update_objects(ClientCausalVC, Properties, Updates) ->
@@ -140,24 +147,30 @@ read_objects(Clock, Properties, Objects) ->
 get_objects(Clock, Properties, Objects) ->
     obtain_objects(Clock, Properties, Objects, object_state).
 
-
--spec obtain_objects(snapshot_time() | ignore, txn_properties(), [bound_object()], object_value|object_state) ->
-                          {ok, list(), vectorclock()} | {error, reason()}.
+-spec obtain_objects(
+    snapshot_time() | ignore, txn_properties(), [bound_object()], object_value | object_state
+) ->
+    {ok, list(), vectorclock()} | {error, reason()}.
 obtain_objects(Clock, Properties, Objects, StateOrValue) ->
-    SingleKey = case Objects of
-                    [_O] -> %% Single key update
-                        case Clock of
-                            ignore -> true;
-                            _ -> false
-                        end;
-                    [_H|_T] -> false
-                end,
+    SingleKey =
+        case Objects of
+            %% Single key update
+            [_O] ->
+                case Clock of
+                    ignore -> true;
+                    _ -> false
+                end;
+            [_H | _T] ->
+                false
+        end,
     case SingleKey of
-        true -> %% Execute the fast path
+        %% Execute the fast path
+        true ->
             FormattedObjects = format_read_params(Objects),
             [{Key, Type}] = FormattedObjects,
-            {ok, Val, CommitTime} = clocksi_interactive_coord:
-                perform_singleitem_operation(Clock, Key, Type, Properties),
+            {ok, Val, CommitTime} = clocksi_interactive_coord:perform_singleitem_operation(
+                Clock, Key, Type, Properties
+            ),
             {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
@@ -167,47 +180,58 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
                         {ok, Res} ->
                             {ok, CommitTime} = commit_transaction(TxId),
                             {ok, Res, CommitTime};
-                        {error, Reason} -> {error, Reason}
+                        {error, Reason} ->
+                            {error, Reason}
                     end;
                 {ok, gr} ->
                     case Objects of
-                        [_Op] -> %% Single object read = read latest value
+                        %% Single object read = read latest value
+                        [_Op] ->
                             {ok, TxId} = clocksi_istart_tx(Clock, Properties),
                             case obtain_objects(Objects, TxId, StateOrValue) of
                                 {ok, Res} ->
                                     {ok, CommitTime} = commit_transaction(TxId),
                                     {ok, Res, CommitTime};
-                                {error, Reason} -> {error, Reason}
+                                {error, Reason} ->
+                                    {error, Reason}
                             end;
-                        [_|_] -> %% Read Multiple objects  = read from a snapshot
+                        %% Read Multiple objects  = read from a snapshot
+                        [_ | _] ->
                             %% Snapshot includes all updates committed at time GST
                             %% from local and remote replicas
                             case gr_snapshot_obtain(Clock, Objects, StateOrValue) of
                                 {ok, Result, CommitTime} ->
                                     {ok, Result, CommitTime};
-                                {error, Reason} -> {error, Reason}
+                                {error, Reason} ->
+                                    {error, Reason}
                             end
                     end
             end
-        end.
-
+    end.
 
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
-            object_state -> States;
-            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
-                                          antidote_crdt:value(Type, State) end,
-                                      lists:zip(States, Objects))
+        object_state ->
+            States;
+        object_value ->
+            lists:map(
+                fun({State, {_Key, Type, _Bucket}}) ->
+                    antidote_crdt:value(Type, State)
+                end,
+                lists:zip(States, Objects)
+            )
     end.
 
 transform_reads_from_validate_or_reads(Results, Objects) ->
-    lists:map(fun({Result, {_Key, Type, _Bucket}}) ->
-        case Result of
-            valid -> valid;
-            {invalid, State, Token} ->
-                {invalid, antidote_crdt:value(Type, State), Token}
-        end
-    end, lists:zip(Results, Objects)).
+    lists:map(
+        fun({Result, {_Key, Type, _Bucket}}) ->
+            case Result of
+                valid -> valid;
+                {invalid, State, Token} -> {invalid, antidote_crdt:value(Type, State), Token}
+            end
+        end,
+        lists:zip(Results, Objects)
+    ).
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
@@ -215,15 +239,16 @@ transform_reads_from_validate_or_reads(Results, Objects) ->
 %%      Returns: an ok message along with the new TxId.
 %%
 -spec clocksi_istart_tx(snapshot_time() | ignore, txn_properties()) ->
-                               {ok, txid()} | {error, reason()}.
+    {ok, txid()} | {error, reason()}.
 clocksi_istart_tx(Clock, Properties) ->
     {ok, Pid} = clocksi_interactive_coord_sup:start_fsm(),
     gen_statem:call(Pid, {start_tx, Clock, Properties}).
 
-
--spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}
-                                          | {error, reason()}.
-clocksi_full_icommit(TxId)->
+-spec clocksi_full_icommit(txid()) ->
+    {aborted, txid()}
+    | {ok, {txid(), snapshot_time()}}
+    | {error, reason()}.
+clocksi_full_icommit(TxId) ->
     case gen_statem:call(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
         {ok, _PrepareTime} ->
             gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
@@ -250,7 +275,8 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
                 {ok, Res} ->
                     {ok, CommitTime} = commit_transaction(TxId),
                     {ok, Res, CommitTime};
-                {error, Reason} -> {error, Reason}
+                {error, Reason} ->
+                    {error, Reason}
             end;
         false ->
             timer:sleep(10),
@@ -258,18 +284,24 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     end.
 
 format_read_params(ReadObjects) ->
-    lists:map(fun({Key, Type, Bucket}) ->
-                      {{Key, Bucket}, Type}
-              end, ReadObjects).
+    lists:map(
+        fun({Key, Type, Bucket}) ->
+            {{Key, Bucket}, Type}
+        end,
+        ReadObjects
+    ).
 
 format_update_params(Updates) ->
-    lists:map(fun({{Key, Type, Bucket}, Op, Param}) ->
-                      {{Key, Bucket}, Type, {Op, Param}}
-              end, Updates).
+    lists:map(
+        fun({{Key, Type, Bucket}, Op, Param}) ->
+            {{Key, Bucket}, Type, {Op, Param}}
+        end,
+        Updates
+    ).
 
 %% The following function are useful for testing. They shouldn't be used in normal operations.
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
-clocksi_iprepare(TxId)->
+clocksi_iprepare(TxId) ->
     case gen_statem:call(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of
         {error, {aborted, TxId}} ->
             {aborted, TxId};
@@ -278,5 +310,5 @@ clocksi_iprepare(TxId)->
     end.
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
-clocksi_icommit(TxId)->
+clocksi_icommit(TxId) ->
     gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).

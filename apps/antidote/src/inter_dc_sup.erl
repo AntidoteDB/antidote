@@ -37,7 +37,11 @@
 
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
--define(VNODE(I, M), {I, {riak_core_vnode_master, start_link, [M]}, permanent, 5000, worker, [riak_core_vnode_master]}).
+-define(VNODE(I, M),
+    {I, {riak_core_vnode_master, start_link, [M]}, permanent, 5000, worker, [
+        riak_core_vnode_master
+    ]}
+).
 
 %% ===================================================================
 %% API functions
@@ -51,16 +55,15 @@ start_link() ->
 %% ===================================================================
 
 init(_Args) ->
-    LogResponseReaderSup = {inter_dc_query_response_sup,
-        {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
-        permanent, 5000, supervisor,
-        [inter_dc_query_response_sup]},
+    LogResponseReaderSup =
+        {inter_dc_query_response_sup,
+            {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]}, permanent,
+            5000, supervisor, [inter_dc_query_response_sup]},
 
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
     InterDcQueryReq = ?CHILD(inter_dc_query_dealer, worker, []),
     InterDcQueryReqRecv = ?CHILD(inter_dc_query_router, worker, []),
-
 
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
@@ -68,16 +71,17 @@ init(_Args) ->
 
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
 
-    {ok, {{one_for_one, 5, 10}, [
-        ZMQContextManager,
+    {ok,
+        {{one_for_one, 5, 10}, [
+            ZMQContextManager,
 
-        LogResponseReaderSup,
+            LogResponseReaderSup,
 
-        InterDcPub,
-        InterDcSub,
-        InterDcQueryReq,
-        InterDcQueryReqRecv,
-        InterDcSubVnode,
-        InterDcDepVnode,
-        InterDcLogSenderVnode
-    ]}}.
+            InterDcPub,
+            InterDcSub,
+            InterDcQueryReq,
+            InterDcQueryReqRecv,
+            InterDcSubVnode,
+            InterDcDepVnode,
+            InterDcLogSenderVnode
+        ]}}.

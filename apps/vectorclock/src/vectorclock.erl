@@ -25,11 +25,29 @@
 
 -endif.
 
--export([all_dots_greater/2, all_dots_smaller/2, conc/2,
-     eq/2, fold/3, from_list/1, ge/2, get/2,
-     gt/2, le/2, lt/2, map/2, max/1, min/1,
-     min_clock/2, new/0, set_all/2,
-     set/3, size/1, to_list/1, update_with/4]).
+-export([
+    all_dots_greater/2,
+    all_dots_smaller/2,
+    conc/2,
+    eq/2,
+    fold/3,
+    from_list/1,
+    ge/2,
+    get/2,
+    gt/2,
+    le/2,
+    lt/2,
+    map/2,
+    max/1,
+    min/1,
+    min_clock/2,
+    new/0,
+    set_all/2,
+    set/3,
+    size/1,
+    to_list/1,
+    update_with/4
+]).
 
 -type vc_node() :: term().
 
@@ -42,7 +60,7 @@ new() -> maps:new().
 
 -spec get(vc_node(), vectorclock()) -> non_neg_integer().
 get(Key, VectorClock) ->
-  maps:get(Key, VectorClock, 0).
+    maps:get(Key, VectorClock, 0).
 
 -spec set(vc_node(), non_neg_integer(), vectorclock()) -> vectorclock().
 set(Key, 0, VectorClock) ->
@@ -52,11 +70,10 @@ set(Key, Value, VectorClock) when Value > 0 ->
 
 -spec set_all(pos_integer(), vectorclock()) -> vectorclock().
 set_all(0, _VectorClock) ->
-  new();
-set_all(Value, VectorClock) when Value > 0  ->
-  Fun = fun(_K, _V) -> Value end,
-  map(Fun, VectorClock).
-
+    new();
+set_all(Value, VectorClock) when Value > 0 ->
+    Fun = fun(_K, _V) -> Value end,
+    map(Fun, VectorClock).
 
 -spec from_list([{vc_node(), pos_integer()}]) -> vectorclock().
 from_list(List) -> maps:from_list(List).
@@ -67,11 +84,12 @@ to_list(VectorClock) -> maps:to_list(VectorClock).
 -spec map(fun((vc_node(), pos_integer()) -> pos_integer()), vectorclock()) -> vectorclock().
 map(Fun, VectorClock) -> maps:map(Fun, VectorClock).
 
--spec fold(fun ((vc_node(), pos_integer(), X) -> X), X, vectorclock()) -> X.
+-spec fold(fun((vc_node(), pos_integer(), X) -> X), X, vectorclock()) -> X.
 fold(Fun, Init, VectorClock) ->
     maps:fold(Fun, Init, VectorClock).
 
--spec update_with(vc_node(), fun((pos_integer()) -> pos_integer()), pos_integer(), vectorclock()) -> vectorclock().
+-spec update_with(vc_node(), fun((pos_integer()) -> pos_integer()), pos_integer(), vectorclock()) ->
+    vectorclock().
 update_with(Key, Fun, Init, VectorClock) ->
     maps:update_with(Key, Fun, Init, VectorClock).
 
@@ -89,26 +107,25 @@ max([V1, V2 | T]) -> max([max2(V1, V2) | T]).
 %% component-wise maximum of two clocks
 -spec max2(vectorclock(), vectorclock()) -> vectorclock().
 max2(V1, V2) ->
-  FoldFun =
-    fun(DC, A, Acc) ->
-      B = get(DC, Acc),
-      case A > B of
-        true -> Acc#{DC => A};
-        false -> Acc
-      end
-    end,
+    FoldFun =
+        fun(DC, A, Acc) ->
+            B = get(DC, Acc),
+            case A > B of
+                true -> Acc#{DC => A};
+                false -> Acc
+            end
+        end,
     maps:fold(FoldFun, V2, V1).
 
 -spec min([vectorclock()]) -> vectorclock().
 min([]) -> new();
 min([V]) -> V;
-min([V1, V2 | T]) ->
-    min([min2(V1, V2) | T]).
+min([V1, V2 | T]) -> min([min2(V1, V2) | T]).
 
 %% component-wise minimum of two clocks
 -spec min2(vectorclock(), vectorclock()) -> vectorclock().
 min2(V1, V2) ->
-    FoldFun = fun (DC, A, Acc) ->
+    FoldFun = fun(DC, A, Acc) ->
         B = get(DC, V2),
         C = min(A, B),
         case C of
@@ -121,14 +138,15 @@ min2(V1, V2) ->
 -spec size(vectorclock()) -> non_neg_integer().
 size(V) -> maps:size(V).
 
--spec for_all_keys(fun ((pos_integer(), pos_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
+-spec for_all_keys(fun((pos_integer(), pos_integer()) -> boolean()), vectorclock(), vectorclock()) ->
+    boolean().
 for_all_keys(F, V1, V2) ->
     AllDCs = maps:keys(maps:merge(V1, V2)),
-    Func = fun (DC) ->
+    Func = fun(DC) ->
         A = get(DC, V1),
         B = get(DC, V2),
         F(A, B)
-        end,
+    end,
     lists:all(Func, AllDCs).
 
 -spec eq(vectorclock(), vectorclock()) -> boolean().
@@ -136,52 +154,62 @@ eq(V1, V2) -> le(V1, V2) andalso le(V2, V1).
 
 -spec le(vectorclock(), vectorclock()) -> boolean().
 le(V1, V2) ->
-  try
-    maps:fold(fun (DC, V, true) ->
+    try
+        maps:fold(
+            fun(DC, V, true) ->
                 case V =< get(DC, V2) of
-                  true -> true;
-                  false -> throw(false)
+                    true -> true;
+                    false -> throw(false)
                 end
-              end, true, V1)
-  catch
-    false -> false
-  end .
+            end,
+            true,
+            V1
+        )
+    catch
+        false -> false
+    end.
 
 -spec ge(vectorclock(), vectorclock()) -> boolean().
 ge(V1, V2) -> le(V2, V1).
 
 -spec all_dots_smaller(vectorclock(), vectorclock()) -> boolean().
 all_dots_smaller(V1, V2) ->
-    for_all_keys(fun (A, B) -> A < B end, V1, V2).
+    for_all_keys(fun(A, B) -> A < B end, V1, V2).
 
 -spec all_dots_greater(vectorclock(), vectorclock()) -> boolean().
 all_dots_greater(V1, V2) ->
-    for_all_keys(fun (A, B) -> A > B end, V1, V2).
+    for_all_keys(fun(A, B) -> A > B end, V1, V2).
 
 -spec gt(vectorclock(), vectorclock()) -> boolean().
 gt(V1, V2) -> lt(V2, V1).
 
 -spec lt(vectorclock(), vectorclock()) -> boolean().
 lt(V1, V2) ->
-    try maps:fold(fun (DC, V, Acc) ->
-              X = get(DC, V2),
-              case V =< X of
-                true -> Acc orelse V < X;
-                false -> throw(false)
-              end
-          end,
-          false, V1)
-        orelse
-        maps:fold(fun (DC, V, _) ->
-                X = get(DC, V1),
-                case V > X of
-                  true -> throw(true);
-                  false -> false
+    try
+        maps:fold(
+            fun(DC, V, Acc) ->
+                X = get(DC, V2),
+                case V =< X of
+                    true -> Acc orelse V < X;
+                    false -> throw(false)
                 end
             end,
-            false, V2)
+            false,
+            V1
+        ) orelse
+            maps:fold(
+                fun(DC, V, _) ->
+                    X = get(DC, V1),
+                    case V > X of
+                        true -> throw(true);
+                        false -> false
+                    end
+                end,
+                false,
+                V2
+            )
     catch
-      R -> R
+        R -> R
     end.
 
 -spec conc(vectorclock(), vectorclock()) -> boolean().
@@ -288,10 +316,10 @@ vectorclock_size_test() ->
 vectorclock_update_test() ->
     V1 = from_list([{1, 5}, {8, 4}, {3, 5}, {9, 6}]),
     V2 = from_list([{1, 5}, {8, 8}, {3, 5}, {9, 6}]),
-    ?assertEqual(V2, update_with(8, fun (X) -> X * 2 end, 0, V1)).
+    ?assertEqual(V2, update_with(8, fun(X) -> X * 2 end, 0, V1)).
 
 vectorclock_fold_test() ->
     V1 = from_list([{1, 5}, {8, 4}, {3, 5}, {9, 6}]),
-    ?assertEqual(20, fold(fun (_Node, X, Acc) -> X + Acc end, 0, V1)).
+    ?assertEqual(20, fold(fun(_Node, X, Acc) -> X + Acc end, 0, V1)).
 
 -endif.

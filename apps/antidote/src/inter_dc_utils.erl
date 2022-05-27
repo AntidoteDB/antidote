@@ -95,10 +95,6 @@ generate_random_id() ->
     {N, _} = rand:uniform_s(10000000, SeedState),
     integer_to_list(N).
 
-
-
-
-
 %% --------- binary utilities
 
 %% Check a binary message version for inter_dc messages
@@ -111,7 +107,8 @@ check_message_version(<<Version:?VERSION_BYTES/binary, Rest/binary>>) ->
 
 %% Check a binary message version and the message id for inter_dc messages
 %% performed by inter_dc_query_dealer
--spec check_version_and_req_id(<<_:?MESSAGE_HEADER_BIT_LENGTH, _:_*8>>) -> {<<_:?REQUEST_ID_BIT_LENGTH>>, binary()}.
+-spec check_version_and_req_id(<<_:?MESSAGE_HEADER_BIT_LENGTH, _:_*8>>) ->
+    {<<_:?REQUEST_ID_BIT_LENGTH>>, binary()}.
 check_version_and_req_id(Binary) ->
     <<ReqId:?REQUEST_ID_BYTE_LENGTH/binary, Rest/binary>> = check_message_version(Binary),
     {ReqId, Rest}.

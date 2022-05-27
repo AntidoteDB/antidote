@@ -35,14 +35,16 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([update/2,
-         merge/1,
-         lookup/2,
-         fold/3,
-         store/3,
-         default/0,
-         initial_local/0,
-         initial_merged/0]).
+-export([
+    update/2,
+    merge/1,
+    lookup/2,
+    fold/3,
+    store/3,
+    default/0,
+    initial_local/0,
+    initial_merged/0
+]).
 
 default() ->
     vectorclock:new().
@@ -62,7 +64,6 @@ lookup(X, Y) ->
 store(X, Y, Z) ->
     vectorclock:set(X, Y, Z).
 
-
 %% Checks whether entry should be updated.
 -spec update(integer(), integer()) -> boolean().
 update(Last, Time) ->
@@ -73,17 +74,17 @@ update(Last, Time) ->
             Time >= Last
     end.
 
-
 %% The function merges all entries in a map of vectorclocks by taking the minimum of all entries per node per DC
 %% This assumes the meta data being sent have all DCs
 -spec merge(map()) -> vectorclock:vectorclock().
 merge(VcMap) ->
     case all_defined(VcMap) of
-        true -> vectorclock:min(maps:values(VcMap));
+        true ->
+            vectorclock:min(maps:values(VcMap));
         false ->
             ?LOG_DEBUG("missing entries: ~p", [VcMap]),
             vectorclock:new()
     end.
 
 all_defined(VcMap) ->
-    maps:fold(fun (_K, V, Acc) -> Acc andalso V =/= undefined end, true, VcMap).
+    maps:fold(fun(_K, V, Acc) -> Acc andalso V =/= undefined end, true, VcMap).

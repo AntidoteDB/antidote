@@ -30,8 +30,10 @@
 -module(meta_data_manager_sup).
 -behavior(supervisor).
 
--export([start_fsm/1,
-         start_link/1]).
+-export([
+    start_fsm/1,
+    start_link/1
+]).
 -export([init/1]).
 
 start_link(Init) ->
@@ -41,7 +43,8 @@ start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
 init(Init) ->
-    Worker = {meta_data_manager,
-              {meta_data_manager, start_link, [Init]},
-              transient, 5000, worker, [meta_data_manager]},
+    Worker =
+        {meta_data_manager, {meta_data_manager, start_link, [Init]}, transient, 5000, worker, [
+            meta_data_manager
+        ]},
     {ok, {{one_for_one, 5, 10}, [Worker]}}.

@@ -37,7 +37,8 @@
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_DATA_SENDER_TABLE_NAME, a_meta_data_sender_table).
 
--export([create_meta_data_table/1,
+-export([
+    create_meta_data_table/1,
     create_meta_data_sender_table/1,
     create_remote_meta_data_table/1,
     insert_meta_data_sender_merged_data/2,
@@ -52,32 +53,38 @@
     delete_remote_meta_data_table/1,
     insert_remote_meta_data/3,
     insert_remote_meta_data_new/3,
-    delete_remote_meta_data_node/2]).
+    delete_remote_meta_data_node/2
+]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-- spec create_meta_data_table(atom()) -> ets:tab().
+-spec create_meta_data_table(atom()) -> ets:tab().
 create_meta_data_table(Name) ->
-    ets:new(get_table_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]).
+    ets:new(get_table_name(Name, ?META_TABLE_NAME), [
+        set, named_table, public, ?META_TABLE_CONCURRENCY
+    ]).
 
-- spec create_meta_data_sender_table(atom()) -> ets:tab().
+-spec create_meta_data_sender_table(atom()) -> ets:tab().
 create_meta_data_sender_table(Name) ->
-    ets:new(get_table_name(Name, ?META_DATA_SENDER_TABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]).
+    ets:new(get_table_name(Name, ?META_DATA_SENDER_TABLE_NAME), [
+        set, named_table, ?META_TABLE_STABLE_CONCURRENCY
+    ]).
 
-- spec create_remote_meta_data_table(atom()) -> ets:tab().
+-spec create_remote_meta_data_table(atom()) -> ets:tab().
 create_remote_meta_data_table(Name) ->
-    ets:new(get_table_name(Name, ?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]).
+    ets:new(get_table_name(Name, ?REMOTE_META_TABLE_NAME), [
+        set, named_table, protected, ?META_TABLE_CONCURRENCY
+    ]).
 
-- spec insert_meta_data_sender_merged_data(atom(), term()) -> true.
+-spec insert_meta_data_sender_merged_data(atom(), term()) -> true.
 insert_meta_data_sender_merged_data(Name, Data) ->
     ets:insert(get_table_name(Name, ?META_DATA_SENDER_TABLE_NAME), {merged_data, Data}).
 
 -spec insert_meta_data(atom(), partition_id(), term()) -> true.
 insert_meta_data(Name, Partition, Data) ->
     ets:insert(get_table_name(Name, ?META_TABLE_NAME), {Partition, Data}).
-
 
 %% Remove meta data for partition
 -spec delete_meta_data_partition(atom(), partition_id()) -> true.
@@ -106,7 +113,7 @@ remote_table_ready(Name) ->
 get_meta_data_as_map(Name) ->
     maps:from_list(ets:tab2list(get_table_name(Name, ?META_TABLE_NAME))).
 
--spec get_remote_meta_data_as_map(atom()) ->map().
+-spec get_remote_meta_data_as_map(atom()) -> map().
 get_remote_meta_data_as_map(Name) ->
     maps:from_list(ets:tab2list(get_table_name(Name, ?REMOTE_META_TABLE_NAME))).
 
@@ -133,7 +140,6 @@ insert_remote_meta_data_new(Table, NodeId, Data) ->
 -spec delete_remote_meta_data_node(ets:tab(), atom()) -> true.
 delete_remote_meta_data_node(Table, NodeId) ->
     ets:delete(Table, NodeId).
-
 
 %%%===================================================================
 %%% Internal Functions

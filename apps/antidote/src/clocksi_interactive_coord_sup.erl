@@ -33,8 +33,10 @@
 
 -include("antidote.hrl").
 
--export([start_fsm/0,
-         start_link/0]).
+-export([
+    start_fsm/0,
+    start_link/0
+]).
 
 -export([init/1]).
 
@@ -46,10 +48,10 @@ start_fsm() ->
     % calls clocksi_interactive_coord:start_link()
     supervisor:start_child(?MODULE, []).
 
-
 %% @doc Starts the coordinator of a ClockSI interactive transaction.
 init([]) ->
-    Worker = {undefined,
-        {clocksi_interactive_coord, start_link, []},
-        temporary, 5000, worker, [clocksi_interactive_coord]},
+    Worker =
+        {undefined, {clocksi_interactive_coord, start_link, []}, temporary, 5000, worker, [
+            clocksi_interactive_coord
+        ]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

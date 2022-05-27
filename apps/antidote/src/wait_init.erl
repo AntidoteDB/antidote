@@ -30,10 +30,11 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([check_ready_nodes/1,
-         wait_ready/1,
-         check_ready/1
-        ]).
+-export([
+    check_ready_nodes/1,
+    wait_ready/1,
+    check_ready/1
+]).
 
 %% @doc This function takes a list of physical nodes connected to the an
 %% instance of the antidote distributed system.  For each of the physical nodes,

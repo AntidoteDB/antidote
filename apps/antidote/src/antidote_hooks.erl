@@ -63,28 +63,31 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([register_pre_hook/3,
-         register_post_hook/3,
-         get_hooks/2,
-         unregister_hook/2,
-         execute_pre_commit_hook/3,
-         execute_post_commit_hook/3
-        ]).
+-export([
+    register_pre_hook/3,
+    register_post_hook/3,
+    get_hooks/2,
+    unregister_hook/2,
+    execute_pre_commit_hook/3,
+    execute_post_commit_hook/3
+]).
 
--export([test_commit_hook/1,
-         test_increment_hook/1,
-         test_post_hook/1]).
+-export([
+    test_commit_hook/1,
+    test_increment_hook/1,
+    test_post_hook/1
+]).
 
 -define(PREFIX_PRE, {commit_hooks, pre}).
 -define(PREFIX_POST, {commit_hooks, post}).
 
 -spec register_post_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, function_not_exported}.
+    ok | {error, function_not_exported}.
 register_post_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_POST, Bucket, Module, Function).
 
 -spec register_pre_hook(bucket(), module_name(), function_name()) ->
-      ok | {error, function_not_exported}.
+    ok | {error, function_not_exported}.
 register_pre_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_PRE, Bucket, Module, Function).
 
@@ -118,7 +121,7 @@ get_hooks(post_commit, Bucket) ->
     end.
 
 -spec execute_pre_commit_hook(term(), type(), op_param()) ->
-        {term(), type(), op_param()} | {error, reason()}.
+    {term(), type(), op_param()} | {error, reason()}.
 execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
     Hook = get_hooks(pre_commit, Bucket),
     case Hook of
@@ -137,7 +140,7 @@ execute_pre_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
 
 -spec execute_post_commit_hook(term(), type(), op_param()) ->
-            {term(), type(), op_param()} | {error, reason()}.
+    {term(), type(), op_param()} | {error, reason()}.
 execute_post_commit_hook({Key, Bucket}, Type, Param) ->
     Hook = get_hooks(post_commit, Bucket),
     case Hook of
@@ -164,7 +167,9 @@ test_increment_hook({{Key, Bucket}, antidote_crdt_counter_pn, {increment, 1}}) -
     {ok, {{Key, Bucket}, antidote_crdt_counter_pn, {increment, 2}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->
-    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter_pn, commitcount}, increment, 1}]),
+    {ok, _CT} = antidote:update_objects(ignore, [], [
+        {{Key, antidote_crdt_counter_pn, commitcount}, increment, 1}
+    ]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
 %-endif.

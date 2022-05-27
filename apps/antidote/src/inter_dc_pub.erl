@@ -43,7 +43,9 @@
 -export([broadcast/1, get_address/0, get_address_list/0]).
 
 %% Server methods
--export([init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([
+    init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3
+]).
 
 %% State
 -record(state, {socket :: zmq_socket()}).
@@ -54,7 +56,8 @@
 -spec broadcast(interdc_txn()) -> ok.
 broadcast(Txn) ->
     case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-        {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+        %% this can happen if a node is shutting down.
+        {'EXIT', _Reason} -> ?LOG_WARNING("Failed to broadcast a transaction.");
         Normal -> Normal
     end.
 
@@ -76,7 +79,7 @@ start_link() ->
 init([]) ->
     % bind on ip and port
     %% TODO erlzmq pub bind IP
-%%    Ip = get_pub_bind_ip(),
+    %%    Ip = get_pub_bind_ip(),
     Port = get_pub_port(),
 
     Socket = zmq_utils:create_bind_socket(pub, false, Port),

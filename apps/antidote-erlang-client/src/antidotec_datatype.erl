@@ -26,11 +26,12 @@
 -compile(export_all).
 -endif.
 
-
 -define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg]).
 
--export([module_for_type/1,
-         module_for_term/1]).
+-export([
+    module_for_type/1,
+    module_for_term/1
+]).
 
 -export_type([datatype/0, update/0]).
 
@@ -41,7 +42,7 @@
 
 %% @doc Constructs a new container for the type with the specified
 %% value and key. This should only be used internally by the client code.
--callback new(Value::term()) -> datatype().
+-callback new(Value :: term()) -> datatype().
 
 %% @doc Returns the original, unmodified value of the object. This does
 %% not include the execution of any locally-queued operations.
@@ -66,18 +67,23 @@
 -spec module_for_type(set | counter | reg) ->
     antidotec_counter | antidotec_set | antidotec_reg.
 module_for_type(set) -> antidotec_set;
-module_for_type(counter)  -> antidotec_counter;
+module_for_type(counter) -> antidotec_counter;
 module_for_type(reg) -> antidotec_reg.
 
 %% @doc Returns the container module name for the given term.
 %% Returns undefined if the module is not known.
 -spec module_for_term(datatype()) -> maybe(module()).
 module_for_term(T) ->
-    lists:foldl(fun(Mod, undefined) ->
-                        case Mod:is_type(T) of
-                            true -> Mod;
-                            false -> undefined
-                        end;
-                   (_, Mod) ->
-                        Mod
-                end, undefined, ?MODULES).
+    lists:foldl(
+        fun
+            (Mod, undefined) ->
+                case Mod:is_type(T) of
+                    true -> Mod;
+                    false -> undefined
+                end;
+            (_, Mod) ->
+                Mod
+        end,
+        undefined,
+        ?MODULES
+    ).

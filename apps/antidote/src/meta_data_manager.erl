@@ -31,16 +31,20 @@
 
 -include("antidote.hrl").
 
--export([start_link/1,
-         remove_node/2,
-         send_meta_data/4,
-         add_node/3]).
--export([init/1,
-         handle_cast/2,
-         handle_call/3,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    start_link/1,
+    remove_node/2,
+    send_meta_data/4,
+    add_node/3
+]).
+-export([
+    init/1,
+    handle_cast/2,
+    handle_call/3,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {table :: ets:tid()}).
 -type state() :: #state{}.
@@ -60,7 +64,9 @@ start_link(Name) ->
 %% Send meta data entries to another nodes.
 -spec send_meta_data(atom(), atom(), atom(), any()) -> ok.
 send_meta_data(Name, DestinationNodeId, NodeId, Data) ->
-    gen_server:cast({global, generate_server_name(Name, DestinationNodeId)}, {send_meta_data, NodeId, Data}).
+    gen_server:cast(
+        {global, generate_server_name(Name, DestinationNodeId)}, {send_meta_data, NodeId, Data}
+    ).
 
 %% Remove node from the meta data exchange.
 -spec remove_node(atom(), atom()) -> ok.
@@ -84,15 +90,12 @@ init([Name]) ->
 handle_cast({send_meta_data, NodeId, Data}, State = #state{table = Table}) ->
     true = antidote_ets_meta_data:insert_remote_meta_data(Table, NodeId, Data),
     {noreply, State};
-
 handle_cast({add_node, NodeId, Initial}, State = #state{table = Table}) ->
     true = antidote_ets_meta_data:insert_remote_meta_data_new(Table, NodeId, Initial),
     {noreply, State};
-
 handle_cast({remove_node, NodeId}, State = #state{table = Table}) ->
     true = antidote_ets_meta_data:delete_remote_meta_data_node(Table, NodeId),
     {noreply, State};
-
 handle_cast(_Info, State) ->
     {noreply, State}.
 

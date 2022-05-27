@@ -44,9 +44,9 @@ generate_module_name(N) ->
 
 generate_worker_spec(N) ->
     Module = generate_module_name(N),
-    {Module,
-     {inter_dc_query_response, start_link, [N]},
-     permanent, 5000, worker, [inter_dc_query_response]}.
+    {Module, {inter_dc_query_response, start_link, [N]}, permanent, 5000, worker, [
+        inter_dc_query_response
+    ]}.
 
 %% @doc Start the log response readers
 init(Num) ->

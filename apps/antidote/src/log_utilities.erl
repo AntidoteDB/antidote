@@ -36,15 +36,15 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
--export([get_key_partition/1,
-         get_preflist_from_key/1,
-         get_logid_from_key/1,
-         remove_node_from_preflist/1,
-         get_my_node/1,
-         log_record_version/0,
-         check_log_record_version/1
-        ]).
+-export([
+    get_key_partition/1,
+    get_preflist_from_key/1,
+    get_logid_from_key/1,
+    remove_node_from_preflist/1,
+    get_my_node/1,
+    log_record_version/0,
+    check_log_record_version/1
+]).
 
 %% @doc get_logid_from_key computes the log identifier from a key
 %%      Input:  Key:    The key from which the log id is going to be computed
@@ -76,7 +76,7 @@ get_preflist_from_key(Key) ->
 %%      Return: The primaries preflist
 %%
 -spec get_primaries_preflist(non_neg_integer()) -> preflist().
-get_primaries_preflist(Key)->
+get_primaries_preflist(Key) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     {NumPartitions, ListOfPartitions} = riak_core_ring:chash(Ring),
     Pos = Key rem NumPartitions + 1,
@@ -107,7 +107,8 @@ convert_key(Key) ->
         true ->
             KeyInt = (catch list_to_integer(binary_to_list(Key))),
             case is_integer(KeyInt) of
-                true -> abs(KeyInt);
+                true ->
+                    abs(KeyInt);
                 false ->
                     HashedKey = riak_core_util:chash_key({?BUCKET, Key}),
                     abs(crypto:bytes_to_integer(HashedKey))
@@ -125,7 +126,6 @@ convert_key(Key) ->
 -spec log_record_version() -> non_neg_integer().
 log_record_version() -> ?LOG_RECORD_VERSION.
 
-
 %% Check the version of the log record and convert
 %% to a different version if necessary
 %% Checked when loading the log from disk, or
@@ -136,19 +136,22 @@ check_log_record_version(LogRecord) ->
     ?LOG_RECORD_VERSION = LogRecord#log_record.version,
     LogRecord.
 
-
 -ifdef(TEST).
 
 %% Testing remove_node_from_preflist
-remove_node_from_preflist_test()->
-    Preflist = [{partition1, node},
-                {partition2, node},
-                {partition3, node}],
-    ?assertEqual([partition1, partition2, partition3],
-                 remove_node_from_preflist(Preflist)).
+remove_node_from_preflist_test() ->
+    Preflist = [
+        {partition1, node},
+        {partition2, node},
+        {partition3, node}
+    ],
+    ?assertEqual(
+        [partition1, partition2, partition3],
+        remove_node_from_preflist(Preflist)
+    ).
 
 %% Testing convert key
-convert_key_test()->
+convert_key_test() ->
     ?assertEqual(1, convert_key(1)),
     ?assertEqual(1, convert_key(-1)),
     ?assertEqual(0, convert_key(0)),

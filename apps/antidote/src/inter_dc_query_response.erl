@@ -36,19 +36,24 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([start_link/1,
-         get_entries/2,
-         request_permissions/2,
-         generate_server_name/1]).
--export([init/1,
-         handle_cast/2,
-         handle_call/3,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    start_link/1,
+    get_entries/2,
+    request_permissions/2,
+    generate_server_name/1
+]).
+-export([
+    init/1,
+    handle_cast/2,
+    handle_call/3,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -record(state, {
-      id :: non_neg_integer()}).
+    id :: non_neg_integer()
+}).
 -type state() :: #state{}.
 
 %% ===================================================================
@@ -61,11 +66,17 @@ start_link(Num) ->
 
 -spec get_entries(binary(), inter_dc_query_state()) -> ok.
 get_entries(BinaryQuery, QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries, BinaryQuery, QueryState}).
+    ok = gen_server:cast(
+        generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)),
+        {get_entries, BinaryQuery, QueryState}
+    ).
 
 -spec request_permissions(binary(), inter_dc_query_state()) -> ok.
 request_permissions(BinaryRequest, QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
+    ok = gen_server:cast(
+        generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)),
+        {request_permissions, BinaryRequest, QueryState}
+    ).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -73,25 +84,24 @@ request_permissions(BinaryRequest, QueryState) ->
 
 -spec init([Num]) -> {ok, state()} when Num :: any().
 init([Num]) ->
-    {ok, #state{id=Num}}.
+    {ok, #state{id = Num}}.
 
 handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     {read_log, Partition, From, To} = binary_to_term(BinaryQuery),
-    LimitedTo = erlang:min(To, From + ?LOG_REQUEST_MAX_ENTRIES), %% Limit number of returned entries
+    %% Limit number of returned entries
+    LimitedTo = erlang:min(To, From + ?LOG_REQUEST_MAX_ENTRIES),
     Entries = get_entries_internal(Partition, From, LimitedTo),
     BinaryResp = term_to_binary({{dc_utilities:get_my_dc_id(), Partition}, Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
     ok = inter_dc_query_router:send_response(FullResponse, QueryState),
     {noreply, State};
-
 handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
     {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
     BinaryResp = BinaryRequest,
     ok = bcounter_mgr:process_transfer(Operation),
     ok = inter_dc_query_router:send_response(BinaryResp, QueryState),
     {noreply, State};
-
 handle_cast(_Info, State) ->
     {noreply, State}.
 
@@ -103,17 +113,26 @@ handle_info(_Info, State) ->
 
 -spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [interdc_txn()].
 get_entries_internal(Partition, From, To) ->
-    Node = case lists:member(Partition, dc_utilities:get_my_partitions()) of
-               true -> node();
-               false ->
-                   log_utilities:get_my_node(Partition)
-           end,
+    Node =
+        case lists:member(Partition, dc_utilities:get_my_partitions()) of
+            true -> node();
+            false -> log_utilities:get_my_node(Partition)
+        end,
     Logs = log_read_range(Partition, Node, From, To),
     Asm = log_txn_assembler:new_state(),
     {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
     %% Transforming operation lists to transactions and set PrevLogOpId
-    ProcessedOps = lists:map(fun(Ops) -> [FirstOp|_] = Ops, {Ops, #op_number{local = FirstOp#log_record.op_number#op_number.local - 1}} end, OpLists),
-    Txns = lists:map(fun({TxnOps, PrevLogOpId}) -> inter_dc_txn:from_ops(TxnOps, Partition, PrevLogOpId) end, ProcessedOps),
+    ProcessedOps = lists:map(
+        fun(Ops) ->
+            [FirstOp | _] = Ops,
+            {Ops, #op_number{local = FirstOp#log_record.op_number#op_number.local - 1}}
+        end,
+        OpLists
+    ),
+    Txns = lists:map(
+        fun({TxnOps, PrevLogOpId}) -> inter_dc_txn:from_ops(TxnOps, Partition, PrevLogOpId) end,
+        ProcessedOps
+    ),
     %% This is done in order to ensure that we only send the transactions we committed.
     %% We can remove this once the read_log_range is reimplemented.
     lists:filter(fun inter_dc_txn:is_local/1, Txns).
@@ -122,8 +141,8 @@ get_entries_internal(Partition, From, To) ->
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
 -spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [log_record()].
 log_read_range(Partition, Node, From, To) ->
-  {ok, RawOpList} = logging_vnode:read_from_to({Partition, Node}, [Partition], From, To),
-  lists:map(fun({_Partition, Op}) -> Op end, RawOpList).
+    {ok, RawOpList} = logging_vnode:read_from_to({Partition, Node}, [Partition], From, To),
+    lists:map(fun({_Partition, Op}) -> Op end, RawOpList).
 
 %% @private
 terminate(_Reason, _State) ->

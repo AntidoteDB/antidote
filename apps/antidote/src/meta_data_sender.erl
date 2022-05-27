@@ -39,7 +39,8 @@
 -define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list()).
 -endif.
 
--export([start_link/1,
+-export([
+    start_link/1,
     start/1,
     put_meta/3,
     get_node_list/0,
@@ -47,17 +48,21 @@
     get_merged_data/2,
     remove_partition/2,
     send_meta_data/3,
-    callback_mode/0]).
+    callback_mode/0
+]).
 
 %% Callbacks
--export([init/1,
-         code_change/4,
-         terminate/3]).
+-export([
+    init/1,
+    code_change/4,
+    terminate/3
+]).
 
 -record(state, {
-      last_result :: term(),
-      name :: atom(),
-      should_check_nodes :: boolean()}).
+    last_result :: term(),
+    name :: atom(),
+    should_check_nodes :: boolean()
+}).
 -type state() :: #state{}.
 
 %% ===================================================================
@@ -131,43 +136,53 @@ init([Name]) ->
     _MetaTable = antidote_ets_meta_data:create_meta_data_table(Name),
     _StableTable = antidote_ets_meta_data:create_meta_data_sender_table(Name),
     true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(Name, Name:initial_merged()),
-    {ok, send_meta_data, #state{last_result = Name:initial_local(),
-                                name = Name,
-                                should_check_nodes = true}}.
+    {ok, send_meta_data, #state{
+        last_result = Name:initial_local(),
+        name = Name,
+        should_check_nodes = true
+    }}.
 
 send_meta_data({call, Sender}, start, State) ->
-    {next_state, send_meta_data, State#state{should_check_nodes = true},
-        [{reply, Sender, ok}, {state_timeout, ?META_DATA_SLEEP, timeout}]
-    };
-
+    {next_state, send_meta_data, State#state{should_check_nodes = true}, [
+        {reply, Sender, ok}, {state_timeout, ?META_DATA_SLEEP, timeout}
+    ]};
 %% internal timeout transition
 send_meta_data(state_timeout, timeout, State) ->
     send_meta_data(cast, timeout, State);
-send_meta_data(cast, timeout, State = #state{last_result = LastResult,
-                                       name = Name,
-                                       should_check_nodes = CheckNodes}) ->
+send_meta_data(
+    cast,
+    timeout,
+    State = #state{
+        last_result = LastResult,
+        name = Name,
+        should_check_nodes = CheckNodes
+    }
+) ->
     {WillChange, Data} = get_merged_meta_data(Name, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = maps:get(local_merged, Data),
     MyNode = node(),
-    ok = lists:foreach(fun(Node) ->
-                           ok = meta_data_manager:send_meta_data(Name, Node, MyNode, LocalMerged)
-                       end, NodeList),
+    ok = lists:foreach(
+        fun(Node) ->
+            ok = meta_data_manager:send_meta_data(Name, Node, MyNode, LocalMerged)
+        end,
+        NodeList
+    ),
 
     MergedDict = Name:merge(Data),
     {HasChanged, NewResult} = update_stable(LastResult, MergedDict, Name),
-    Store = case HasChanged of
-                true ->
-                    %% update changed counter for this metadata type
-                    %?STATS({metadata_updated, Name}),
-                    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(Name, NewResult),
-                    NewResult;
-                false ->
-                    LastResult
-            end,
+    Store =
+        case HasChanged of
+            true ->
+                %% update changed counter for this metadata type
+                %?STATS({metadata_updated, Name}),
+                true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(Name, NewResult),
+                NewResult;
+            false ->
+                LastResult
+        end,
     {next_state, send_meta_data, State#state{last_result = Store, should_check_nodes = WillChange},
-        [{state_timeout, ?META_DATA_SLEEP, timeout}]
-    }.
+        [{state_timeout, ?META_DATA_SLEEP, timeout}]}.
 
 callback_mode() -> state_functions.
 
@@ -185,20 +200,27 @@ remote_table_ready(Name) ->
     antidote_ets_meta_data:remote_table_ready(Name).
 
 %% @private
--spec update(atom(), map(), [atom()], fun((atom(), atom(), T) -> any()), fun((atom(), atom()) -> any()), T) -> map().
+-spec update(
+    atom(), map(), [atom()], fun((atom(), atom(), T) -> any()), fun((atom(), atom()) -> any()), T
+) -> map().
 update(Name, MetaData, Entries, AddFun, RemoveFun, Initial) ->
-    {NewMetaData, NodeErase} = lists:foldl(fun(NodeId, {Acc, Acc2}) ->
-                            AccNew = case maps:find(NodeId, MetaData) of
-                                        {ok, Val} ->
-                                            maps:put(NodeId, Val, Acc);
-                                        error     ->
-                                            %% Put a record in the ets table because there is none for this node, yet
-                                            AddFun(Name, NodeId, Initial),
-                                            maps:put(NodeId, undefined, Acc)
-                                     end,
-                            Acc2New = maps:remove(NodeId, Acc2),
-                            {AccNew, Acc2New}
-                            end, {maps:new(), MetaData}, Entries),
+    {NewMetaData, NodeErase} = lists:foldl(
+        fun(NodeId, {Acc, Acc2}) ->
+            AccNew =
+                case maps:find(NodeId, MetaData) of
+                    {ok, Val} ->
+                        maps:put(NodeId, Val, Acc);
+                    error ->
+                        %% Put a record in the ets table because there is none for this node, yet
+                        AddFun(Name, NodeId, Initial),
+                        maps:put(NodeId, undefined, Acc)
+                end,
+            Acc2New = maps:remove(NodeId, Acc2),
+            {AccNew, Acc2New}
+        end,
+        {maps:new(), MetaData},
+        Entries
+    ),
     %% Remove entries that no longer exist
     _ = maps:map(fun(NodeId, _Val) -> ok = RemoveFun(Name, NodeId) end, NodeErase),
     NewMetaData.
@@ -218,13 +240,30 @@ get_merged_meta_data(Name, CheckNodes) ->
             %% of nodes and partitions every time to see if any have been removed/added
             %% This is only done if the ring is expected to change, but should be done
             %% differently (check comment in get_node_and_partition_list())
-            {NewRemote, NewLocal} = case CheckNodes of
+            {NewRemote, NewLocal} =
+                case CheckNodes of
                     true ->
-                        {update(Name, Remote, NodeList, fun meta_data_manager:add_node/3, fun meta_data_manager:remove_node/2, undefined),
-                         update(Name, Local, PartitionList, fun put_meta/3, fun remove_partition/2, Name:default())};
+                        {
+                            update(
+                                Name,
+                                Remote,
+                                NodeList,
+                                fun meta_data_manager:add_node/3,
+                                fun meta_data_manager:remove_node/2,
+                                undefined
+                            ),
+                            update(
+                                Name,
+                                Local,
+                                PartitionList,
+                                fun put_meta/3,
+                                fun remove_partition/2,
+                                Name:default()
+                            )
+                        };
                     false ->
                         {Remote, Local}
-                    end,
+                end,
             LocalMerged = Name:merge(NewLocal),
             {WillChange, maps:put(local_merged, LocalMerged, NewRemote)}
     end.
@@ -232,15 +271,19 @@ get_merged_meta_data(Name, CheckNodes) ->
 %% @private
 -spec update_stable(term(), term(), atom()) -> {boolean(), term()}.
 update_stable(LastResult, NewData, Name) ->
-    Name:fold(fun(DcId, Time, {Bool, Acc}) ->
-                  Last = Name:lookup(DcId, LastResult),
-                  case Name:update(Last, Time) of
-                      true ->
-                          {true, Name:store(DcId, Time, Acc)};
-                      false ->
-                          {Bool, Acc}
-                  end
-              end, {false, LastResult}, NewData).
+    Name:fold(
+        fun(DcId, Time, {Bool, Acc}) ->
+            Last = Name:lookup(DcId, LastResult),
+            case Name:update(Last, Time) of
+                true ->
+                    {true, Name:store(DcId, Time, Acc)};
+                false ->
+                    {Bool, Acc}
+            end
+        end,
+        {false, LastResult},
+        NewData
+    ).
 
 %% @private
 -spec get_node_list() -> [node()].
@@ -266,14 +309,10 @@ get_node_and_partition_list() ->
     Resize = true,
     {NodeList, PartitionList, Resize}.
 
-
 -ifdef(EUNIT).
 
 meta_data_sender_test_() ->
-    {foreach,
-     fun start/0,
-     fun stop/1,
-     [
+    {foreach, fun start/0, fun stop/1, [
         fun empty_test_/1,
         fun merge_test_/1,
         fun merge_additional_test_/1,
@@ -282,16 +321,17 @@ meta_data_sender_test_() ->
         fun merge_node_change_additional_test_/1,
         fun merge_node_delete_test_/1,
         fun merge_node_delete_another_test_/1
-    ]
-    }.
+    ]}.
 
 start() ->
     MetaType = stable_time_functions,
-    _Table  = antidote_ets_meta_data:create_meta_data_sender_table(MetaType),
+    _Table = antidote_ets_meta_data:create_meta_data_sender_table(MetaType),
     _Table2 = antidote_ets_meta_data:create_meta_data_table(MetaType),
     _Table3 = ets:new(node_table, [set, named_table, public]),
     _Table4 = antidote_ets_meta_data:create_remote_meta_data_table(MetaType),
-    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(MetaType, MetaType:initial_merged()),
+    true = antidote_ets_meta_data:insert_meta_data_sender_merged_data(
+        MetaType, MetaType:initial_merged()
+    ),
     MetaType.
 
 stop(MetaType) ->
@@ -319,7 +359,6 @@ empty_test_(MetaType) ->
     {false, Meta} = get_merged_meta_data(MetaType, false),
     LocalMerged = maps:get(local_merged, Meta),
     ?_assertEqual([], vectorclock:to_list(LocalMerged)).
-
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 merge_test_(MetaType) ->
@@ -386,7 +425,6 @@ merge_node_delete_test_(MetaType) ->
     LocalMerged = maps:get(local_merged, Meta),
     ?_assertEqual(vectorclock:from_list([]), LocalMerged).
 
-
 merge_node_delete_another_test_(MetaType) ->
     set_nodes_and_partitions_and_willchange([n1], [p1, p2], true),
 
@@ -396,7 +434,7 @@ merge_node_delete_another_test_(MetaType) ->
 
     {true, Meta2} = get_merged_meta_data(MetaType, true),
     LocalMerged2 = maps:get(local_merged, Meta2),
-    ?_assertEqual( vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
+    ?_assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 5}]), LocalMerged2).
 
 get_node_list_t() ->
     [{nodes, Nodes}] = ets:lookup(node_table, nodes),

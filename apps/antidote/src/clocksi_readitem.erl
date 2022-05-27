@@ -37,14 +37,18 @@
 -endif.
 
 %% API
--export([read_data_item/5,
-         async_read_data_item/6,
-         validate_or_read_data_item/6,
-         async_validate_or_read_data_item/7]).
+-export([
+    read_data_item/5,
+    async_read_data_item/6,
+    validate_or_read_data_item/6,
+    async_validate_or_read_data_item/7
+]).
 
 %% Internal
--export([perform_read_internal/5,
-         perform_validate_or_read_internal/6]).
+-export([
+    perform_read_internal/5,
+    perform_validate_or_read_internal/6
+]).
 
 %% Spawn
 -type read_property_list() :: [].
@@ -53,41 +57,58 @@
 %%% API
 %%%===================================================================
 
--spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
+-spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) ->
+    {error, term()} | {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
     rpc:call(Node, ?MODULE, perform_read_internal, [Key, Type, Transaction, PropertyList, Partition]).
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, {fsm, Sender}) ->
-    spawn_link(Node, fun() -> {
-        case perform_read_internal(Key, Type, Transaction, PropertyList, Partition) of
-            {ok, Snapshot} ->
-                gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}})
-            % TODO dialyzer says this can never happen (it's true)
-            %      Fix spec annotations in this chain
-            % {error, Reason} ->
-            %     gen_statem:cast(Sender, {error, Reason})
-        end
-    } end),
+    spawn_link(Node, fun() ->
+        {
+            case perform_read_internal(Key, Type, Transaction, PropertyList, Partition) of
+                {ok, Snapshot} ->
+                    gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}})
+                % TODO dialyzer says this can never happen (it's true)
+                %      Fix spec annotations in this chain
+                % {error, Reason} ->
+                %     gen_statem:cast(Sender, {error, Reason})
+            end
+        }
+    end),
     ok.
 
--spec validate_or_read_data_item(index_node(), key(), type(), object_token(), tx(), read_property_list()) -> {ok, {invalid, snapshot(), object_token()}} | {ok, valid} | {error, term()}.
+-spec validate_or_read_data_item(
+    index_node(), key(), type(), object_token(), tx(), read_property_list()
+) -> {ok, {invalid, snapshot(), object_token()}} | {ok, valid} | {error, term()}.
 validate_or_read_data_item({Partition, Node}, Key, Type, Token, Transaction, PropertyList) ->
-    rpc:call(Node, ?MODULE, perform_validate_or_read_internal, [Key, Type, Token, Transaction, PropertyList, Partition]).
+    rpc:call(Node, ?MODULE, perform_validate_or_read_internal, [
+        Key, Type, Token, Transaction, PropertyList, Partition
+    ]).
 
--spec async_validate_or_read_data_item(index_node(), key(), type(), object_token(), tx(), read_property_list(), term()) -> ok.
-async_validate_or_read_data_item({Partition, Node}, Key, Type, Token, Transaction, PropertyList, {fsm, Sender}) ->
-    spawn_link(Node, fun() -> {
-        case perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition) of
-            {ok, {invalid, Snapshot, NextToken}} ->
-                gen_statem:cast(Sender, {ok, {invalid, Key, Type, Snapshot, NextToken}});
-            {ok, valid} ->
-                gen_statem:cast(Sender, {ok, {valid, Key, Type}})
-          % TODO dialyzer says this can never happen
-          % {error, Reason} ->
-          %      gen_statem:cast(Sender, {error, Reason})
-        end
-    } end),
+-spec async_validate_or_read_data_item(
+    index_node(), key(), type(), object_token(), tx(), read_property_list(), term()
+) -> ok.
+async_validate_or_read_data_item(
+    {Partition, Node}, Key, Type, Token, Transaction, PropertyList, {fsm, Sender}
+) ->
+    spawn_link(Node, fun() ->
+        {
+            case
+                perform_validate_or_read_internal(
+                    Key, Type, Token, Transaction, PropertyList, Partition
+                )
+            of
+                {ok, {invalid, Snapshot, NextToken}} ->
+                    gen_statem:cast(Sender, {ok, {invalid, Key, Type, Snapshot, NextToken}});
+                {ok, valid} ->
+                    gen_statem:cast(Sender, {ok, {valid, Key, Type}})
+                % TODO dialyzer says this can never happen
+                % {error, Reason} ->
+                %      gen_statem:cast(Sender, {error, Reason})
+            end
+        }
+    end),
     ok.
 
 %%%===================================================================
@@ -107,15 +128,19 @@ perform_read_internal(Key, Type, Transaction, PropertyList, Partition) ->
             return(Key, Type, Transaction, PropertyList, Partition)
     end.
 
--spec perform_validate_or_read_internal(key(), type(), object_token(), tx(), read_property_list(), partition_id())
-    -> {ok, valid} | {ok, {invalid, snapshot(), object_token()}} | {error, reason()}.
+-spec perform_validate_or_read_internal(
+    key(), type(), object_token(), tx(), read_property_list(), partition_id()
+) ->
+    {ok, valid} | {ok, {invalid, snapshot(), object_token()}} | {error, reason()}.
 perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key, TxLocalStartTime, Partition) of
         {not_ready, Time} ->
             timer:sleep(Time),
-            perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, Partition);
+            perform_validate_or_read_internal(
+                Key, Type, Token, Transaction, PropertyList, Partition
+            );
         ready ->
             return_validate_or_read(Key, Type, Token, Transaction, PropertyList, Partition)
     end.
@@ -125,12 +150,12 @@ perform_validate_or_read_internal(Key, Type, Token, Transaction, PropertyList, P
 %%      catches up. CLOCK-SI: clock skew.
 %%
 -spec check_clock(key(), clock_time(), partition_id()) ->
-                         {not_ready, clock_time()} | ready.
+    {not_ready, clock_time()} | ready.
 check_clock(Key, TxLocalStartTime, Partition) ->
     Time = dc_utilities:now_microsec(),
     case TxLocalStartTime > Time of
         true ->
-            {not_ready, (TxLocalStartTime - Time) div 1000 +1};
+            {not_ready, (TxLocalStartTime - Time) div 1000 + 1};
         false ->
             check_prepared(Key, TxLocalStartTime, Partition)
     end.
@@ -139,16 +164,16 @@ check_clock(Key, TxLocalStartTime, Partition) ->
 %%      being prepared on the transaction being read, and
 %%      if they could violate the correctness of the read
 -spec check_prepared(key(), clock_time(), partition_id()) ->
-                            ready | {not_ready, ?SPIN_WAIT}.
+    ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key, TxLocalStartTime, Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition),
     check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
 -spec check_prepared_list(key(), clock_time(), [{txid(), clock_time()}]) ->
-                                 ready | {not_ready, ?SPIN_WAIT}.
+    ready | {not_ready, ?SPIN_WAIT}.
 check_prepared_list(_Key, _TxLocalStartTime, []) ->
     ready;
-check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
+check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time} | Rest]) ->
     case Time =< TxLocalStartTime of
         true ->
             {not_ready, ?SPIN_WAIT};
@@ -158,28 +183,35 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return(key(), type(), tx(), read_property_list(), partition_id()) -> {error, term()} | {ok, snapshot()}.
+-spec return(key(), type(), tx(), read_property_list(), partition_id()) ->
+    {error, term()} | {ok, snapshot()}.
 return(Key, Type, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, Partition).
 
--spec return_validate_or_read(key(), type(), object_token(),
-                              tx(), read_property_list(),
-                              partition_id()) -> {error, term()}
-                                                 | {ok, valid}
-                                                 | {ok, {invalid, snapshot(), object_token()}}.
+-spec return_validate_or_read(
+    key(),
+    type(),
+    object_token(),
+    tx(),
+    read_property_list(),
+    partition_id()
+) ->
+    {error, term()}
+    | {ok, valid}
+    | {ok, {invalid, snapshot(), object_token()}}.
 return_validate_or_read(Key, Type, Token, Transaction, PropertyList, Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    materializer_vnode:validate_or_read(Key, Type, Token, VecSnapshotTime, TxId, PropertyList, Partition).
+    materializer_vnode:validate_or_read(
+        Key, Type, Token, VecSnapshotTime, TxId, PropertyList, Partition
+    ).
 
 -ifdef(TEST).
 
 check_prepared_list_test() ->
     ?assertEqual({not_ready, ?SPIN_WAIT}, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 50}])),
     ?assertEqual(ready, check_prepared_list(key, 100, [{tx1, 200}, {tx2, 101}])).
-
-
 
 -endif.

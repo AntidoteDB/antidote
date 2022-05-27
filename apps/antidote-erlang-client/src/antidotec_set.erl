@@ -23,62 +23,61 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
 -include_lib("antidote_pb_codec/include/antidote_pb.hrl").
 
 -behaviour(antidotec_datatype).
 
--export([new/0,
-         new/1,
-         value/1,
-         dirty_value/1,
-         to_ops/2,
-         is_type/1,
-         type/0
-        ]).
+-export([
+    new/0,
+    new/1,
+    value/1,
+    dirty_value/1,
+    to_ops/2,
+    is_type/1,
+    type/0
+]).
 
--export([add/2,
-         remove/2,
-         contains/2
-        ]).
+-export([
+    add/2,
+    remove/2,
+    contains/2
+]).
 
 -record(antidote_set, {
-          set :: sets:set(),
-          adds :: sets:set(),
-          rems :: sets:set()
-         }).
+    set :: sets:set(),
+    adds :: sets:set(),
+    rems :: sets:set()
+}).
 
 -export_type([antidote_set/0]).
 -opaque antidote_set() :: #antidote_set{}.
 
-
 -spec new() -> antidote_set().
 new() ->
-    #antidote_set{set=sets:new(), adds=sets:new(), rems=sets:new()}.
+    #antidote_set{set = sets:new(), adds = sets:new(), rems = sets:new()}.
 
 -spec new(list() | sets:set()) -> antidote_set().
 new(List) when is_list(List) ->
     Set = sets:from_list(List),
-    #antidote_set{set=Set, adds=sets:new(), rems=sets:new()};
-
+    #antidote_set{set = Set, adds = sets:new(), rems = sets:new()};
 new(Set) ->
-    #antidote_set{set=Set, adds=sets:new(), rems=sets:new()}.
+    #antidote_set{set = Set, adds = sets:new(), rems = sets:new()}.
 
 -spec value(antidote_set()) -> [term()].
-value(#antidote_set{set=Set}) -> sets:to_list(Set).
+value(#antidote_set{set = Set}) -> sets:to_list(Set).
 
 -spec dirty_value(antidote_set()) -> [term()].
-dirty_value(#antidote_set{set=Set, adds = Adds, rems = Rems}) ->
-  sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
+dirty_value(#antidote_set{set = Set, adds = Adds, rems = Rems}) ->
+    sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
 
 %% @doc Adds an element to the local set container.
 -spec add(term(), antidote_set()) -> antidote_set().
-add(Elem, #antidote_set{adds=Adds}=Fset) ->
-    Fset#antidote_set{adds=sets:add_element(Elem, Adds)}.
+add(Elem, #antidote_set{adds = Adds} = Fset) ->
+    Fset#antidote_set{adds = sets:add_element(Elem, Adds)}.
 
 -spec remove(term(), antidote_set()) -> antidote_set().
-remove(Elem, #antidote_set{rems=Rems}=Fset) ->
-    Fset#antidote_set{rems=sets:add_element(Elem, Rems)}.
+remove(Elem, #antidote_set{rems = Rems} = Fset) ->
+    Fset#antidote_set{rems = sets:add_element(Elem, Rems)}.
 
 -spec contains(term(), antidote_set()) -> boolean().
 contains(Elem, #antidote_set{set = Set}) ->
@@ -94,7 +93,8 @@ is_type(T) ->
 type() -> set.
 
 to_ops(BoundObject, #antidote_set{adds = Adds, rems = Rems}) ->
-    R = case sets:size(Rems) > 0 of
+    R =
+        case sets:size(Rems) > 0 of
             true -> [{BoundObject, remove_all, sets:to_list(Rems)}];
             false -> []
         end,
@@ -102,7 +102,6 @@ to_ops(BoundObject, #antidote_set{adds = Adds, rems = Rems}) ->
         true -> [{BoundObject, add_all, sets:to_list(Adds)} | R];
         false -> R
     end.
-
 
 %% ===================================================================
 %% EUnit tests

@@ -44,7 +44,9 @@
 -export([add_dc/2, del_dc/1]).
 
 %% Server methods
--export([init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([
+    init/1, start_link/0, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3
+]).
 
 %% State
 -record(state, {sockets :: dict:dict(dcid(), zmq_socket())}).
@@ -97,10 +99,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(_Reason, State) ->
     % close all sockets for all dcs
-    F = fun ({_, Sockets}) -> lists:foreach(fun inter_dc_utils:close_socket/1, Sockets) end,
+    F = fun({_, Sockets}) -> lists:foreach(fun inter_dc_utils:close_socket/1, Sockets) end,
     lists:foreach(F, dict:to_list(State#state.sockets)).
-
-
 
 %%%% Internal methods ---------------------------------------------------------+
 
@@ -142,10 +142,13 @@ connect_to_node([Address | Rest]) ->
             %% Create a subscriber socket for the specified DC
             Socket = zmq_utils:create_connect_socket(sub, true, Address),
             %% For each partition in the current node:
-            lists:foreach(fun(P) ->
-                %% Make the socket subscribe to messages prefixed with the given partition number
-                ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
-                          end, dc_utilities:get_my_partitions()),
+            lists:foreach(
+                fun(P) ->
+                    %% Make the socket subscribe to messages prefixed with the given partition number
+                    ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
+                end,
+                dc_utilities:get_my_partitions()
+            ),
             {ok, Socket};
         _ ->
             connect_to_node(Rest)

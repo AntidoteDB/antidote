@@ -26,9 +26,11 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    SupFlags = #{strategy => one_for_all,
+    SupFlags = #{
+        strategy => one_for_all,
         intensity => 0,
-        period => 1},
+        period => 1
+    },
     Config = [{mods, [{elli_prometheus, []}]}],
     {ok, MetricsPort} = application:get_env(antidote_stats, metrics_port),
     ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
@@ -37,7 +39,10 @@ init([]) ->
     StatsCollector = {
         antidote_stats_collector,
         {antidote_stats_collector, start_link, []},
-        permanent, 5000, worker, [antidote_stats_collector]
+        permanent,
+        5000,
+        worker,
+        [antidote_stats_collector]
     },
 
     ChildSpecs = [Elli, StatsCollector],

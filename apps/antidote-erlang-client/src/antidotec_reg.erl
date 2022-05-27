@@ -23,21 +23,21 @@
 
 -behaviour(antidotec_datatype).
 
--export([new/0,
-         new/1,
-         value/1,
-         dirty_value/1,
-         is_type/1,
-         to_ops/2,
-         type/0
-        ]).
+-export([
+    new/0,
+    new/1,
+    value/1,
+    dirty_value/1,
+    is_type/1,
+    to_ops/2,
+    type/0
+]).
 
--export([assign/2
-        ]).
+-export([assign/2]).
 
 -record(antidote_reg, {
-            value
-         }).
+    value
+}).
 
 -export_type([antidote_reg/0]).
 -opaque antidote_reg() :: #antidote_reg{}.
@@ -46,19 +46,17 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-
 -spec new() -> antidote_reg().
 new() ->
-    #antidote_reg{value=""}.
-
+    #antidote_reg{value = ""}.
 
 new(Value) ->
-    #antidote_reg{value=Value}.
+    #antidote_reg{value = Value}.
 
 -spec value(antidote_reg()) -> [term()].
-value(#antidote_reg{value=Value}) -> Value.
+value(#antidote_reg{value = Value}) -> Value.
 
-dirty_value(#antidote_reg{value=Value}) -> Value.
+dirty_value(#antidote_reg{value = Value}) -> Value.
 
 %% @doc Determines whether the passed term is a reg container.
 -spec is_type(term()) -> boolean().
@@ -74,8 +72,7 @@ to_ops(_, _) ->
     [].
 
 assign(_, Value) ->
-    #antidote_reg{value=Value}.
-
+    #antidote_reg{value = Value}.
 
 %% ===================================================================
 %% EUnit tests

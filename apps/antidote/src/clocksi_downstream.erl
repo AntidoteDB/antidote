@@ -35,8 +35,14 @@
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(tx(), index_node(), {key(), bucket()},
-  type(), op_param(), list()) ->
+-spec generate_downstream_op(
+    tx(),
+    index_node(),
+    {key(), bucket()},
+    type(),
+    op_param(),
+    list()
+) ->
     {ok, effect()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
     %% TODO: Check if read can be omitted for some types as registers
@@ -44,19 +50,21 @@ generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet) ->
     Result =
         %% If state is needed to generate downstream, read it from the partition.
         case NeedState of
-          true ->
-            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                {ok, S}->
-                    S;
-                {error, Reason}->
-                    {error, {gen_downstream_read_failed, Reason}}
-            end;
-          false ->
-              {ok, ignore} %Use a dummy value
+            true ->
+                case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                    {ok, S} ->
+                        S;
+                    {error, Reason} ->
+                        {error, {gen_downstream_read_failed, Reason}}
+                end;
+            false ->
+                %Use a dummy value
+                {ok, ignore}
         end,
     case Result of
         {error, R} ->
-            {error, R}; %% {error, Reason} is returned here.
+            %% {error, Reason} is returned here.
+            {error, R};
         Snapshot ->
             case Type of
                 antidote_crdt_counter_b ->

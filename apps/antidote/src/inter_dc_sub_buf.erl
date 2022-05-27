@@ -43,46 +43,57 @@
 
 %% API
 -export([
-  new_state/1,
-  process/2]).
+    new_state/1,
+    process/2
+]).
 
 %%%% API --------------------------------------------------------------------+
 
 %% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
 -spec new_state(pdcid()) -> inter_dc_sub_buf().
 new_state(PDCID) ->
-  {ok, EnableLogging} = application:get_env(antidote, enable_logging),
-  #inter_dc_sub_buf{
-    state_name = normal,
-    pdcid = PDCID,
-    last_observed_opid = init,
-    queue = queue:new(),
-    logging_enabled = EnableLogging,
-    log_reader_timeout = 0
-  }.
+    {ok, EnableLogging} = application:get_env(antidote, enable_logging),
+    #inter_dc_sub_buf{
+        state_name = normal,
+        pdcid = PDCID,
+        last_observed_opid = init,
+        queue = queue:new(),
+        logging_enabled = EnableLogging,
+        log_reader_timeout = 0
+    }.
 
--spec process({txn, interdc_txn()} | {log_reader_resp, [interdc_txn()]}, inter_dc_sub_buf()) -> inter_dc_sub_buf().
-process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
+-spec process({txn, interdc_txn()} | {log_reader_resp, [interdc_txn()]}, inter_dc_sub_buf()) ->
+    inter_dc_sub_buf().
+process(
+    {txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}
+) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
     %% you can check for duplicates or lost messages
-    Result = try
-                 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
-                         DCID, Partition)
-             catch
-                 _:Reason ->
-                     ?LOG_DEBUG("Error loading last opid from log: ~w, will retry", [Reason])
-             end,
+    Result =
+        try
+            logging_vnode:request_op_id(
+                dc_utilities:partition_to_indexnode(Partition),
+                DCID,
+                Partition
+            )
+        catch
+            _:Reason ->
+                ?LOG_DEBUG("Error loading last opid from log: ~w, will retry", [Reason])
+        end,
     case Result of
-    {ok, OpId} ->
-        ?LOG_DEBUG("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
-        process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=OpId});
-    _ ->
-        riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
-        State
+        {ok, OpId} ->
+            ?LOG_DEBUG("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
+            process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid = OpId});
+        _ ->
+            riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
+            State
     end;
-process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering, log_reader_timeout = Timeout}) ->
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) ->
+    process_queue(push(Txn, State));
+process(
+    {txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering, log_reader_timeout = Timeout}
+) ->
     %% Buffering incoming transactions while waiting for log reader response.
     %% Change to normal state, if response timeout exceed, to query for response again.
     ?LOG_INFO("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
@@ -94,56 +105,76 @@ process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering, log_reader
         true ->
             push(Txn, State)
     end;
-
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue}) ->
     %% Add log response to buffer and process.
     NewQueue = queue:join(queue:from_list(Txns), Queue),
     NewState = State#inter_dc_sub_buf{queue = NewQueue},
     process_queue(NewState).
 
-
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
-  case queue:peek(Queue) of
-    empty -> State#inter_dc_sub_buf{state_name = normal};
-    {value, Txn} ->
-      TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
-      case cmp(TxnLast, Last) of
-
-      %% If the received transaction is immediately after the last observed one
-        eq ->
-          deliver(Txn),
-          Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-          process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
-
-      %% If the transaction seems to come after an unknown transaction, ask the remote origin log
-        gt ->
-        case EnableLogging of
-          true ->
-            ?LOG_INFO("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-                  [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
-            try
-                query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast),
-                %% Enter buffering state while waiting for response and set timeout
-                State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT}
-            catch
-              S:T ->
-                  ?LOG_WARNING("Failed to send log query to DC, will retry on next ping message: ~p~n~p", [S, T]),
-                  State#inter_dc_sub_buf{state_name = normal}
-            end;
-          false -> %% we deliver the transaction as we can't ask anything to the remote log
-                         %% as logging to disk is disabled.
+process_queue(
+    State = #inter_dc_sub_buf{
+        queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging
+    }
+) ->
+    case queue:peek(Queue) of
+        empty ->
+            State#inter_dc_sub_buf{state_name = normal};
+        {value, Txn} ->
+            TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
+            case cmp(TxnLast, Last) of
+                %% If the received transaction is immediately after the last observed one
+                eq ->
                     deliver(Txn),
                     Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-                    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max})
-        end;
-
-      %% If the transaction has an old value, drop it.
-        lt ->
-            ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [(TxnLast + 1), Last]),
-            process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
-      end
-  end.
+                    process_queue(State#inter_dc_sub_buf{
+                        queue = queue:drop(Queue), last_observed_opid = Max
+                    });
+                %% If the transaction seems to come after an unknown transaction, ask the remote origin log
+                gt ->
+                    case EnableLogging of
+                        true ->
+                            ?LOG_INFO(
+                                "Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+                                [TxnLast, Last, State#inter_dc_sub_buf.pdcid]
+                            ),
+                            try
+                                query(
+                                    State#inter_dc_sub_buf.pdcid,
+                                    State#inter_dc_sub_buf.last_observed_opid + 1,
+                                    TxnLast
+                                ),
+                                %% Enter buffering state while waiting for response and set timeout
+                                State#inter_dc_sub_buf{
+                                    state_name = buffering,
+                                    log_reader_timeout =
+                                        erlang:system_time(millisecond) + ?LOG_REQUEST_TIMEOUT
+                                }
+                            catch
+                                S:T ->
+                                    ?LOG_WARNING(
+                                        "Failed to send log query to DC, will retry on next ping message: ~p~n~p",
+                                        [S, T]
+                                    ),
+                                    State#inter_dc_sub_buf{state_name = normal}
+                            end;
+                        %% we deliver the transaction as we can't ask anything to the remote log
+                        false ->
+                            %% as logging to disk is disabled.
+                            deliver(Txn),
+                            Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
+                            process_queue(State#inter_dc_sub_buf{
+                                queue = queue:drop(Queue), last_observed_opid = Max
+                            })
+                    end;
+                %% If the transaction has an old value, drop it.
+                lt ->
+                    ?LOG_WARNING("Dropping duplicate message ~w, last time was ~w", [
+                        (TxnLast + 1), Last
+                    ]),
+                    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
+            end
+    end.
 
 -spec deliver(interdc_txn()) -> ok.
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
@@ -159,7 +190,12 @@ push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_
 -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
 query({DCID, Partition}, From, To) ->
     BinaryRequest = term_to_binary({read_log, Partition, From, To}),
-    inter_dc_query_dealer:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/1).
+    inter_dc_query_dealer:perform_request(
+        ?LOG_READ_MSG,
+        {DCID, Partition},
+        BinaryRequest,
+        fun inter_dc_sub_vnode:deliver_log_reader_resp/1
+    ).
 
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;
@@ -179,7 +215,9 @@ process_old() ->
     meck_reset(),
     State = new_state({0, 0}),
     Txn = make_txn(-1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
+    NewState = process({txn, Txn}, State#inter_dc_sub_buf{
+        state_name = normal, last_observed_opid = 0
+    }),
     ?assertEqual(normal, NewState#inter_dc_sub_buf.state_name),
     check_meck_calls(0, 0, 0, 0).
 
@@ -187,7 +225,9 @@ process_missing_txn() ->
     meck_reset(),
     State = new_state({0, 0}),
     Txn = make_txn(1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
+    NewState = process({txn, Txn}, State#inter_dc_sub_buf{
+        state_name = normal, last_observed_opid = 0
+    }),
     ?assertEqual(1, meck:num_calls(inter_dc_query_dealer, perform_request, '_')),
     ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
     check_meck_calls(0, 0, 0, 1).
@@ -196,10 +236,18 @@ process_buffering() ->
     meck_reset(),
     State = new_state({0, 0}),
     Txn = make_txn(1),
-    NewState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) + 3000, last_observed_opid=0}),
+    NewState = process({txn, Txn}, State#inter_dc_sub_buf{
+        state_name = buffering,
+        log_reader_timeout = erlang:system_time(millisecond) + 3000,
+        last_observed_opid = 0
+    }),
     ?assertEqual(buffering, NewState#inter_dc_sub_buf.state_name),
     check_meck_calls(0, 0, 0, 0),
-    NewState2 = process({txn, Txn}, State#inter_dc_sub_buf{state_name = buffering, log_reader_timeout = erlang:system_time(millisecond) - 1000, last_observed_opid=0}),
+    NewState2 = process({txn, Txn}, State#inter_dc_sub_buf{
+        state_name = buffering,
+        log_reader_timeout = erlang:system_time(millisecond) - 1000,
+        last_observed_opid = 0
+    }),
     ?assertEqual(buffering, NewState2#inter_dc_sub_buf.state_name),
     check_meck_calls(0, 0, 0, 1).
 
@@ -207,7 +255,9 @@ process_resp() ->
     meck_reset(),
     State = new_state({0, 0}),
     Txn = make_txn(1),
-    BufState = process({txn, Txn}, State#inter_dc_sub_buf{state_name = normal, last_observed_opid=0}),
+    BufState = process({txn, Txn}, State#inter_dc_sub_buf{
+        state_name = normal, last_observed_opid = 0
+    }),
     ?assertEqual(buffering, BufState#inter_dc_sub_buf.state_name),
     ?assertEqual(1, queue:len(BufState#inter_dc_sub_buf.queue)),
     Txn2 = make_txn(0),
@@ -221,10 +271,12 @@ make_txn(Last) ->
         dcid = 0,
         partition = 0,
         prev_log_opid = #op_number{node = {node(), 0}, global = 0, local = Last},
-        log_records = [#log_record{
-            op_number = #op_number{node = {node(), 0}, global = 0, local = Last + 1},
-            log_operation = #log_operation{op_type = commit}
-        }]
+        log_records = [
+            #log_record{
+                op_number = #op_number{node = {node(), 0}, global = 0, local = Last + 1},
+                log_operation = #log_operation{op_type = commit}
+            }
+        ]
     }.
 
 meck_reset() ->
@@ -259,16 +311,18 @@ test_cleanup(_) ->
     meck:unload(inter_dc_query_dealer),
     logger:remove_handler_filter(default, ?MODULE).
 
-meck_test_() -> {
-    setup,
-    fun test_init/0,
-    fun test_cleanup/1,
-    [
-        fun process_init/0,
-        fun process_old/0,
-        fun process_missing_txn/0,
-        fun process_buffering/0,
-        fun process_resp/0
-    ]}.
+meck_test_() ->
+    {
+        setup,
+        fun test_init/0,
+        fun test_cleanup/1,
+        [
+            fun process_init/0,
+            fun process_old/0,
+            fun process_missing_txn/0,
+            fun process_buffering/0,
+            fun process_resp/0
+        ]
+    }.
 
 -endif.
