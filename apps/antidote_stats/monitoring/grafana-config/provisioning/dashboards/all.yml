@@ -1,6 +1,0 @@
-- name: 'default'
-  org_id: 1
-  folder: 'provisioning'
-  type: 'file'
-  options:
-    folder: '/var/lib/grafana/dashboards'
