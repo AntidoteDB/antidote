@@ -36,22 +36,20 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([
-    new/0,
-    value/1,
-    downstream/2,
-    update/2,
-    equal/2,
-    to_binary/1,
-    from_binary/1,
-    is_operation/1,
-    require_state_downstream/1
-]).
+-export([ new/0,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          require_state_downstream/1
+        ]).
 
 -type antidote_crdt_set_go() :: ordsets:ordset(member()).
--type antidote_crdt_set_go_op() ::
-    {add, member()}
-    | {add_all, [member()]}.
+-type antidote_crdt_set_go_op() :: {add, member()}
+                 | {add_all, [member()]}.
 
 -type antidote_crdt_set_go_effect() :: antidote_crdt_set_go().
 -type member() :: term().
@@ -62,8 +60,7 @@ new() ->
 value(Set) ->
     Set.
 
--spec downstream(antidote_crdt_set_go_op(), antidote_crdt_set_go()) ->
-    {ok, antidote_crdt_set_go_effect()}.
+-spec downstream(antidote_crdt_set_go_op(), antidote_crdt_set_go()) -> {ok, antidote_crdt_set_go_effect()}.
 downstream({add, Elem}, _State) ->
     {ok, ordsets:from_list([Elem])};
 downstream({add_all, Elems}, _State) ->

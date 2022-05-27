@@ -44,18 +44,17 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([
-    new/0,
-    value/1,
-    downstream/2,
-    update/2,
-    equal/2,
-    to_binary/1,
-    from_binary/1,
-    is_operation/1,
-    is_bottom/1,
-    require_state_downstream/1
-]).
+-export([ new/0,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          is_bottom/1,
+          require_state_downstream/1
+        ]).
 
 -type uniqueToken() :: term().
 -type state() :: orddict:orddict(uniqueToken(), integer()).
@@ -64,8 +63,8 @@
     | {decrement, integer()}
     | {reset, {}}.
 -type effect() ::
-    {uniqueToken(), integer()}
-    | [uniqueToken()].
+      {uniqueToken(), integer()}
+      | [uniqueToken()].
 
 %% @doc Create a new, empty fat counter
 -spec new() -> state().
@@ -77,6 +76,7 @@ new() ->
 -spec value(state()) -> integer().
 value(FatCounter) ->
     lists:sum([V || {_, V} <- FatCounter]).
+
 
 -spec downstream(op(), state()) -> {ok, effect()}.
 downstream(Op, FatCtr) ->
@@ -94,6 +94,7 @@ downstream(Op, FatCtr) ->
 unique() ->
     crypto:strong_rand_bytes(20).
 
+
 -spec update(effect(), state()) -> {ok, state()}.
 update({Token, Value}, FatCtr) ->
     % insert new value
@@ -106,7 +107,7 @@ apply_downstreams([], FatCtr) ->
     FatCtr;
 apply_downstreams(_Tokens, []) ->
     [];
-apply_downstreams([Token1 | TokensRest] = Tokens, [{Token2, Value2} | FatCtrRest] = FatCtr) ->
+apply_downstreams([Token1|TokensRest]=Tokens, [{Token2, Value2}|FatCtrRest]=FatCtr) ->
     if
         Token1 == Token2 ->
             apply_downstreams(TokensRest, FatCtrRest);
@@ -139,12 +140,14 @@ is_bottom(FatCtr) ->
 %%      that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
 is_operation({increment, Value}) when is_integer(Value) -> true;
-is_operation({decrement, Value}) when is_integer(Value) -> true;
+is_operation({decrement, Value}) when is_integer(Value)-> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(Op) ->
     Op == {reset, {}}.
+
+
 
 %% ===================================================================
 %% EUnit tests

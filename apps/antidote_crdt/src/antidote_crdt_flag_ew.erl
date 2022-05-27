@@ -33,18 +33,17 @@
 -module(antidote_crdt_flag_ew).
 
 %% Callbacks
--export([
-    new/0,
-    value/1,
-    downstream/2,
-    update/2,
-    equal/2,
-    to_binary/1,
-    from_binary/1,
-    is_operation/1,
-    is_bottom/1,
-    require_state_downstream/1
-]).
+-export([ new/0,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          is_bottom/1,
+          require_state_downstream/1
+        ]).
 
 -behaviour(antidote_crdt).
 
@@ -83,8 +82,7 @@ update({SeenTokens, NewTokens}, CurrentTokens) ->
 
 -spec equal(flag_ew(), flag_ew()) -> boolean().
 equal(Flag1, Flag2) ->
-    % Everything inside is ordered, so this should work
-    Flag1 == Flag2.
+    Flag1 == Flag2. % Everything inside is ordered, so this should work
 
 -spec to_binary(flag_ew()) -> antidote_crdt_flag_helper:binary_flag().
 to_binary(Flag) ->

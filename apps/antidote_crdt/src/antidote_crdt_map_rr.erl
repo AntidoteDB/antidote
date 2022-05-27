@@ -58,37 +58,27 @@
 -behaviour(antidote_crdt).
 
 %% API
--export([
-    new/0,
-    value/1,
-    update/2,
-    equal/2,
-    get/2,
-    to_binary/1,
-    from_binary/1,
-    is_operation/1,
-    downstream/2,
-    require_state_downstream/1,
-    is_bottom/1
-]).
+-export([new/0, value/1, update/2, equal/2, get/2,
+  to_binary/1, from_binary/1, is_operation/1, downstream/2, require_state_downstream/1, is_bottom/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type typedKey() :: {Key :: term(), Type :: atom()}.
--type state() :: dict:dict(typedKey(), {NestedState :: term()}).
+
+-type typedKey() :: {Key::term(), Type::atom()}.
+-type state() :: dict:dict(typedKey(), {NestedState::term()}).
 -type op() ::
     {update, nested_op()}
-    | {update, [nested_op()]}
-    | {remove, typedKey()}
-    | {remove, [typedKey()]}
-    | {batch, {Updates :: [nested_op()], Removes :: [typedKey()]}}
-    | {reset, {}}.
--type nested_op() :: {typedKey(), Op :: term()}.
+  | {update, [nested_op()]}
+  | {remove, typedKey()}
+  | {remove, [typedKey()]}
+  | {batch, {Updates::[nested_op()], Removes::[typedKey()]}}
+  | {reset, {}}.
+-type nested_op() :: {typedKey(), Op::term()}.
 -type effect() ::
-    {Adds :: [nested_downstream()], Removed :: [nested_downstream()]}.
--type nested_downstream() :: {typedKey(), none | {ok, Effect :: term()}}.
+     {Adds::[nested_downstream()], Removed::[nested_downstream()]}.
+-type nested_downstream() :: {typedKey(), none | {ok, Effect::term()}}.
 -type value() :: orddict:orddict(typedKey(), term()).
 
 -spec new() -> state().
@@ -97,19 +87,17 @@ new() ->
 
 -spec value(state()) -> value().
 value(Map) ->
-    lists:sort([
-        {{Key, Type}, antidote_crdt:value(Type, Value)}
-     || {{Key, Type}, Value} <- dict:to_list(Map)
-    ]).
+    lists:sort([{{Key, Type}, antidote_crdt:value(Type, Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
 % get a value from the map
 % returns empty value if the key is not present in the map
 -spec get(typedKey(), value()) -> term().
-get({_K, Type} = Key, Map) ->
+get({_K, Type}=Key, Map) ->
     case orddict:find(Key, Map) of
         {ok, Val} -> Val;
         error -> antidote_crdt:value(Type, antidote_crdt:new(Type))
     end.
+
 
 -spec require_state_downstream(op()) -> boolean().
 require_state_downstream(_Op) ->
@@ -133,7 +121,8 @@ downstream({reset, {}}, CurrentMap) ->
     AllKeys = [Key || {Key, _Val} <- value(CurrentMap)],
     downstream({remove, AllKeys}, CurrentMap).
 
--spec generate_downstream_update({typedKey(), Op :: term()}, state()) -> nested_downstream().
+
+-spec generate_downstream_update({typedKey(), Op::term()}, state()) -> nested_downstream().
 generate_downstream_update({{Key, Type}, Op}, CurrentMap) ->
     CurrentState =
         case dict:is_key({Key, Type}, CurrentMap) of
@@ -142,6 +131,7 @@ generate_downstream_update({{Key, Type}, Op}, CurrentMap) ->
         end,
     {ok, DownstreamEffect} = antidote_crdt:downstream(Type, Op, CurrentState),
     {{Key, Type}, {ok, DownstreamEffect}}.
+
 
 -spec generate_downstream_remove(typedKey(), state()) -> nested_downstream().
 generate_downstream_remove({Key, Type}, CurrentMap) ->
@@ -159,11 +149,12 @@ generate_downstream_remove({Key, Type}, CurrentMap) ->
         end,
     {{Key, Type}, DownstreamEffect}.
 
+
 -spec update(effect(), state()) -> {ok, state()}.
 update({Updates, Removes}, State) ->
-    State2 = lists:foldl(fun(E, S) -> update_entry(E, S) end, State, Updates),
-    State3 = dict:fold(fun(K, V, S) -> remove_obsolete(K, V, S) end, new(), State2),
-    State4 = lists:foldl(fun(E, S) -> remove_entry(E, S) end, State3, Removes),
+    State2 = lists:foldl(fun(E, S) -> update_entry(E, S)  end, State, Updates),
+    State3 = dict:fold(fun(K, V, S) -> remove_obsolete(K, V, S)  end, new(), State2),
+    State4 = lists:foldl(fun(E, S) -> remove_entry(E, S)  end, State3, Removes),
     {ok, State4}.
 
 update_entry({{Key, Type}, {ok, Op}}, Map) ->
@@ -206,8 +197,8 @@ is_bottom(Type, State) ->
     erlang:function_exported(T, is_bottom, 1) andalso T:is_bottom(State).
 
 equal(Map1, Map2) ->
-    % TODO better implementation (recursive equals)
-    Map1 == Map2.
+    Map1 == Map2. % TODO better implementation (recursive equals)
+
 
 -define(TAG, 101).
 -define(V1_VERS, 1).
@@ -223,32 +214,32 @@ is_operation(Operation) ->
         {update, {{_Key, Type}, Op}} ->
             antidote_crdt:is_type(Type) andalso antidote_crdt:is_operation(Type, Op);
         {update, Ops} when is_list(Ops) ->
-            distinct([Key || {Key, _} <- Ops]) andalso
-                lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
+            distinct([Key || {Key, _} <- Ops])
+                andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
         {remove, {_Key, Type}} ->
             antidote_crdt:is_type(Type);
         {remove, Keys} when is_list(Keys) ->
-            distinct(Keys) andalso
-                lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
+            distinct(Keys)
+                andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
         {batch, {Updates, Removes}} ->
-            is_list(Updates) andalso
-                is_list(Removes) andalso
-                distinct(Removes ++ [Key || {Key, _} <- Updates]) andalso
-                lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes) andalso
-                lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
-        {reset, {}} ->
-            true;
-        is_bottom ->
-            true;
+            is_list(Updates)
+                andalso is_list(Removes)
+                andalso distinct(Removes ++ [Key || {Key, _} <- Updates])
+                andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes)
+                andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
+        {reset, {}} -> true;
+        is_bottom -> true;
         _ ->
             false
     end.
 
 distinct([]) -> true;
-distinct([X | Xs]) -> not lists:member(X, Xs) andalso distinct(Xs).
+distinct([X|Xs]) ->
+    not lists:member(X, Xs) andalso distinct(Xs).
 
 is_bottom(Map) ->
     dict:is_empty(Map).
+
 
 %% ===================================================================
 %% EUnit tests
@@ -296,6 +287,7 @@ reset1_test() ->
     ?assertEqual([], value(Map1d)),
     ?assertEqual([{{a, antidote_crdt_counter_fat}, 2}], value(Map1e)).
 
+
 reset2_test() ->
     Map0 = new(),
     % DC1: s.add
@@ -316,18 +308,18 @@ reset2_test() ->
     {ok, Add2} = downstream({update, {{s, antidote_crdt_set_rw}, {add, b}}}, Map1d),
     {ok, Map1e} = update(Add2, Map1d),
 
-    io:format("Map0 = ~p~n", [value(Map0)]),
-    io:format("Add1 = ~p~n", [Add1]),
-    io:format("Map1a = ~p~n", [value(Map1a)]),
-    io:format("Reset1 = ~p~n", [Reset1]),
-    io:format("Map1b = ~p~n", [value(Map1b)]),
+    io:format("Map0 = ~p~n"   , [value(Map0)]),
+    io:format("Add1 = ~p~n"   , [Add1]),
+    io:format("Map1a = ~p~n"  , [value(Map1a)]),
+    io:format("Reset1 = ~p~n" , [Reset1]),
+    io:format("Map1b = ~p~n"  , [value(Map1b)]),
     io:format("Remove1 = ~p~n", [Remove1]),
-    io:format("Map2a = ~p~n", [value(Map2a)]),
-    io:format("Map1c = ~p~n", [value(Map1c)]),
-    io:format("Reset2 = ~p~n", [Reset2]),
-    io:format("Map1d = ~p~n", [value(Map1d)]),
-    io:format("Add2 = ~p~n", [Add2]),
-    io:format("Map1e = ~p~n", [value(Map1e)]),
+    io:format("Map2a = ~p~n"  , [value(Map2a)]),
+    io:format("Map1c = ~p~n"  , [value(Map1c)]),
+    io:format("Reset2 = ~p~n" , [Reset2]),
+    io:format("Map1d = ~p~n"  , [value(Map1d)]),
+    io:format("Add2 = ~p~n"   , [Add2]),
+    io:format("Map1e = ~p~n"  , [value(Map1e)]),
 
     ?assertEqual([], value(Map0)),
     ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
@@ -340,9 +332,7 @@ reset2_test() ->
 prop1_test() ->
     Map0 = new(),
     % DC1: s.add
-    {ok, Add1} = downstream(
-        {update, {{a, antidote_crdt_map_rr}, {update, {{a, antidote_crdt_set_rw}, {add, a}}}}}, Map0
-    ),
+    {ok, Add1} = downstream({update, {{a, antidote_crdt_map_rr}, {update, {{a, antidote_crdt_set_rw}, {add, a}}}}}, Map0),
     {ok, Map1a} = update(Add1, Map0),
 
     % DC1 reset
@@ -362,9 +352,7 @@ prop1_test() ->
 prop2_test() ->
     Map0 = new(),
     % DC1: update remove
-    {ok, Add1} = downstream(
-        {update, [{{b, antidote_crdt_map_rr}, {remove, {a, antidote_crdt_set_rw}}}]}, Map0
-    ),
+    {ok, Add1} = downstream({update, [{{b, antidote_crdt_map_rr}, {remove, {a, antidote_crdt_set_rw}}}]}, Map0),
     {ok, Map1a} = update(Add1, Map0),
 
     % DC2 remove
@@ -394,22 +382,16 @@ remove_test() ->
     M1 = new(),
     ?assertEqual([], value(M1)),
     ?assertEqual(true, is_bottom(M1)),
-    M2 = upd(
-        {update, [
-            {{<<"a">>, antidote_crdt_set_aw}, {add, <<"1">>}},
-            {{<<"b">>, antidote_crdt_register_mv}, {assign, <<"2">>}},
-            {{<<"c">>, antidote_crdt_counter_fat}, {increment, 1}}
-        ]},
-        M1
-    ),
-    ?assertEqual(
-        [
-            {{<<"a">>, antidote_crdt_set_aw}, [<<"1">>]},
-            {{<<"b">>, antidote_crdt_register_mv}, [<<"2">>]},
-            {{<<"c">>, antidote_crdt_counter_fat}, 1}
-        ],
-        value(M2)
-    ),
+    M2 = upd({update, [
+        {{<<"a">>, antidote_crdt_set_aw}, {add, <<"1">>}},
+        {{<<"b">>, antidote_crdt_register_mv}, {assign, <<"2">>}},
+        {{<<"c">>, antidote_crdt_counter_fat}, {increment, 1}}
+    ]}, M1),
+    ?assertEqual([
+        {{<<"a">>, antidote_crdt_set_aw}, [<<"1">>]},
+        {{<<"b">>, antidote_crdt_register_mv}, [<<"2">>]},
+        {{<<"c">>, antidote_crdt_counter_fat}, 1}
+    ], value(M2)),
     ?assertEqual(false, is_bottom(M2)),
     M3 = upd({reset, {}}, M2),
     io:format("M3 state = ~p~n", [dict:to_list(M3)]),

@@ -37,23 +37,22 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([
-    new/0,
-    new/1,
-    value/1,
-    downstream/2,
-    update/2,
-    equal/2,
-    to_binary/1,
-    from_binary/1,
-    is_operation/1,
-    require_state_downstream/1
-]).
+-export([ new/0,
+          new/1,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          require_state_downstream/1
+        ]).
+
 
 -type state() :: integer().
--type op() ::
-    {increment, integer()}
-    | {decrement, integer()}.
+-type op() :: {increment, integer()} |
+              {decrement, integer()}.
 -type effect() :: integer().
 
 %% @doc Create a new, empty 'antidote_crdt_counter_pn'
@@ -118,7 +117,7 @@ from_binary(Bin) ->
 is_operation(increment) -> true;
 is_operation(decrement) -> true;
 is_operation({increment, By}) when is_integer(By) -> true;
-is_operation({decrement, By}) when is_integer(By) -> true;
+is_operation({decrement, By}) when is_integer(By)-> true;
 is_operation(_) -> false.
 
 %% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt
