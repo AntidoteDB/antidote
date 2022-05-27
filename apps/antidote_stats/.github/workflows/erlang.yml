@@ -1,0 +1,21 @@
+name: Erlang CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    strategy: 
+      matrix:
+        erlang: [ 23,24 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - run: rebar3 compile
+

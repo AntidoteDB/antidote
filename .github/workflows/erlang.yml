@@ -35,6 +35,8 @@ jobs:
       run: epmd -daemon
     - name: Unit Tests
       run: make test
+    - name: Property-Based Tests
+      run: make proper
     - name: System Tests
       run: make systests
     - name: Coverage

@@ -50,4 +50,3 @@ elli                            MIT
 prometheus                      MIT
 prometheus_process_collector    MIT
 elli_prometheus                 BSD-3
-lager                           Apache 2.0

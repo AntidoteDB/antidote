@@ -1,0 +1,54 @@
+Antidote Licensing
+============================================
+
+This file attempts to include all licenses that apply within Antidote (this program) source trees AntidoteDB/antidote and AntidoteDB/antidote_crdt, in particular any that are supposed to be exposed to the end user for credit requirements for instance.
+
+Antidote :A planet scale, highly available, transactional database built on CRDT technology.
+
+
+Copyright <2013-2018> <
+Technische Universität Kaiserslautern, Germany
+Université Pierre et Marie Curie / Sorbonne-Université, France
+Universidade NOVA de Lisboa, Portugal
+Université catholique de Louvain (UCL), Belgique
+INESC TEC, Portugal 
+>
+
+The list of the contributors to the development of Antidote is given in the AUTHORS file.
+
+Website of Antidote: https://www.antidotedb.eu
+Contact: info@antidotedb.com
+
+Antidote General
+-----------------------------------------
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*************************************************************************
+
+[The documentation for this program is under a creative commons attribution share-alike
+4.0 license.  http://creativecommons.org/licenses/by-sa/4.0/
+The documentation can be found here:  https://antidotedb.gitbook.io/documentation/]
+*************************************************************************
+
+This program has dependencies on other libraries and Website dependencies which are or not under Apache License, Version 2.0 and that are commonly distributed with this program core libraries.
+
+Dependencies are as follows:
+
+riak_core                       Apache 2.0
+erlzmq                          MIT
+elli                            MIT
+prometheus                      MIT
+prometheus_process_collector    MIT
+elli_prometheus                 BSD-3
+rand_compat                     Apache 2.0
+lager                           Apache 2.0
