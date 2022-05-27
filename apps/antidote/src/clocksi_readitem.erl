@@ -102,10 +102,9 @@ async_validate_or_read_data_item(
                 {ok, {invalid, Snapshot, NextToken}} ->
                     gen_statem:cast(Sender, {ok, {invalid, Key, Type, Snapshot, NextToken}});
                 {ok, valid} ->
-                    gen_statem:cast(Sender, {ok, {valid, Key, Type}})
-                % TODO dialyzer says this can never happen
-                % {error, Reason} ->
-                %      gen_statem:cast(Sender, {error, Reason})
+                    gen_statem:cast(Sender, {ok, {valid, Key, Type}});
+                {error, Reason} ->
+                     gen_statem:cast(Sender, {error, Reason})
             end
         }
     end),

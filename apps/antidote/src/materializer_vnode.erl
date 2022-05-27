@@ -37,9 +37,6 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 -include_lib("kernel/include/logger.hrl").
 
-% TODO issue
--dialyzer({nowarn_function, internal_validate_or_read/8}).
-
 %% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
 %% Number of snapshots to keep after GC
@@ -449,7 +446,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
 ) ->
     {ok, valid}
     | {ok, {invalid, snapshot(), object_token()}}
-    | {error, no_snapshot}.
+    | {error, term()}.
 internal_validate_or_read(Key, Type, Token, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
     SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
 
@@ -571,7 +568,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
 -spec materialize_snapshot(
     txid() | ignore, key(), type(), snapshot_time(), boolean(), state(), snapshot_get_response()
 ) ->
-    {ok, {snapshot_time(), snapshot()}} | {error, reason()}.
+    {ok, {snapshot_time() | ignore, snapshot()}} | {error, term()}.
 
 materialize_snapshot(
     _TxId, _Key, _Type, _MinSnapshotTime, _ShouldGC, _State, #snapshot_get_response{
