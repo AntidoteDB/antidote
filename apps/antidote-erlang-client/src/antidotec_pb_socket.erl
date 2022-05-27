@@ -31,38 +31,53 @@
 %% The TCP port number of the Riak node's Protocol Buffers interface
 -type portnum() :: non_neg_integer().
 
--record(request, {ref :: reference(), from, timeout :: timeout(),
-                  tref :: reference() | undefined }).
+-record(request, {
+    ref :: reference(),
+    from,
+    timeout :: timeout(),
+    tref :: reference() | undefined
+}).
 
 -record(state, {
-          address :: address(),    % address to connect to
-          port :: portnum(),       % port to connect to
-          sock :: port() | undefined,           % gen_tcp socket
-          active :: #request{} | undefined,     % active request
-          connect_timeout = infinity :: timeout(), % timeout of TCP connection
-          keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
-          last_commit_time :: term() % temporarily store for static transactions
-         }).
+    % address to connect to
+    address :: address(),
+    % port to connect to
+    port :: portnum(),
+    % gen_tcp socket
+    sock :: port() | undefined,
+    % active request
+    active :: #request{} | undefined,
+    % timeout of TCP connection
+    connect_timeout = infinity :: timeout(),
+    % if true, enabled TCP keepalive for the socket
+    keepalive = false :: boolean(),
+    % temporarily store for static transactions
+    last_commit_time :: term()
+}).
+-type state() :: #state{}.
 
+-export([
+    start_link/2,
+    start_link/3,
+    start/2,
+    start/3,
+    stop/1,
+    handle_call/3,
+    handle_info/2,
+    handle_cast/2,
+    init/1,
+    code_change/3,
+    terminate/2
+]).
 
--export([start_link/2,
-         start_link/3,
-         start/2,
-         start/3,
-         stop/1,
-         handle_call/3,
-         handle_info/2,
-         handle_cast/2,
-         init/1,
-         code_change/3,
-         terminate/2]).
-
--export([call_infinity/2,
-         store_commit_time/2,
-         get_last_commit_time/1
-        ]).
+-export([
+    call_infinity/2,
+    store_commit_time/2,
+    get_last_commit_time/1
+]).
 
 %% @private
+-spec init([term()]) -> {ok, state()} | {stop, {tcp, any()}}.
 init([Address, Port, _Options]) ->
     State = #state{address = Address, port = Port, active = undefined, sock = undefined},
     case connect(State) of
@@ -110,44 +125,43 @@ get_last_commit_time(Pid) ->
 %% @private
 handle_call({req, Msg, Timeout}, From, State) ->
     Ref = make_ref(),
-    Req = #request{ref = Ref, from = From, timeout = Timeout,
-             tref = create_req_timer(Timeout, Ref)},
-    NewState = case gen_tcp:send(State#state.sock, Msg) of
-        ok ->
-            maybe_reply({noreply,  State#state{active = Req}});
-        {error, Reason} ->
-            logger:warning("Socket error while sending request: ~p.", [Reason]),
-            gen_tcp:close(State#state.sock)
-    end,
+    Req = #request{
+        ref = Ref,
+        from = From,
+        timeout = Timeout,
+        tref = create_req_timer(Timeout, Ref)
+    },
+    NewState =
+        case gen_tcp:send(State#state.sock, Msg) of
+            ok ->
+                maybe_reply({noreply, State#state{active = Req}});
+            {error, Reason} ->
+                logger:warning("Socket error while sending request: ~p.", [Reason]),
+                gen_tcp:close(State#state.sock)
+        end,
     {noreply, NewState};
-
 handle_call({store_commit_time, TimeStamp}, _From, State) ->
     {reply, ok, State#state{last_commit_time = TimeStamp}};
-
-handle_call(get_commit_time, _From, State=#state{last_commit_time = TimeStamp}) ->
+handle_call(get_commit_time, _From, State = #state{last_commit_time = TimeStamp}) ->
     {reply, {ok, TimeStamp}, State#state{last_commit_time = ignore}};
-
 handle_call(stop, _From, State) ->
     _ = disconnect(State),
     {stop, normal, ok, State}.
 
 %% @private
 %% @todo handle timeout
-handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
+handle_info({_Proto, Sock, Data}, State = #state{active = (Active = #request{})}) ->
     cancel_req_timer(Active#request.tref),
     _ = send_caller(Data, Active),
     NewState = State#state{active = undefined},
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, NewState};
-
-handle_info({req_timeout, _Ref}, State=#state{active = Active}) ->
+handle_info({req_timeout, _Ref}, State = #state{active = Active}) ->
     cancel_req_timer(Active#request.tref),
     _ = send_caller({error, timeout}, Active),
-    {noreply, State#state{ active = undefined }};
-
+    {noreply, State#state{active = undefined}};
 handle_info({tcp_closed, _Socket}, State) ->
     disconnect(State);
-
 handle_info({_Proto, Sock, _Data}, State) ->
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, State}.
@@ -166,20 +180,29 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %% Connect the socket if disconnected
 connect(State) when State#state.sock =:= undefined ->
     #state{address = Address, port = Port} = State,
-    case gen_tcp:connect(Address, Port,
-                         [binary, {active, once}, {packet, 4},
-                          {keepalive, State#state.keepalive}],
-                         State#state.connect_timeout) of
+    case
+        gen_tcp:connect(
+            Address,
+            Port,
+            [
+                binary,
+                {active, once},
+                {packet, 4},
+                {keepalive, State#state.keepalive}
+            ],
+            State#state.connect_timeout
+        )
+    of
         {ok, Sock} ->
             {ok, State#state{sock = Sock}};
         {error, Reason} ->
             {error, Reason}
     end.
 
-
 disconnect(State) ->
     %% Tell any pending requests we've disconnected
-    _ = case State#state.active of
+    _ =
+        case State#state.active of
             undefined ->
                 ok;
             Request ->
@@ -205,7 +228,6 @@ create_req_timer(undefined, _Ref) ->
 create_req_timer(Msecs, Ref) ->
     erlang:send_after(Msecs, self(), {req_timeout, Ref}).
 
-
 %% maybe_reply({reply, Reply, State = #state{active = Request}}) ->
 %%   NewRequest = send_caller(Reply, Request),
 %%   State#state{active = NewRequest};
@@ -214,7 +236,7 @@ maybe_reply({noreply, State = #state{}}) ->
     State.
 
 %% Replies the message and clears the requester id
-send_caller(Msg, #request{from = From}=Request) when From /= undefined ->
+send_caller(Msg, #request{from = From} = Request) when From /= undefined ->
     gen_server:reply(From, Msg),
     Request#request{from = undefined}.
 
