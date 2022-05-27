@@ -40,20 +40,21 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([ new/0,
-          value/1,
-          downstream/2,
-          update/2,
-          equal/2,
-          to_binary/1,
-          from_binary/1,
-          is_operation/1,
-          require_state_downstream/1
-        ]).
+-export([
+    new/0,
+    value/1,
+    downstream/2,
+    update/2,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    is_operation/1,
+    require_state_downstream/1
+]).
 
 -type antidote_crdt_register_lww() :: {non_neg_integer(), term()}.
 
--type antidote_crdt_register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
+-type antidote_crdt_register_lww_op() :: {assign, term(), non_neg_integer()} | {assign, term()}.
 
 new() ->
     {0, <<>>}.
@@ -71,18 +72,15 @@ make_micro_epoch() ->
     {Mega, Sec, Micro} = os:timestamp(),
     (Mega * 1000000 + Sec) * 1000000 + Micro.
 
-
 update(Effect, State) ->
     % take the state with maximum time, if times are equal use maximum state
     {ok, max(Effect, State)}.
-
 
 require_state_downstream(_Operation) -> true.
 
 is_operation({assign, _Value}) -> true;
 is_operation({assign, _Value, _Time}) -> true;
 is_operation(_Other) -> false.
-
 
 equal(CRDT1, CRDT2) ->
     CRDT1 == CRDT2.

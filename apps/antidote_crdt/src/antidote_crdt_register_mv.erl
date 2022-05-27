@@ -42,18 +42,18 @@
 -behaviour(antidote_crdt).
 
 %% Callbacks
--export([ new/0,
-          value/1,
-          downstream/2,
-          update/2,
-          equal/2,
-          to_binary/1,
-          from_binary/1,
-          is_operation/1,
-          require_state_downstream/1,
-          is_bottom/1
-        ]).
-
+-export([
+    new/0,
+    value/1,
+    downstream/2,
+    update/2,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    is_operation/1,
+    require_state_downstream/1,
+    is_bottom/1
+]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -62,19 +62,15 @@
 -type antidote_crdt_register_mv() :: [{term(), uniqueToken()}].
 -type uniqueToken() :: term().
 -type antidote_crdt_register_mv_effect() ::
-    {Value::term(), uniqueToken(), Overridden::[uniqueToken()]}
-  | {reset, Overridden::[uniqueToken()]}.
-
+    {Value :: term(), uniqueToken(), Overridden :: [uniqueToken()]}
+    | {reset, Overridden :: [uniqueToken()]}.
 
 -type antidote_crdt_register_mv_op() :: {assign, term()}.
-
 
 %% @doc Create a new, empty `antidote_crdt_register_mv()'
 -spec new() -> antidote_crdt_register_mv().
 new() ->
     [].
-
-
 
 %% @doc The values of this `antidote_crdt_register_mv()'. Multiple values can be returned,
 %% since there can be diverged value in this register.
@@ -82,8 +78,8 @@ new() ->
 value(MVReg) ->
     [V || {V, _} <- MVReg].
 
-
--spec downstream(antidote_crdt_register_mv_op(), antidote_crdt_register_mv()) -> {ok, antidote_crdt_register_mv_effect()}.
+-spec downstream(antidote_crdt_register_mv_op(), antidote_crdt_register_mv()) ->
+    {ok, antidote_crdt_register_mv_effect()}.
 downstream({assign, Value}, MVReg) ->
     Token = unique(),
     Overridden = [Tok || {_, Tok} <- MVReg],
@@ -96,8 +92,8 @@ downstream({reset, {}}, MVReg) ->
 unique() ->
     crypto:strong_rand_bytes(20).
 
-
--spec update(antidote_crdt_register_mv_effect(), antidote_crdt_register_mv()) -> {ok, antidote_crdt_register_mv()}.
+-spec update(antidote_crdt_register_mv_effect(), antidote_crdt_register_mv()) ->
+    {ok, antidote_crdt_register_mv()}.
 update({Value, Token, Overridden}, MVreg) ->
     % remove overridden values
     MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
@@ -109,9 +105,8 @@ update({reset, Overridden}, MVreg) ->
 
 % insert value into sorted list
 insert_sorted(A, []) -> [A];
-insert_sorted(A, [X|Xs]) when A < X -> [A, X|Xs];
-insert_sorted(A, [X|Xs]) -> [X|insert_sorted(A, Xs)].
-
+insert_sorted(A, [X | Xs]) when A < X -> [A, X | Xs];
+insert_sorted(A, [X | Xs]) -> [X | insert_sorted(A, Xs)].
 
 -spec equal(antidote_crdt_register_mv(), antidote_crdt_register_mv()) -> boolean().
 equal(MVReg1, MVReg2) ->
@@ -129,7 +124,6 @@ to_binary(MVReg) ->
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     {ok, antidote_crdt:from_binary(Bin)}.
 
-
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
@@ -138,10 +132,9 @@ is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(_) ->
-     true.
+    true.
 
 is_bottom(State) -> State == new().
-
 
 %% ===================================================================
 %% EUnit tests

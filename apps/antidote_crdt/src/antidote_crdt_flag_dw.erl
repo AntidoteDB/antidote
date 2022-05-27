@@ -33,17 +33,18 @@
 -module(antidote_crdt_flag_dw).
 
 %% Callbacks
--export([ new/0,
-          value/1,
-          downstream/2,
-          update/2,
-          equal/2,
-          to_binary/1,
-          from_binary/1,
-          is_operation/1,
-          is_bottom/1,
-          require_state_downstream/1
-        ]).
+-export([
+    new/0,
+    value/1,
+    downstream/2,
+    update/2,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    is_operation/1,
+    is_bottom/1,
+    require_state_downstream/1
+]).
 
 -behaviour(antidote_crdt).
 
@@ -57,7 +58,11 @@
 -type flag_dw() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
 
 %% SeenTokens, NewEnableTokens, NewDisableTokens
--type downstream_op() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
+-type downstream_op() :: {
+    antidote_crdt_flag_helper:tokens(),
+    antidote_crdt_flag_helper:tokens(),
+    antidote_crdt_flag_helper:tokens()
+}.
 
 -spec new() -> flag_dw().
 new() ->
@@ -76,7 +81,9 @@ downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
     {ok, {EnableTokens ++ DisableTokens, [], []}}.
 
 -spec update(downstream_op(), flag_dw()) -> {ok, flag_dw()}.
-update({SeenTokens, NewEnableTokens, NewDisableTokens}, {CurrentEnableTokens, CurrentDisableTokens}) ->
+update(
+    {SeenTokens, NewEnableTokens, NewDisableTokens}, {CurrentEnableTokens, CurrentDisableTokens}
+) ->
     FinalEnableTokens = (CurrentEnableTokens ++ NewEnableTokens) -- SeenTokens,
     FinalDisableTokens = (CurrentDisableTokens ++ NewDisableTokens) -- SeenTokens,
     {ok, {FinalEnableTokens, FinalDisableTokens}}.
@@ -100,7 +107,6 @@ is_bottom(Flag) ->
     Flag == new().
 
 require_state_downstream(A) -> antidote_crdt_flag_helper:require_state_downstream(A).
-
 
 %% ===================================================================
 %% EUnit tests

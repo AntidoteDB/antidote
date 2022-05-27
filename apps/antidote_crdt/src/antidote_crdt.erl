@@ -46,8 +46,6 @@
 %% map_rr: Recursive Resets Map aka RR-Map
 %% rga: Replicated Growable Array (Experimental)
 
-
-
 -module(antidote_crdt).
 
 -include("antidote_crdt.hrl").
@@ -56,24 +54,33 @@
 
 % The CRDTs supported by Antidote:
 -type typ() ::
-antidote_crdt_counter_pn
-| antidote_crdt_counter_b
-| antidote_crdt_counter_fat
-| antidote_crdt_secure_counter_pn
-| antidote_crdt_flag_ew
-| antidote_crdt_flag_dw
-| antidote_crdt_set_go
-| antidote_crdt_set_aw
-| antidote_crdt_set_rw
-| antidote_crdt_register_lww
-| antidote_crdt_register_mv
-| antidote_crdt_map_go
-| antidote_crdt_map_rr.
+    antidote_crdt_counter_pn
+    | antidote_crdt_counter_b
+    | antidote_crdt_counter_fat
+    | antidote_crdt_secure_counter_pn
+    | antidote_crdt_flag_ew
+    | antidote_crdt_flag_dw
+    | antidote_crdt_set_go
+    | antidote_crdt_set_aw
+    | antidote_crdt_set_rw
+    | antidote_crdt_register_lww
+    | antidote_crdt_register_mv
+    | antidote_crdt_map_go
+    | antidote_crdt_map_rr.
 
 -type internal_crdt() :: term().
 -type internal_effect() :: term().
 
--export([is_type/1, alias/1, new/1, value/2, downstream/3, update/3, require_state_downstream/2, is_operation/2]).
+-export([
+    is_type/1,
+    alias/1,
+    new/1,
+    value/2,
+    downstream/3,
+    update/3,
+    require_state_downstream/2,
+    is_operation/2
+]).
 
 % Callbacks implemented by each concrete CRDT implementation
 -callback new() -> internal_crdt().
@@ -81,7 +88,8 @@ antidote_crdt_counter_pn
 -callback downstream(update(), internal_crdt()) -> {ok, internal_effect()} | {error, reason()}.
 -callback update(internal_effect(), internal_crdt()) -> {ok, internal_crdt()}.
 -callback require_state_downstream(update()) -> boolean().
--callback is_operation(update()) -> boolean(). %% Type check
+%% Type check
+-callback is_operation(update()) -> boolean().
 
 -callback equal(internal_crdt(), internal_crdt()) -> boolean().
 -callback to_binary(internal_crdt()) -> binary().
@@ -89,38 +97,38 @@ antidote_crdt_counter_pn
 
 % Check if the given type is supported by Antidote
 -spec is_type(typ()) -> boolean().
-is_type(antidote_crdt_counter_pn)          -> true;
-is_type(antidote_crdt_counter_b)           -> true;
-is_type(antidote_crdt_counter_fat)         -> true;
-is_type(antidote_crdt_flag_ew)             -> true;
-is_type(antidote_crdt_flag_dw)             -> true;
-is_type(antidote_crdt_set_go)              -> true;
-is_type(antidote_crdt_set_aw)              -> true;
-is_type(antidote_crdt_set_rw)              -> true;
-is_type(antidote_crdt_register_lww)        -> true;
-is_type(antidote_crdt_register_mv)         -> true;
-is_type(antidote_crdt_map_go)              -> true;
-is_type(antidote_crdt_map_rr)              -> true;
-is_type(antidote_crdt_secure_counter_pn)   -> true;
-is_type(antidote_crdt_secure_set_go)       -> true;
-is_type(antidote_crdt_secure_set_aw)       -> true;
-is_type(antidote_crdt_secure_set_rw)       -> true;
+is_type(antidote_crdt_counter_pn) -> true;
+is_type(antidote_crdt_counter_b) -> true;
+is_type(antidote_crdt_counter_fat) -> true;
+is_type(antidote_crdt_flag_ew) -> true;
+is_type(antidote_crdt_flag_dw) -> true;
+is_type(antidote_crdt_set_go) -> true;
+is_type(antidote_crdt_set_aw) -> true;
+is_type(antidote_crdt_set_rw) -> true;
+is_type(antidote_crdt_register_lww) -> true;
+is_type(antidote_crdt_register_mv) -> true;
+is_type(antidote_crdt_map_go) -> true;
+is_type(antidote_crdt_map_rr) -> true;
+is_type(antidote_crdt_secure_counter_pn) -> true;
+is_type(antidote_crdt_secure_set_go) -> true;
+is_type(antidote_crdt_secure_set_aw) -> true;
+is_type(antidote_crdt_secure_set_rw) -> true;
 is_type(antidote_crdt_secure_register_lww) -> true;
-is_type(antidote_crdt_secure_register_mv)  -> true;
-is_type(antidote_crdt_secure_map_go)       -> true;
-is_type(antidote_crdt_secure_map_rr)       -> true;
-is_type(_)                                 -> false.
+is_type(antidote_crdt_secure_register_mv) -> true;
+is_type(antidote_crdt_secure_map_go) -> true;
+is_type(antidote_crdt_secure_map_rr) -> true;
+is_type(_) -> false.
 
 % Makes it possible to map multiple CRDT types to one CRDT implementation.
 -spec alias(typ()) -> typ().
-alias(antidote_crdt_secure_set_go)       -> antidote_crdt_set_go;
-alias(antidote_crdt_secure_set_aw)       -> antidote_crdt_set_aw;
-alias(antidote_crdt_secure_set_rw)       -> antidote_crdt_set_rw;
+alias(antidote_crdt_secure_set_go) -> antidote_crdt_set_go;
+alias(antidote_crdt_secure_set_aw) -> antidote_crdt_set_aw;
+alias(antidote_crdt_secure_set_rw) -> antidote_crdt_set_rw;
 alias(antidote_crdt_secure_register_lww) -> antidote_crdt_register_lww;
-alias(antidote_crdt_secure_register_mv)  -> antidote_crdt_register_mv;
-alias(antidote_crdt_secure_map_go)       -> antidote_crdt_map_go;
-alias(antidote_crdt_secure_map_rr)       -> antidote_crdt_map_rr;
-alias(Type)                              -> Type.
+alias(antidote_crdt_secure_register_mv) -> antidote_crdt_register_mv;
+alias(antidote_crdt_secure_map_go) -> antidote_crdt_map_go;
+alias(antidote_crdt_secure_map_rr) -> antidote_crdt_map_rr;
+alias(Type) -> Type.
 
 % Returns the initial CRDT state for the given Type
 -spec new(typ()) -> crdt().
@@ -176,17 +184,17 @@ is_operation(Type, Update) ->
 
 -spec to_binary(crdt()) -> binary().
 to_binary(Term) ->
-    Opts = case application:get_env(antidote_crdt, binary_compression, 1) of
-               true -> [compressed];
-               N when N >= 0, N =< 9 -> [{compressed, N}];
-               _ -> []
-           end,
+    Opts =
+        case application:get_env(antidote_crdt, binary_compression, 1) of
+            true -> [compressed];
+            N when N >= 0, N =< 9 -> [{compressed, N}];
+            _ -> []
+        end,
     term_to_binary(Term, Opts).
 
 -spec from_binary(binary()) -> crdt().
 from_binary(Binary) ->
     binary_to_term(Binary).
-
 
 %% turns a dict into a sorted list of [{key, value}]
 -spec dict_to_orddict(dict:dict()) -> orddict:orddict().

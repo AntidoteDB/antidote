@@ -43,7 +43,8 @@
 -include("antidote_crdt.hrl").
 
 %% Call backs
--export([new/0,
+-export([
+    new/0,
     value/1,
     downstream/2,
     update/2,
@@ -56,7 +57,8 @@
 ]).
 
 %% API
--export([localPermissions/2,
+-export([
+    localPermissions/2,
     permissions/1
 ]).
 
@@ -64,12 +66,17 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type id() :: term(). %% A replica's identifier.
--type transfers() :: orddict:orddict({id(), id()}, pos_integer()). %% The orddict that maps
+%% A replica's identifier.
+-type id() :: term().
+%% The orddict that maps
+-type transfers() :: orddict:orddict({id(), id()}, pos_integer()).
 -type decrements() :: orddict:orddict(id(), pos_integer()).
 -type antidote_crdt_counter_b() :: {transfers(), decrements()}.
--type antidote_crdt_counter_b_op() :: {increment | decrement, {pos_integer(), id()}} | {transfer, {pos_integer(), id(), id()}}.
--type antidote_crdt_counter_b_effect() :: {{increment | decrement, pos_integer()} | {transfer, pos_integer(), id()}, id()}.
+-type antidote_crdt_counter_b_op() ::
+    {increment | decrement, {pos_integer(), id()}} | {transfer, {pos_integer(), id(), id()}}.
+-type antidote_crdt_counter_b_effect() :: {
+    {increment | decrement, pos_integer()} | {transfer, pos_integer(), id()}, id()
+}.
 
 %% @doc Return a new, empty `antidote_crdt_counter_b()'.
 -spec new() -> antidote_crdt_counter_b().
@@ -80,28 +87,35 @@ new() ->
 -spec localPermissions(id(), antidote_crdt_counter_b()) -> non_neg_integer().
 localPermissions(Id, {P, D}) ->
     Received = orddict:fold(
-        fun
-            (_, V, Acc) ->
-                Acc + V
+        fun(_, V, Acc) ->
+            Acc + V
         end,
-        0, orddict:filter(
+        0,
+        orddict:filter(
             fun
                 ({_, ToId}, _) when ToId == Id ->
                     true;
                 (_, _) ->
                     false
-            end, P)),
+            end,
+            P
+        )
+    ),
     Granted = orddict:fold(
-        fun
-            (_, V, Acc) ->
-                Acc + V
-        end, 0, orddict:filter(
+        fun(_, V, Acc) ->
+            Acc + V
+        end,
+        0,
+        orddict:filter(
             fun
                 ({FromId, ToId}, _) when FromId == Id andalso ToId /= Id ->
                     true;
                 (_, _) ->
                     false
-            end, P)),
+            end,
+            P
+        )
+    ),
     case orddict:find(Id, D) of
         {ok, Decrements} ->
             Received - Granted - Decrements;
@@ -118,12 +132,17 @@ permissions({P, D}) ->
                 V + Acc;
             (_, _, Acc) ->
                 Acc
-        end, 0, P),
+        end,
+        0,
+        P
+    ),
     TotalDecrements = orddict:fold(
-        fun
-            (_, V, Acc) ->
-                V + Acc
-        end, 0, D),
+        fun(_, V, Acc) ->
+            V + Acc
+        end,
+        0,
+        D
+    ),
     TotalIncrements - TotalDecrements.
 
 %% @doc Return the read value of a given `antidote_crdt_counter_b()', itself.
@@ -141,7 +160,8 @@ value(Counter) -> Counter.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).
--spec downstream(antidote_crdt_counter_b_op(), antidote_crdt_counter_b()) -> {ok, antidote_crdt_counter_b_effect()} | {error, no_permissions}.
+-spec downstream(antidote_crdt_counter_b_op(), antidote_crdt_counter_b()) ->
+    {ok, antidote_crdt_counter_b_effect()} | {error, no_permissions}.
 downstream({increment, {V, Actor}}, _Counter) when is_integer(V), V > 0 ->
     {ok, {{increment, V}, Actor}};
 downstream({decrement, {V, Actor}}, Counter) when is_integer(V), V > 0 ->
@@ -151,7 +171,8 @@ downstream({transfer, {V, ToId, Actor}}, Counter) when is_integer(V), V > 0 ->
 
 generate_downstream_check(Op, Actor, Counter, V) ->
     Available = localPermissions(Actor, Counter),
-    if Available >= V -> {ok, {Op, Actor}};
+    if
+        Available >= V -> {ok, {Op, Actor}};
         Available < V -> {error, no_permissions}
     end.
 
@@ -159,7 +180,8 @@ generate_downstream_check(Op, Actor, Counter, V) ->
 %% usually created with `generate_downstream'.
 %%
 %% Return the resulting `antidote_crdt_counter_b()' after applying the operation.
--spec update(antidote_crdt_counter_b_effect(), antidote_crdt_counter_b()) -> {ok, antidote_crdt_counter_b()}.
+-spec update(antidote_crdt_counter_b_effect(), antidote_crdt_counter_b()) ->
+    {ok, antidote_crdt_counter_b()}.
 update({{increment, V}, Id}, Counter) ->
     increment(Id, V, Counter);
 update({{decrement, V}, Id}, Counter) ->
@@ -178,7 +200,8 @@ decrement(Id, V, {P, D}) ->
     {ok, {P, orddict:update_counter(Id, V, D)}}.
 
 %% Transfer a given amount of permissions from one replica to another.
--spec transfer(id(), id(), pos_integer(), antidote_crdt_counter_b()) -> {ok, antidote_crdt_counter_b()}.
+-spec transfer(id(), id(), pos_integer(), antidote_crdt_counter_b()) ->
+    {ok, antidote_crdt_counter_b()}.
 transfer(FromId, ToId, V, {P, D}) ->
     {ok, {orddict:update_counter({FromId, ToId}, V, P), D}}.
 

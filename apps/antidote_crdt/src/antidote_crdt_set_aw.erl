@@ -53,17 +53,18 @@
 -include("antidote_crdt.hrl").
 
 %% Callbacks
--export([ new/0,
-          value/1,
-          downstream/2,
-          update/2,
-          equal/2,
-          to_binary/1,
-          from_binary/1,
-          is_operation/1,
-          require_state_downstream/1,
-          is_bottom/1
-        ]).
+-export([
+    new/0,
+    value/1,
+    downstream/2,
+    update/2,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    is_operation/1,
+    require_state_downstream/1,
+    is_bottom/1
+]).
 
 -behaviour(antidote_crdt).
 
@@ -73,10 +74,11 @@
 
 -type antidote_crdt_set_aw() :: orddict:orddict(member(), tokens()).
 
--type binary_antidote_crdt_set_aw() :: binary(). %% A binary that from_binary/1 will operate on.
+%% A binary that from_binary/1 will operate on.
+-type binary_antidote_crdt_set_aw() :: binary().
 
 -type antidote_crdt_set_aw_op() ::
-      {add, member()}
+    {add, member()}
     | {remove, member()}
     | {add_all, [member()]}
     | {remove_all, [member()]}
@@ -139,7 +141,8 @@ equal(Set_awA, Set_awB) ->
     % Everything inside is ordered, so this should work
     Set_awA == Set_awB.
 
--define(TAG, 76). %?DT_ORSET_TAG from riak_dt
+%?DT_ORSET_TAG from riak_dt
+-define(TAG, 76).
 -define(V1_VERS, 1).
 
 -spec to_binary(antidote_crdt_set_aw()) -> binary_antidote_crdt_set_aw().
@@ -163,21 +166,28 @@ create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
     lists:foldl(
         fun(Elem, Ops) ->
             DownstreamOp = CreateDownstream(Elem, []),
-            [DownstreamOp|Ops]
+            [DownstreamOp | Ops]
         end,
         DownstreamOps,
         Elems
     );
-create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|Set_awRest]=Set_aw, DownstreamOps) ->
+create_downstreams(
+    CreateDownstream,
+    [Elem1 | ElemsRest] = Elems,
+    [{Elem2, Tokens} | Set_awRest] = Set_aw,
+    DownstreamOps
+) ->
     if
         Elem1 == Elem2 ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
-            create_downstreams(CreateDownstream, ElemsRest, Set_awRest, [DownstreamOp|DownstreamOps]);
+            create_downstreams(CreateDownstream, ElemsRest, Set_awRest, [
+                DownstreamOp | DownstreamOps
+            ]);
         Elem1 > Elem2 ->
             create_downstreams(CreateDownstream, Elems, Set_awRest, DownstreamOps);
         true ->
             DownstreamOp = CreateDownstream(Elem1, []),
-            create_downstreams(CreateDownstream, ElemsRest, Set_aw, [DownstreamOp|DownstreamOps])
+            create_downstreams(CreateDownstream, ElemsRest, Set_aw, [DownstreamOp | DownstreamOps])
     end.
 
 %% @private apply a list of downstream ops to a given antidote_crdt_set_aw
@@ -191,10 +201,13 @@ apply_downstreams(Ops, []) ->
         [],
         Ops
     );
-apply_downstreams([{Elem1, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, CurrentTokens}|Set_awRest]=Set_aw) ->
+apply_downstreams(
+    [{Elem1, ToAdd, ToRemove} | OpsRest] = Ops, [{Elem2, CurrentTokens} | Set_awRest] = Set_aw
+) ->
     if
         Elem1 == Elem2 ->
-            apply_downstream(Elem1, CurrentTokens, ToAdd, ToRemove) ++ apply_downstreams(OpsRest, Set_awRest);
+            apply_downstream(Elem1, CurrentTokens, ToAdd, ToRemove) ++
+                apply_downstreams(OpsRest, Set_awRest);
         Elem1 > Elem2 ->
             [{Elem2, CurrentTokens} | apply_downstreams(Ops, Set_awRest)];
         true ->
@@ -285,7 +298,6 @@ remove_test() ->
     Result = update(Op7, Set6),
     ?assertMatch({ok, _}, Result).
 
-
 remove2_test() ->
     Set1 = new(),
     %% Add an element then remove it
@@ -304,7 +316,6 @@ remove2_test() ->
     %% now execute Op3 on Set3, where the element was already removed locally
     {ok, Set5} = update(Op3, Set3),
     ?assertEqual([], value(Set5)).
-
 
 concurrent_add_test() ->
     Set1 = new(),

@@ -157,7 +157,7 @@ update_test() ->
 
 reject_invalid_nsquare_test() ->
     Counter = new(),
-    Operation1 = {increment, {1,  0}},
+    Operation1 = {increment, {1, 0}},
     Operation2 = {increment, {1, -1}},
     ?assertNot(is_operation(Operation1)),
     ?assertNot(is_operation(Operation2)),

@@ -50,20 +50,19 @@
 %% @end
 -module(antidote_crdt_set_rw).
 
-
 %% Callbacks
--export([ new/0,
-          value/1,
-          downstream/2,
-          update/2,
-          equal/2,
-          to_binary/1,
-          from_binary/1,
-          is_operation/1,
-          is_bottom/1,
-          require_state_downstream/1
-        ]).
-
+-export([
+    new/0,
+    value/1,
+    downstream/2,
+    update/2,
+    equal/2,
+    to_binary/1,
+    from_binary/1,
+    is_operation/1,
+    is_bottom/1,
+    require_state_downstream/1
+]).
 
 -behaviour(antidote_crdt).
 
@@ -73,10 +72,11 @@
 
 -type antidote_crdt_set_rw() :: orddict:orddict(term(), {tokens(), tokens()}).
 
--type binary_antidote_crdt_set_rw() :: binary(). %% A binary that from_binary/1 will operate on.
+%% A binary that from_binary/1 will operate on.
+-type binary_antidote_crdt_set_rw() :: binary().
 
 -type antidote_crdt_set_rw_op() ::
-      {add, member()}
+    {add, member()}
     | {remove, member()}
     | {add_all, [member()]}
     | {remove_all, [member()]}
@@ -104,7 +104,7 @@ downstream({add_all, Elems}, RWSet) ->
     CreateDownstream = fun(Elem, CurrentTokens) ->
         Token = unique(),
         {Elem, CurrentTokens, [Token], []}
-     end,
+    end,
     DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), RWSet, []),
     {ok, lists:reverse(DownstreamOps)};
 downstream({remove, Elem}, RWSet) ->
@@ -120,7 +120,9 @@ downstream({reset, {}}, RWSet) ->
     CreateDownstream = fun(Elem, CurrentTokens) ->
         {Elem, CurrentTokens, [], []}
     end,
-    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(orddict:fetch_keys(RWSet)), RWSet, []),
+    DownstreamOps = create_downstreams(
+        CreateDownstream, lists:usort(orddict:fetch_keys(RWSet)), RWSet, []
+    ),
     {ok, lists:reverse(DownstreamOps)}.
 
 %% @private generic downstream op creation for adds and removals
@@ -130,21 +132,28 @@ create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
     lists:foldl(
         fun(Elem, Ops) ->
             DownstreamOp = CreateDownstream(Elem, []),
-            [DownstreamOp|Ops]
+            [DownstreamOp | Ops]
         end,
         DownstreamOps,
         Elems
     );
-create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, {AddTokens, RemoveTokens}}|RWSetRest]=RWSet, DownstreamOps) ->
+create_downstreams(
+    CreateDownstream,
+    [Elem1 | ElemsRest] = Elems,
+    [{Elem2, {AddTokens, RemoveTokens}} | RWSetRest] = RWSet,
+    DownstreamOps
+) ->
     if
         Elem1 == Elem2 ->
             DownstreamOp = CreateDownstream(Elem1, AddTokens ++ RemoveTokens),
-            create_downstreams(CreateDownstream, ElemsRest, RWSetRest, [DownstreamOp|DownstreamOps]);
+            create_downstreams(CreateDownstream, ElemsRest, RWSetRest, [
+                DownstreamOp | DownstreamOps
+            ]);
         Elem1 > Elem2 ->
             create_downstreams(CreateDownstream, Elems, RWSetRest, DownstreamOps);
         true ->
             DownstreamOp = CreateDownstream(Elem1, []),
-            create_downstreams(CreateDownstream, ElemsRest, RWSet, [DownstreamOp|DownstreamOps])
+            create_downstreams(CreateDownstream, ElemsRest, RWSet, [DownstreamOp | DownstreamOps])
     end.
 
 %% @doc generate a unique identifier (best-effort).
@@ -154,22 +163,40 @@ unique() ->
 -spec update(downstream_op(), antidote_crdt_set_rw()) -> {ok, antidote_crdt_set_rw()}.
 update(DownstreamOp, RWSet) ->
     RWSet1 = apply_downstreams(DownstreamOp, RWSet),
-    RWSet2 = [Entry || {_, {AddTokens, RemoveTokens}} = Entry <- RWSet1, AddTokens =/= [] orelse RemoveTokens =/= []],
+    RWSet2 = [
+        Entry
+     || {_, {AddTokens, RemoveTokens}} = Entry <- RWSet1,
+        AddTokens =/= [] orelse RemoveTokens =/= []
+    ],
     {ok, RWSet2}.
 
 %% @private apply a list of downstream ops to a given orset
 apply_downstreams([], RWSet) ->
     RWSet;
 apply_downstreams(Ops, []) ->
-    [apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], []) || {Elem, SeenTokens, ToAdd, ToRemove} <- Ops];
-apply_downstreams([{Elem1, SeenTokens, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}}|RWSetRest]=RWSet) ->
+    [
+        apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], [])
+     || {Elem, SeenTokens, ToAdd, ToRemove} <- Ops
+    ];
+apply_downstreams(
+    [{Elem1, SeenTokens, ToAdd, ToRemove} | OpsRest] = Ops,
+    [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}} | RWSetRest] = RWSet
+) ->
     if
         Elem1 == Elem2 ->
-            [apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRemoveTokens) | apply_downstreams(OpsRest, RWSetRest)];
+            [
+                apply_downstream(
+                    Elem1, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRemoveTokens
+                )
+                | apply_downstreams(OpsRest, RWSetRest)
+            ];
         Elem1 > Elem2 ->
             [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}} | apply_downstreams(Ops, RWSetRest)];
         true ->
-            [apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, [], []) | apply_downstreams(OpsRest, RWSet)]
+            [
+                apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, [], [])
+                | apply_downstreams(OpsRest, RWSet)
+            ]
     end.
 
 %% @private create an orddict entry from a downstream op
@@ -178,11 +205,10 @@ apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRem
     RemoveTokens = (CurrentRemoveTokens ++ ToRemove) -- SeenTokens,
     {Elem, {AddTokens, RemoveTokens}}.
 
-
-
 -spec equal(antidote_crdt_set_rw(), antidote_crdt_set_rw()) -> boolean().
 equal(ORDictA, ORDictB) ->
-    ORDictA == ORDictB. % Everything inside is ordered, so this should work
+    % Everything inside is ordered, so this should work
+    ORDictA == ORDictB.
 
 -define(TAG, 77).
 -define(V1_VERS, 1).
@@ -198,8 +224,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 
 is_operation({add, _Elem}) -> true;
 is_operation({add_all, L}) when is_list(L) -> true;
-is_operation({remove, _Elem}) ->
-    true;
+is_operation({remove, _Elem}) -> true;
 is_operation({remove_all, L}) when is_list(L) -> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
@@ -245,7 +270,6 @@ reset1_test() ->
     ?assertEqual([a], value(Set2b)),
     ?assertEqual([a], value(Set2c)).
 
-
 reset2_test() ->
     Set0 = new(),
     % DC1 reset
@@ -269,11 +293,9 @@ reset2_test() ->
     % DC2 --> DC3
     {ok, Set3d} = update(Add2Effect, Set3c),
 
-
     ?assertEqual([], value(Set1a)),
     ?assertEqual([a], value(Set2c)),
     ?assertEqual([a], value(Set3d)).
-
 
 add_test() ->
     Set0 = new(),
@@ -337,7 +359,6 @@ prop2_test() ->
     ?assertEqual([], value(Set1a)),
     ?assertEqual([a], value(Set3a)),
     ?assertEqual([a], value(Set1b)).
-
 
 prop3_test() ->
     Set0 = new(),
