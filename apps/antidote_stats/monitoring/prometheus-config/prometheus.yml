@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 10s # By default, scrape targets every 10 seconds.
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    monitor: 'codelab-monitor'
+
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Job for scraping Antidote
+  - job_name: 'antidote'
+
+    # locally reachable address if prometheus is in host network
+    # docker container names if prometheus is in the same docker network as the targets
+    static_configs:
+        - targets: ['localhost:8111','localhost:8112','localhost:8211','localhost:8212']
