@@ -62,6 +62,7 @@
 | {static_update_objects, Clock :: binary(), Properties :: list(), Updates :: [update()]}
 | {static_read_objects, Clock :: binary(), Properties :: list(), Objects :: [bound_object()]}
 | {read_objects, Objects :: [bound_object()], TxId :: binary()}
+| {validate_or_read_objects, Objects :: [bound_object], Tokens :: [binary()], TxId :: binary()}
 | {create_dc, NodeNames :: [node()]}
 | get_connection_descriptor
 | {connect_to_dcs, Descriptors :: [binary()]}.
@@ -72,6 +73,8 @@
 | {commit_transaction_response, {ok, CommitTime :: binary()} | {error, Reason :: error_code()}}
 | {static_read_objects_response, {ok, Results :: [read_result()], CommitTime :: binary()}}
 | {read_objects_response, {ok, Resp :: [read_result()]} | {error, Reason :: error_code()}}
+| {validate_or_read_objects_response, {ok, Resp :: { Values :: [read_result()], Tokens :: [binary()] }} | {error, Reason :: error_code()}}
+
 | {operation_response, ok | {error, Reason :: error_code()}}
 | {create_dc_response, ok | {error, Reason :: error_code()}}
 | {get_connection_descriptor_response, {ok, Descriptor :: binary()} | {error, Reason :: error_code()}}
@@ -89,7 +92,9 @@
 | #'ApbStaticReadObjects'{}
 | #'ApbStaticReadObjectsResp'{}
 | #'ApbReadObjects'{}
+| #'ApbValidateOrReadObjects'{}
 | #'ApbReadObjectsResp'{}
+| #'ApbValidateOrReadObjectsResp'{}
 | #'ApbOperationResp'{}
 | #'ApbCreateDC'{}
 | #'ApbCreateDCResp'{}
@@ -125,6 +130,9 @@ encode_response(Data) ->
         {read_objects_response, {ok, Results}} ->
             TransformedResults = [ {encode_crdt_type(Type), Value} || {{_Key, Type, _Bucket}, Value} <- Results],
             {read_objects_response, {ok, TransformedResults}};
+        {validate_or_read_objects_response, {ok, {Values, Tokens}}} ->
+            TransformedValues = [ {encode_crdt_type(Type), Value} || {{_Key, Type, _Bucket}, Value} <- Values],
+            {validate_or_read_objects_response, {ok, {TransformedValues, Tokens}}};
         _ -> Data
     end,
     encode(TransformReadResponse).
@@ -159,7 +167,9 @@ message_type_to_code('ApbCreateDCResp')                -> 130;
 message_type_to_code('ApbConnectToDCs')                -> 131;
 message_type_to_code('ApbConnectToDCsResp')            -> 132;
 message_type_to_code('ApbGetConnectionDescriptor')     -> 133;
-message_type_to_code('ApbGetConnectionDescriptorResp') -> 134.
+message_type_to_code('ApbGetConnectionDescriptorResp') -> 134;
+message_type_to_code('ApbValidateOrReadObjects')         -> 135;
+message_type_to_code('ApbValidateOrReadObjectsResp')     -> 136.
 
 message_code_to_type(0)   -> 'ApbErrorResp';
 message_code_to_type(107) -> 'ApbRegUpdate';
@@ -189,7 +199,9 @@ message_code_to_type(130) -> 'ApbCreateDCResp';
 message_code_to_type(131) -> 'ApbConnectToDCs';
 message_code_to_type(132) -> 'ApbConnectToDCsResp';
 message_code_to_type(133) -> 'ApbGetConnectionDescriptor';
-message_code_to_type(134) -> 'ApbGetConnectionDescriptorResp'.
+message_code_to_type(134) -> 'ApbGetConnectionDescriptorResp';
+message_code_to_type(135) -> 'ApbValidateOrReadObjects';
+message_code_to_type(136) -> 'ApbValidateOrReadObjectsResp'.
 
 -spec encode(message()) -> iolist().
 encode(Msg) ->
@@ -224,6 +236,8 @@ encode_message({static_read_objects, Clock, Properties, Objects}) ->
   encode_static_read_objects(Clock, Properties, Objects);
 encode_message({read_objects, Objects, TxId}) ->
   encode_read_objects(Objects, TxId);
+encode_message({validate_or_read_objects, Objects, Tokens, TxId}) ->
+  encode_validate_or_read_objects(Objects, Tokens, TxId);
 
 encode_message({error_response, {ErrorCode, Message}}) ->
   encode_error_resp(ErrorCode, Message);
@@ -235,6 +249,8 @@ encode_message({static_read_objects_response, Resp}) ->
   encode_static_read_objects_response(Resp);
 encode_message({read_objects_response, Resp}) ->
   encode_read_objects_response(Resp);
+encode_message({validate_or_read_objects_response, Resp}) ->
+  encode_validate_or_read_objects_response(Resp);
 encode_message({operation_response, Resp}) ->
   encode_operation_response(Resp);
 
@@ -270,6 +286,8 @@ decode_message(#'ApbStaticReadObjects'{objects = Objects, transaction = Tx}) ->
   {static_read_objects, Clock, Properties, [decode_bound_object(O) || O <- Objects]};
 decode_message(#'ApbReadObjects'{boundobjects = Objects, transaction_descriptor = TxId}) ->
   {read_objects, [decode_bound_object(O) || O <- Objects], TxId};
+decode_message(#'ApbValidateOrReadObjects'{boundobjects = Objects, object_tokens = Tokens, transaction_descriptor = TxId}) ->
+  {validate_or_read_objects, [decode_bound_object(O) || O <- Objects], Tokens, TxId};
 
 decode_message(#'ApbCreateDC'{nodes = Nodes}) ->
   {create_dc, [binary_to_atom(N, utf8) || N <- Nodes]};
@@ -316,6 +334,17 @@ decode_message(#'ApbReadObjectsResp'{success = Success, errorcode = ErrorCode, o
       {read_objects_response, {ok, Resp}};
     false ->
       {read_objects_response, {error, decode_error_code(ErrorCode)}}
+  end;
+decode_message(#'ApbValidateOrReadObjectsResp'{success = Success,
+                                               errorcode = ErrorCode,
+                                               objects = Objects,
+                                               tokens = Tokens}) ->
+  case Success of
+    true ->
+      Resp = { [decode_read_object_resp(O) || O <- Objects], Tokens },
+      {validate_or_read_objects_response, {ok, Resp}};
+    false ->
+      {validate_or_read_objects_response, {error, decode_error_code(ErrorCode)}}
   end;
 decode_message(#'ApbOperationResp'{success = S, errorcode = E}) ->
   case S of
@@ -466,6 +495,16 @@ encode_read_objects_response({error, Reason}) ->
     success    = false,
     errorcode = encode_error_code(Reason)}.
 
+encode_validate_or_read_objects_response({ok, {Values, Tokens}}) ->
+  #'ApbValidateOrReadObjectsResp'{
+    success = true,
+    objects = [ encode_read_object_resp(Type, Value) || {Type, Value} <- Values ],
+    tokens = Tokens};
+encode_validate_or_read_objects_response({error, Reason}) ->
+  #'ApbValidateOrReadObjectsResp'{
+    success = false,
+    errorcode = encode_error_code(Reason)}.
+
 encode_static_read_objects(Clock, Properties, Objects) ->
   ?ASSERT_BINARY(Clock),
   EncTransaction = encode_start_transaction(Clock, Properties),
@@ -480,6 +519,15 @@ encode_read_objects(Objects, TxId) ->
     encode_bound_object(Object) end,
     Objects),
   #'ApbReadObjects'{boundobjects = BoundObjects, transaction_descriptor = TxId}.
+
+encode_validate_or_read_objects(Objects, Tokens, TxId) ->
+  BoundObjects = lists:map(fun(Object) ->
+    encode_bound_object(Object) end,
+    Objects),
+
+  #'ApbValidateOrReadObjects'{boundobjects = BoundObjects,
+                            object_tokens = Tokens,
+                            transaction_descriptor = TxId}.
 
 %%%%%%%%%%%%%%%%%%%
 %% Crdt types
@@ -867,6 +915,23 @@ read_test() ->
   InputStatic = {static_read_objects_response, {In, <<"opaque_binary">>}},
   OutputStatic = {static_read_objects_response, {Out, <<"opaque_binary">>}},
   check_response(InputStatic, OutputStatic).
+
+read_on_change_test() ->
+  Objects = [{<<"key1">>, antidote_crdt_counter_pn, <<"bucket1">>},
+             {<<"key2">>, antidote_crdt_set_aw, <<"bucket2">>}],
+
+  Tokens = lists:map(fun (_Object) -> <<"opaque_token">> end, Objects),
+
+  check_request({validate_or_read_objects, Objects, Tokens, <<"opaque_txid">>}),
+
+  InMap = [{
+    {<<"key1">>, antidote_crdt_map_rr, <<"bucket1">>},
+             [{{<<"mapkey1">>, antidote_crdt_counter_pn}, 7}]}],
+  OutMap = [{map, [{{<<"mapkey1">>, antidote_crdt_counter_pn}, 7}]}],
+
+  InputMap = {validate_or_read_objects_response, {ok, {InMap, Tokens}}},
+  OutputMap = {validate_or_read_objects_response, {ok, {OutMap, Tokens}}},
+  check_response(InputMap, OutputMap).
 
 update_test() ->
   Updates = [{{<<"K1">>, antidote_crdt_counter_pn, <<"B">>}, increment, 1},
