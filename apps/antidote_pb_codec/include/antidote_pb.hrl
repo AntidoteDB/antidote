@@ -10,333 +10,489 @@
 -ifndef('APBERRORRESP_PB_H').
 -define('APBERRORRESP_PB_H', true).
 -record('ApbErrorResp',
-        {errmsg                 :: iodata(),        % = 1
-         errcode                :: non_neg_integer() % = 2, 32 bits
-        }).
+    {
+        %  = 1
+        errmsg :: iodata(),
+        % = 2, 32 bits
+        errcode :: non_neg_integer()
+    }
+).
 -endif.
 
 -ifndef('APBCOUNTERUPDATE_PB_H').
 -define('APBCOUNTERUPDATE_PB_H', true).
 -record('ApbCounterUpdate',
-        {inc                    :: integer() | undefined % = 1, 32 bits
-        }).
+    % = 1, 32 bits
+    {inc :: integer() | undefined}
+).
 -endif.
 
 -ifndef('APBGETCOUNTERRESP_PB_H').
 -define('APBGETCOUNTERRESP_PB_H', true).
 -record('ApbGetCounterResp',
-        {value                  :: integer()        % = 1, 32 bits
-        }).
+    % = 1, 32 bits
+    {value :: integer()}
+).
 -endif.
 
 -ifndef('APBSETUPDATE_PB_H').
 -define('APBSETUPDATE_PB_H', true).
 -record('ApbSetUpdate',
-        {optype                 :: 'ADD' | 'REMOVE' | integer(), % = 1, enum ApbSetUpdate.SetOpType
-         adds = []              :: [iodata()] | undefined, % = 2
-         rems = []              :: [iodata()] | undefined % = 3
-        }).
+    {
+        %  = 1, enum ApbSetUpdate.SetOpType
+        optype :: 'ADD' | 'REMOVE' | integer(),
+        % = 2
+        adds = [] :: [iodata()] | undefined,
+        % = 3
+        rems = [] :: [iodata()] | undefined
+    }
+).
 -endif.
 
 -ifndef('APBGETSETRESP_PB_H').
 -define('APBGETSETRESP_PB_H', true).
 -record('ApbGetSetResp',
-        {value = []             :: [iodata()] | undefined % = 1
-        }).
+    % = 1
+    {value = [] :: [iodata()] | undefined}
+).
 -endif.
 
 -ifndef('APBREGUPDATE_PB_H').
 -define('APBREGUPDATE_PB_H', true).
 -record('ApbRegUpdate',
-        {value                  :: iodata()         % = 1
-        }).
+    % = 1
+    {value :: iodata()}
+).
 -endif.
 
 -ifndef('APBGETREGRESP_PB_H').
 -define('APBGETREGRESP_PB_H', true).
 -record('ApbGetRegResp',
-        {value                  :: iodata()         % = 1
-        }).
+    % = 1
+    {value :: iodata()}
+).
 -endif.
 
 -ifndef('APBGETMVREGRESP_PB_H').
 -define('APBGETMVREGRESP_PB_H', true).
 -record('ApbGetMVRegResp',
-        {values = []            :: [iodata()] | undefined % = 1
-        }).
+    % = 1
+    {values = [] :: [iodata()] | undefined}
+).
 -endif.
 
 -ifndef('APBMAPKEY_PB_H').
 -define('APBMAPKEY_PB_H', true).
 -record('ApbMapKey',
-        {key                    :: iodata(),        % = 1
-         type                   :: 'COUNTER' | 'ORSET' | 'LWWREG' | 'MVREG' | 'GMAP' | 'RWSET' | 'RRMAP' | 'FATCOUNTER' | 'FLAG_EW' | 'FLAG_DW' | 'BCOUNTER' | integer() % = 2, enum CRDT_type
-        }).
+    {
+        %  = 1
+        key :: iodata(),
+        % = 2, enum CRDT_type
+        type ::
+            'COUNTER'
+            | 'ORSET'
+            | 'LWWREG'
+            | 'MVREG'
+            | 'GMAP'
+            | 'RWSET'
+            | 'RRMAP'
+            | 'FATCOUNTER'
+            | 'FLAG_EW'
+            | 'FLAG_DW'
+            | 'BCOUNTER'
+            | integer()
+    }
+).
 -endif.
 
 -ifndef('APBMAPUPDATE_PB_H').
 -define('APBMAPUPDATE_PB_H', true).
 -record('ApbMapUpdate',
-        {updates = []           :: [antidote_pb:'ApbMapNestedUpdate'()] | undefined, % = 1
-         removedKeys = []       :: [antidote_pb:'ApbMapKey'()] | undefined % = 2
-        }).
+    {
+        %  = 1
+        updates = [] :: [antidote_pb:'ApbMapNestedUpdate'()] | undefined,
+        % = 2
+        removedKeys = [] :: [antidote_pb:'ApbMapKey'()] | undefined
+    }
+).
 -endif.
 
 -ifndef('APBMAPNESTEDUPDATE_PB_H').
 -define('APBMAPNESTEDUPDATE_PB_H', true).
 -record('ApbMapNestedUpdate',
-        {key                    :: antidote_pb:'ApbMapKey'(), % = 1
-         update                 :: antidote_pb:'ApbUpdateOperation'() % = 2
-        }).
+    {
+        %  = 1
+        key :: antidote_pb:'ApbMapKey'(),
+        % = 2
+        update :: antidote_pb:'ApbUpdateOperation'()
+    }
+).
 -endif.
 
 -ifndef('APBGETMAPRESP_PB_H').
 -define('APBGETMAPRESP_PB_H', true).
 -record('ApbGetMapResp',
-        {entries = []           :: [antidote_pb:'ApbMapEntry'()] | undefined % = 1
-        }).
+    % = 1
+    {entries = [] :: [antidote_pb:'ApbMapEntry'()] | undefined}
+).
 -endif.
 
 -ifndef('APBMAPENTRY_PB_H').
 -define('APBMAPENTRY_PB_H', true).
 -record('ApbMapEntry',
-        {key                    :: antidote_pb:'ApbMapKey'(), % = 1
-         value                  :: antidote_pb:'ApbReadObjectResp'() % = 2
-        }).
+    {
+        %  = 1
+        key :: antidote_pb:'ApbMapKey'(),
+        % = 2
+        value :: antidote_pb:'ApbReadObjectResp'()
+    }
+).
 -endif.
 
 -ifndef('APBFLAGUPDATE_PB_H').
 -define('APBFLAGUPDATE_PB_H', true).
 -record('ApbFlagUpdate',
-        {value                  :: boolean() | 0 | 1 % = 1
-        }).
+    % = 1
+    {value :: boolean() | 0 | 1}
+).
 -endif.
 
 -ifndef('APBGETFLAGRESP_PB_H').
 -define('APBGETFLAGRESP_PB_H', true).
 -record('ApbGetFlagResp',
-        {value                  :: boolean() | 0 | 1 % = 1
-        }).
+    % = 1
+    {value :: boolean() | 0 | 1}
+).
 -endif.
 
 -ifndef('APBCRDTRESET_PB_H').
 -define('APBCRDTRESET_PB_H', true).
--record('ApbCrdtReset',
-        {
-        }).
+-record('ApbCrdtReset', {}).
 -endif.
 
 -ifndef('APBOPERATIONRESP_PB_H').
 -define('APBOPERATIONRESP_PB_H', true).
 -record('ApbOperationResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         errorcode              :: non_neg_integer() | undefined % = 2, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBTXNPROPERTIES_PB_H').
 -define('APBTXNPROPERTIES_PB_H', true).
 -record('ApbTxnProperties',
-        {read_write             :: non_neg_integer() | undefined, % = 1, 32 bits
-         red_blue               :: non_neg_integer() | undefined, % = 2, 32 bits
-         shared_locks = []      :: [iodata()] | undefined, % = 3
-         exclusive_locks = []   :: [iodata()] | undefined % = 4
-        }).
+    {
+        %  = 1, 32 bits
+        read_write :: non_neg_integer() | undefined,
+        % = 2, 32 bits
+        red_blue :: non_neg_integer() | undefined,
+        % = 3
+        shared_locks = [] :: [iodata()] | undefined,
+        % = 4
+        exclusive_locks = [] :: [iodata()] | undefined
+    }
+).
 -endif.
 
 -ifndef('APBBOUNDOBJECT_PB_H').
 -define('APBBOUNDOBJECT_PB_H', true).
 -record('ApbBoundObject',
-        {key                    :: iodata(),        % = 1
-         type                   :: 'COUNTER' | 'ORSET' | 'LWWREG' | 'MVREG' | 'GMAP' | 'RWSET' | 'RRMAP' | 'FATCOUNTER' | 'FLAG_EW' | 'FLAG_DW' | 'BCOUNTER' | integer(), % = 2, enum CRDT_type
-         bucket                 :: iodata()         % = 3
-        }).
+    {
+        %  = 1
+        key :: iodata(),
+        % = 2, enum CRDT_type
+        type ::
+            'COUNTER'
+            | 'ORSET'
+            | 'LWWREG'
+            | 'MVREG'
+            | 'GMAP'
+            | 'RWSET'
+            | 'RRMAP'
+            | 'FATCOUNTER'
+            | 'FLAG_EW'
+            | 'FLAG_DW'
+            | 'BCOUNTER'
+            | integer(),
+        % = 3
+        bucket :: iodata()
+    }
+).
 -endif.
 
 -ifndef('APBREADOBJECTS_PB_H').
 -define('APBREADOBJECTS_PB_H', true).
 -record('ApbReadObjects',
-        {boundobjects = []      :: [antidote_pb:'ApbBoundObject'()] | undefined, % = 1
-         transaction_descriptor :: iodata()         % = 2
-        }).
+    {
+        %  = 1
+        boundobjects = [] :: [antidote_pb:'ApbBoundObject'()] | undefined,
+        % = 2
+        transaction_descriptor :: iodata()
+    }
+).
 -endif.
 
 -ifndef('APBVALIDATEORREADOBJECTS_PB_H').
 -define('APBVALIDATEORREADOBJECTS_PB_H', true).
 -record('ApbValidateOrReadObjects',
-        {boundobjects = []      :: [antidote_pb:'ApbBoundObject'()] | undefined, % = 1
-         object_tokens = []     :: [iodata()] | undefined, % = 2
-         transaction_descriptor :: iodata()         % = 3
-        }).
+    {
+        %  = 1
+        boundobjects = [] :: [antidote_pb:'ApbBoundObject'()] | undefined,
+        % = 2
+        object_tokens = [] :: [iodata()] | undefined,
+        % = 3
+        transaction_descriptor :: iodata()
+    }
+).
 -endif.
 
 -ifndef('APBUPDATEOP_PB_H').
 -define('APBUPDATEOP_PB_H', true).
 -record('ApbUpdateOp',
-        {boundobject            :: antidote_pb:'ApbBoundObject'(), % = 1
-         operation              :: antidote_pb:'ApbUpdateOperation'() % = 2
-        }).
+    {
+        %  = 1
+        boundobject :: antidote_pb:'ApbBoundObject'(),
+        % = 2
+        operation :: antidote_pb:'ApbUpdateOperation'()
+    }
+).
 -endif.
 
 -ifndef('APBUPDATEOPERATION_PB_H').
 -define('APBUPDATEOPERATION_PB_H', true).
 -record('ApbUpdateOperation',
-        {counterop              :: antidote_pb:'ApbCounterUpdate'() | undefined, % = 1
-         setop                  :: antidote_pb:'ApbSetUpdate'() | undefined, % = 2
-         regop                  :: antidote_pb:'ApbRegUpdate'() | undefined, % = 3
-         mapop                  :: antidote_pb:'ApbMapUpdate'() | undefined, % = 5
-         resetop                :: antidote_pb:'ApbCrdtReset'() | undefined, % = 6
-         flagop                 :: antidote_pb:'ApbFlagUpdate'() | undefined % = 7
-        }).
+    {
+        %  = 1
+        counterop :: antidote_pb:'ApbCounterUpdate'() | undefined,
+        % = 2
+        setop :: antidote_pb:'ApbSetUpdate'() | undefined,
+        % = 3
+        regop :: antidote_pb:'ApbRegUpdate'() | undefined,
+        % = 5
+        mapop :: antidote_pb:'ApbMapUpdate'() | undefined,
+        % = 6
+        resetop :: antidote_pb:'ApbCrdtReset'() | undefined,
+        % = 7
+        flagop :: antidote_pb:'ApbFlagUpdate'() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBUPDATEOBJECTS_PB_H').
 -define('APBUPDATEOBJECTS_PB_H', true).
 -record('ApbUpdateObjects',
-        {updates = []           :: [antidote_pb:'ApbUpdateOp'()] | undefined, % = 1
-         transaction_descriptor :: iodata()         % = 2
-        }).
+    {
+        %  = 1
+        updates = [] :: [antidote_pb:'ApbUpdateOp'()] | undefined,
+        % = 2
+        transaction_descriptor :: iodata()
+    }
+).
 -endif.
 
 -ifndef('APBSTARTTRANSACTION_PB_H').
 -define('APBSTARTTRANSACTION_PB_H', true).
 -record('ApbStartTransaction',
-        {timestamp              :: iodata() | undefined, % = 1
-         properties             :: antidote_pb:'ApbTxnProperties'() | undefined % = 2
-        }).
+    {
+        %  = 1
+        timestamp :: iodata() | undefined,
+        % = 2
+        properties :: antidote_pb:'ApbTxnProperties'() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBABORTTRANSACTION_PB_H').
 -define('APBABORTTRANSACTION_PB_H', true).
 -record('ApbAbortTransaction',
-        {transaction_descriptor :: iodata()         % = 1
-        }).
+    % = 1
+    {transaction_descriptor :: iodata()}
+).
 -endif.
 
 -ifndef('APBCOMMITTRANSACTION_PB_H').
 -define('APBCOMMITTRANSACTION_PB_H', true).
 -record('ApbCommitTransaction',
-        {transaction_descriptor :: iodata()         % = 1
-        }).
+    % = 1
+    {transaction_descriptor :: iodata()}
+).
 -endif.
 
 -ifndef('APBSTATICUPDATEOBJECTS_PB_H').
 -define('APBSTATICUPDATEOBJECTS_PB_H', true).
 -record('ApbStaticUpdateObjects',
-        {transaction            :: antidote_pb:'ApbStartTransaction'(), % = 1
-         updates = []           :: [antidote_pb:'ApbUpdateOp'()] | undefined % = 2
-        }).
+    {
+        %  = 1
+        transaction :: antidote_pb:'ApbStartTransaction'(),
+        % = 2
+        updates = [] :: [antidote_pb:'ApbUpdateOp'()] | undefined
+    }
+).
 -endif.
 
 -ifndef('APBSTATICREADOBJECTS_PB_H').
 -define('APBSTATICREADOBJECTS_PB_H', true).
 -record('ApbStaticReadObjects',
-        {transaction            :: antidote_pb:'ApbStartTransaction'(), % = 1
-         objects = []           :: [antidote_pb:'ApbBoundObject'()] | undefined % = 2
-        }).
+    {
+        %  = 1
+        transaction :: antidote_pb:'ApbStartTransaction'(),
+        % = 2
+        objects = [] :: [antidote_pb:'ApbBoundObject'()] | undefined
+    }
+).
 -endif.
 
 -ifndef('APBSTARTTRANSACTIONRESP_PB_H').
 -define('APBSTARTTRANSACTIONRESP_PB_H', true).
 -record('ApbStartTransactionResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         transaction_descriptor :: iodata() | undefined, % = 2
-         errorcode              :: non_neg_integer() | undefined % = 3, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2
+        transaction_descriptor :: iodata() | undefined,
+        % = 3, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBREADOBJECTRESP_PB_H').
 -define('APBREADOBJECTRESP_PB_H', true).
 -record('ApbReadObjectResp',
-        {counter                :: antidote_pb:'ApbGetCounterResp'() | undefined, % = 1
-         set                    :: antidote_pb:'ApbGetSetResp'() | undefined, % = 2
-         reg                    :: antidote_pb:'ApbGetRegResp'() | undefined, % = 3
-         mvreg                  :: antidote_pb:'ApbGetMVRegResp'() | undefined, % = 4
-         map                    :: antidote_pb:'ApbGetMapResp'() | undefined, % = 6
-         flag                   :: antidote_pb:'ApbGetFlagResp'() | undefined % = 7
-        }).
+    {
+        %  = 1
+        counter :: antidote_pb:'ApbGetCounterResp'() | undefined,
+        % = 2
+        set :: antidote_pb:'ApbGetSetResp'() | undefined,
+        % = 3
+        reg :: antidote_pb:'ApbGetRegResp'() | undefined,
+        % = 4
+        mvreg :: antidote_pb:'ApbGetMVRegResp'() | undefined,
+        % = 6
+        map :: antidote_pb:'ApbGetMapResp'() | undefined,
+        % = 7
+        flag :: antidote_pb:'ApbGetFlagResp'() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBREADOBJECTSRESP_PB_H').
 -define('APBREADOBJECTSRESP_PB_H', true).
 -record('ApbReadObjectsResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         objects = []           :: [antidote_pb:'ApbReadObjectResp'()] | undefined, % = 2
-         errorcode              :: non_neg_integer() | undefined % = 3, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2
+        objects = [] :: [antidote_pb:'ApbReadObjectResp'()] | undefined,
+        % = 3, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBVALIDATEORREADOBJECTSRESP_PB_H').
 -define('APBVALIDATEORREADOBJECTSRESP_PB_H', true).
 -record('ApbValidateOrReadObjectsResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         objects = []           :: [antidote_pb:'ApbReadObjectResp'()] | undefined, % = 2
-         tokens = []            :: [iodata()] | undefined, % = 3
-         errorcode              :: non_neg_integer() | undefined % = 4, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2
+        objects = [] :: [antidote_pb:'ApbReadObjectResp'()] | undefined,
+        % = 3
+        tokens = [] :: [iodata()] | undefined,
+        % = 4, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBCOMMITRESP_PB_H').
 -define('APBCOMMITRESP_PB_H', true).
 -record('ApbCommitResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         commit_time            :: iodata() | undefined, % = 2
-         errorcode              :: non_neg_integer() | undefined % = 3, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2
+        commit_time :: iodata() | undefined,
+        % = 3, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBSTATICREADOBJECTSRESP_PB_H').
 -define('APBSTATICREADOBJECTSRESP_PB_H', true).
 -record('ApbStaticReadObjectsResp',
-        {objects                :: antidote_pb:'ApbReadObjectsResp'(), % = 1
-         committime             :: antidote_pb:'ApbCommitResp'() % = 2
-        }).
+    {
+        %  = 1
+        objects :: antidote_pb:'ApbReadObjectsResp'(),
+        % = 2
+        committime :: antidote_pb:'ApbCommitResp'()
+    }
+).
 -endif.
 
 -ifndef('APBCREATEDC_PB_H').
 -define('APBCREATEDC_PB_H', true).
 -record('ApbCreateDC',
-        {nodes = []             :: [iodata()] | undefined % = 1
-        }).
+    % = 1
+    {nodes = [] :: [iodata()] | undefined}
+).
 -endif.
 
 -ifndef('APBCREATEDCRESP_PB_H').
 -define('APBCREATEDCRESP_PB_H', true).
 -record('ApbCreateDCResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         errorcode              :: non_neg_integer() | undefined % = 2, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBGETCONNECTIONDESCRIPTOR_PB_H').
 -define('APBGETCONNECTIONDESCRIPTOR_PB_H', true).
--record('ApbGetConnectionDescriptor',
-        {
-        }).
+-record('ApbGetConnectionDescriptor', {}).
 -endif.
 
 -ifndef('APBGETCONNECTIONDESCRIPTORRESP_PB_H').
 -define('APBGETCONNECTIONDESCRIPTORRESP_PB_H', true).
 -record('ApbGetConnectionDescriptorResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         descriptor             :: iodata() | undefined, % = 2
-         errorcode              :: non_neg_integer() | undefined % = 3, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2
+        descriptor :: iodata() | undefined,
+        % = 3, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -ifndef('APBCONNECTTODCS_PB_H').
 -define('APBCONNECTTODCS_PB_H', true).
 -record('ApbConnectToDCs',
-        {descriptors = []       :: [iodata()] | undefined % = 1
-        }).
+    % = 1
+    {descriptors = [] :: [iodata()] | undefined}
+).
 -endif.
 
 -ifndef('APBCONNECTTODCSRESP_PB_H').
 -define('APBCONNECTTODCSRESP_PB_H', true).
 -record('ApbConnectToDCsResp',
-        {success                :: boolean() | 0 | 1, % = 1
-         errorcode              :: non_neg_integer() | undefined % = 2, 32 bits
-        }).
+    {
+        %  = 1
+        success :: boolean() | 0 | 1,
+        % = 2, 32 bits
+        errorcode :: non_neg_integer() | undefined
+    }
+).
 -endif.
 
 -endif.

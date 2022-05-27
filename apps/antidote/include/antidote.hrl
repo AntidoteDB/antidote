@@ -1,4 +1,3 @@
-
 -define(BUCKET, <<"antidote">>).
 -define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
@@ -20,7 +19,7 @@
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
 %% is there will be several more reads than writes
--define(TABLE_CONCURRENCY, {read_concurrency,true}).
+-define(TABLE_CONCURRENCY, {read_concurrency, true}).
 %% The read concurrency is the maximum number of concurrent
 %% readers per vnode.  This is so shared memory can be used
 %% in the case of keys that are read frequently.  There is
@@ -41,7 +40,7 @@
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
--define(OLD_SS_MICROSEC,0).
+-define(OLD_SS_MICROSEC, 0).
 %% The number of supervisors that are responsible for
 %% supervising transaction coordinator fsms
 -define(NUM_SUP, 100).
@@ -70,11 +69,17 @@
 -define(LOG_REQUEST_TIMEOUT, 60000).
 %% Bounded counter manager parameters.
 %% Period during which transfer requests from the same DC to the same key are ignored.
--define(GRACE_PERIOD, 1000000). % in Microseconds
+
+% in Microseconds
+-define(GRACE_PERIOD, 1000000).
 %% Time to forget a pending request.
--define(REQUEST_TIMEOUT, 500000). % In Microseconds
+
+% In Microseconds
+-define(REQUEST_TIMEOUT, 500000).
 %% Frequency at which manager requests remote resources.
--define(TRANSFER_FREQ, 100). %in Milliseconds
+
+%in Milliseconds
+-define(TRANSFER_FREQ, 100).
 
 %% The definition "FIRST_OP" is used by the materializer.
 %% The materializer caches a tuple for each key containing
@@ -113,18 +118,20 @@
 
 -record(prepare_log_payload, {prepare_time :: non_neg_integer()}).
 
--type any_log_payload() :: #update_log_payload{}
-                         | #commit_log_payload{}
-                         | #abort_log_payload{}
-                         | #prepare_log_payload{}.
+-type any_log_payload() ::
+    #update_log_payload{}
+    | #commit_log_payload{}
+    | #abort_log_payload{}
+    | #prepare_log_payload{}.
 
 -record(log_operation, {
     tx_id :: txid(),
-    op_type :: update
-             | prepare
-             | commit
-             | abort
-             | noop,
+    op_type ::
+        update
+        | prepare
+        | commit
+        | abort
+        | noop,
     log_payload :: any_log_payload()
 }).
 -type log_operation() :: #log_operation{}.
@@ -160,7 +167,9 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}].
+-type txn_properties() :: [
+    {update_clock, boolean()} | {certify, use_default | certify | dont_certify}
+].
 
 -record(transaction, {
     snapshot_time_local :: clock_time(),
@@ -187,7 +196,6 @@
 -type op() :: {op_name(), op_param()}.
 -type effect() :: term().
 
-
 %% DC Id is the riak_core ring cluster name
 -type dcid() :: undefined | {term(), term()}.
 -type snapshot_time() :: vectorclock:vectorclock().
@@ -212,10 +220,11 @@
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
 
--type client_op() :: {update, {key(), type(), op()}}
-                   | {read, {key(), type()}}
-                   | {prepare, term()}
-                   | commit.
+-type client_op() ::
+    {update, {key(), type(), op()}}
+    | {read, {key(), type()}}
+    | {prepare, term()}
+    | commit.
 
 -type crdt() :: term().
 -type val() :: term().
@@ -241,34 +250,53 @@
 
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tab().
--type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()}
-                           | {error, connection_error}}.
+-type inter_dc_conn_err() ::
+    {error,
+        {partition_num_mismatch, non_neg_integer(), non_neg_integer()}
+        | {error, connection_error}}.
 
 -type bound_object() :: {key(), type(), bucket()}.
 
 -type module_name() :: atom().
 -type function_name() :: atom().
 
--export_type([key/0, effect/0, crdt/0, val/0, reason/0, preflist/0,
-              log/0, op_id/0, payload/0, partition_id/0,
-              type/0, snapshot/0, txid/0, tx/0,
-              bucket/0,
-              txn_properties/0,
-              op_param/0, op_name/0,
-              bound_object/0,
-              module_name/0,
-              function_name/0,
-              clocksi_payload/0,
-              materialized_snapshot/0,
-              snapshot_get_response/0, log_operation/0, log_record/0, op_number/0,
-              update_log_payload/0, commit_log_payload/0]).
-
+-export_type([
+    key/0,
+    effect/0,
+    crdt/0,
+    val/0,
+    reason/0,
+    preflist/0,
+    log/0,
+    op_id/0,
+    payload/0,
+    partition_id/0,
+    type/0,
+    snapshot/0,
+    txid/0,
+    tx/0,
+    bucket/0,
+    txn_properties/0,
+    op_param/0,
+    op_name/0,
+    bound_object/0,
+    module_name/0,
+    function_name/0,
+    clocksi_payload/0,
+    materialized_snapshot/0,
+    snapshot_get_response/0,
+    log_operation/0,
+    log_record/0,
+    op_number/0,
+    update_log_payload/0,
+    commit_log_payload/0
+]).
 
 %% The record is using during materialization to keep the
 %% state needed to materialize an object from the cache (or log)
 -record(snapshot_get_response, {
     %% list of new ops
-    ops_list :: [{op_num(),clocksi_payload()}] | tuple(),
+    ops_list :: [{op_num(), clocksi_payload()}] | tuple(),
     %% size of ops_list
     number_of_ops :: non_neg_integer(),
     %% the previous snapshot to apply the ops to
@@ -280,4 +308,9 @@
 }).
 -type snapshot_get_response() :: #snapshot_get_response{}.
 
--define(STATS(Type), case application:get_env(antidote, stats, true) of true -> gen_server:cast(antidote_stats_collector, Type); _ -> ok end).
+-define(STATS(Type),
+    case application:get_env(antidote, stats, true) of
+        true -> gen_server:cast(antidote_stats_collector, Type);
+        _ -> ok
+    end
+).
