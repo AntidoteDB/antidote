@@ -148,16 +148,12 @@ is_operation(Operation) ->
         {update, {{_Key, Type}, Op}} ->
             antidote_crdt:is_type(Type) andalso antidote_crdt:is_operation(Type, Op);
         {update, Ops} when is_list(Ops) ->
-            distinct([Key || {Key, _} <- Ops]) andalso
-                lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
+            lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
         {reset, {}} ->
             false;
         _ ->
             false
     end.
-
-distinct([]) -> true;
-distinct([X | Xs]) -> not lists:member(X, Xs) andalso distinct(Xs).
 
 %% ===================================================================
 %% EUnit tests
