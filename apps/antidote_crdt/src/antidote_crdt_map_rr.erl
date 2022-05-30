@@ -223,17 +223,14 @@ is_operation(Operation) ->
         {update, {{_Key, Type}, Op}} ->
             antidote_crdt:is_type(Type) andalso antidote_crdt:is_operation(Type, Op);
         {update, Ops} when is_list(Ops) ->
-            distinct([Key || {Key, _} <- Ops]) andalso
-                lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
+            lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
         {remove, {_Key, Type}} ->
             antidote_crdt:is_type(Type);
         {remove, Keys} when is_list(Keys) ->
-            distinct(Keys) andalso
-                lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
+            lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
         {batch, {Updates, Removes}} ->
             is_list(Updates) andalso
                 is_list(Removes) andalso
-                distinct(Removes ++ [Key || {Key, _} <- Updates]) andalso
                 lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes) andalso
                 lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
         {reset, {}} ->
@@ -243,9 +240,6 @@ is_operation(Operation) ->
         _ ->
             false
     end.
-
-distinct([]) -> true;
-distinct([X | Xs]) -> not lists:member(X, Xs) andalso distinct(Xs).
 
 is_bottom(Map) ->
     dict:is_empty(Map).
