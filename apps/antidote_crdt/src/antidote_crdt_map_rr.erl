@@ -384,6 +384,17 @@ upd(Update, State) ->
     {ok, Res} = update(Downstream, State),
     Res.
 
+multiple_ops_on_same_key_test() ->
+  M1 = new(),
+  M2 = upd({update, {{a, antidote_crdt_set_rw}, {add, <<"a">>}}}, M1),
+  Op = {update, [
+    {{a, antidote_crdt_set_rw}, {remove, <<"a">>}},
+    {{a, antidote_crdt_set_rw}, {add, <<"b">>}}
+  ]},
+  ?assert(is_operation(Op)),
+  M3 = upd(Op, M2),
+  ?assertEqual([{{a, antidote_crdt_set_rw}, [<<"b">>]}], value(M3)).
+
 remove_test() ->
     M1 = new(),
     ?assertEqual([], value(M1)),

@@ -176,6 +176,14 @@ update2_test() ->
     Map1 = new(),
     {ok, Effect1} = downstream({update, [{{a, antidote_crdt_set_aw}, {add, a}}]}, Map1),
     {ok, Map2} = update(Effect1, Map1),
-    ?assertEqual([{{a, antidote_crdt_set_aw}, [a]}], value(Map2)).
+    ?assertEqual([{{a, antidote_crdt_set_aw}, [a]}], value(Map2)),
+    Op = {update, [
+      {{a, antidote_crdt_set_aw}, {remove, a}},
+      {{a, antidote_crdt_set_aw}, {add, b}}
+    ]},
+    ?assert(is_operation(Op)),
+    {ok, Effect2} = downstream(Op, Map2),
+    {ok, Map3} = update(Effect2, Map2),
+    ?assertEqual([{{a, antidote_crdt_set_aw}, [b]}], value(Map3)).
 
 -endif.
