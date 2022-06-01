@@ -67,9 +67,20 @@ Applications that use AntidoteDB:
 * [Antidote Web Shell](https://github.com/AntidoteDB/antidote-web-shell)
 
 
-Contributing & Development
+Antidote Contributing & Development
 ==============
 
 Antidote encourages open-source development.
 If you want to contribute, you can find all necessary information in the [developer documentation](https://antidotedb.gitbook.io/documentation/development/setup)
 To make yourself familiar with AntidoteDB, you can start by looking at [good first issues](https://github.com/AntidoteDB/antidote/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
+Vaxine Community Guidelines
+==============
+
+This repo contains guidelines for participating in the Vaxine community:
+
+* [Code of Conduct](CODE_OF_CONDUCT.md)
+* [Guide to Contributing](CONTRIBUTING.md)
+* [Contributor License Agreement](CLA.md)
+
+If you have any questions or concerns, please raise them on the [Vaxine community](https://vaxine.io/project/community) channels.
