@@ -17,10 +17,6 @@ Applications built on top of Vaxine offer:
 * Integrity constraints
 * Real-time update subscriptions
 
-High level architecture:
-
-![vaxine-components](./docs/design/assets/vaxine-components.png)
-
 More information:
 
 - [Vaxine website](https://vaxine.io)
