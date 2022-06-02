@@ -15,6 +15,7 @@ defmodule Vax.AdapterIntegrationTest do
       field(:number_of_followers, :integer)
       field(:likes_given, Vax.Types.Counter, default: 0)
       field(:favorite_numbers, Vax.Types.Set, type: :integer)
+      field(:public_profile?, Vax.Types.Flag, strategy: :disable_wins)
     end
   end
 
@@ -116,10 +117,11 @@ defmodule Vax.AdapterIntegrationTest do
 
       assert {:ok, %{age: 27}} =
                entry
-               |> Ecto.Changeset.change(age: 27, likes_given: 2)
+               |> Ecto.Changeset.change(age: 27, likes_given: 2, public_profile?: true)
                |> TestRepo.update()
 
-      assert %MySchema{age: 27, name: "Carl", likes_given: 2} = TestRepo.get(MySchema, entry.id)
+      assert %MySchema{age: 27, name: "Carl", likes_given: 2, public_profile?: true} =
+               TestRepo.get(MySchema, entry.id)
     end
 
     test "semantically updates CRDT set type with `compute_change`" do
