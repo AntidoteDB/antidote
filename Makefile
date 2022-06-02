@@ -1,4 +1,9 @@
-REBAR = $(shell pwd)/rebar3
+ifdef CI
+	REBAR=$(shell whereis rebar3 | awk '{print $$2}')
+else
+	REBAR=$(shell pwd)/rebar3
+endif
+
 COVERPATH = $(shell pwd)/_build/test/cover
 .PHONY: rel test relgentlerain docker-build docker-run
 
