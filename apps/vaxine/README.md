@@ -1,7 +1,7 @@
-# Vaxine
-Welcome to the Vaxine repository!
 
-Vaxine provides rich-CRDT features on top of Antidote [Antidote](https://github.com/AntidoteDB/antidote).
+# Vaxine
+
+Welcome to the Vaxine application! Vaxine provides rich-CRDT features on top of Antidote [Antidote](./antidote).
 
 Vaxine extends Antidote with a relational-oriented data-model, the ability to maintain invariants, a query language and real-time subscriptions service. Vaxine enables developers to create applications that are scalable and maintain consistency, without making the typical availability sacrifices of CP systems. 
 
@@ -12,17 +12,15 @@ Applications built on top of Vaxine offer:
 * Integrity constraints
 * Real-time update subscriptions
 
-
 ## Vaxine architecture
 
-![vaxine-components](./design/assets/vaxine-components.png)
+![vaxine-components](./docs/design/assets/vaxine-components.png)
 
 Vaxine is divided in three main components:
 
-- [Data:](https://github.com/vaxine-io/vaxine/blob/main/design/data.md) we provide a relational data-model with expressive querying capabilities.
-- [Reservations:](https://github.com/vaxine-io/vaxine/blob/main/design/reservations.md) Provides concurrency control mechanisms that can ensure data integrity with high availability. 
-- [Subscriptions:](https://github.com/vaxine-io/vaxine/blob/main/design/subscriptions.md) Stream replication changes with ordering guarantees, persistence and efficient payload propagation.
-
+- [Data](./blob/main/docs/design/data.md): we provide a relational data-model with expressive querying capabilities.
+- [Reservations](./blob/main/docs/design/reservations.md): Provides concurrency control mechanisms that can ensure data integrity with high availability.
+- [Subscriptions](./blob/main/design/subscriptions.md): Stream replication changes with ordering guarantees, persistence and efficient payload propagation.
 
 Stay tuned as we improve this document with more details and instructions to install and deploy Vaxine.
 
