@@ -14,8 +14,8 @@ Vaxine is a rich-CRDT database system that extends Antidote with a relational da
 
 * low-latency, active-active geo-distribution
 * transactional causal+ consistency
-* standard relational data model
-* standard database guarantees
+* relational data model
+* constraints and referential integrity
 * real-time subscriptions
 
 More information:
@@ -26,7 +26,7 @@ More information:
 
 ## About Antidote
 
-AntidoteDB is a planet scale, highly available, transactional database. Antidote implements the [Cure protocol](https://ieeexplore.ieee.org/document/7536539/) of Transactional Causal+ Consistency based on [CRDTs](https://crdt.tech).
+AntidoteDB is a planet scale, highly available, transactional database. Antidote implements the [Cure protocol](https://ieeexplore.ieee.org/document/7536539/) of transactional causal+ consistency based on [CRDTs](https://crdt.tech).
 
 More information:
 
