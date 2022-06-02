@@ -15,7 +15,8 @@
  {<<"quantile_estimator">>,{pkg,<<"quantile_estimator">>,<<"0.2.1">>},1},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"2.0.0">>},0},
  {<<"riak_core">>,{pkg,<<"riak_core_lite">>,<<"0.10.1">>},0},
- {<<"vaxine">>,{path,"./apps/vaxine",{mtime,<<"2022-06-01T18:52:54Z">>}},0}]}.
+ {<<"vax">>,{path,"./apps/vax",{mtime,<<"2022-06-02T17:02:30Z">>}},0},
+ {<<"vaxine">>,{path,"./apps/vaxine",{mtime,<<"2022-06-02T16:24:09Z">>}},0}]}.
 [
 {pkg_hash,[
  {<<"accept">>, <<"B33B127ABCA7CC948BBE6CAA4C263369ABF1347CFA9D8E699C6D214660F10CD1">>},
