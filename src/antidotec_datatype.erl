@@ -26,7 +26,7 @@
 -compile(export_all).
 -endif.
 
--define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg, antidotec_map]).
+-define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg, antidotec_map, antidotec_flag]).
 
 -export([module_for_type/1,
          module_for_crdt_type/1,
@@ -63,11 +63,12 @@
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(set | map | counter | reg) ->
+-spec module_for_type(set | map | counter | flag | reg) ->
     antidotec_counter | antidotec_set | antidote_map | antidotec_reg.
 module_for_type(set) -> antidotec_set;
 module_for_type(map) -> antidotec_map;
 module_for_type(counter)  -> antidotec_counter;
+module_for_type(flag)  -> antidotec_flag;
 module_for_type(reg) -> antidotec_reg.
 
 %% @doc Returns the module name for the CRDT data-type.
@@ -82,6 +83,8 @@ module_for_crdt_type(antidote_crdt_register_mv) -> antidotec_reg;
 module_for_crdt_type(antidote_crdt_set_aw) -> antidotec_set;
 module_for_crdt_type(antidote_crdt_set_go) -> antidotec_set;
 module_for_crdt_type(antidote_crdt_set_rw) -> antidotec_set;
+module_for_crdt_type(antidote_crdt_flag_ew) -> antidotec_flag;
+module_for_crdt_type(antidote_crdt_flag_dw) -> antidotec_flag;
 module_for_crdt_type(_) -> error(invalid_crdt_type).
 
 %% @doc Returns the container module name for the given term.
