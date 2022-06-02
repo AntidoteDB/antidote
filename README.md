@@ -5,34 +5,35 @@ Welcome to the Vaxine source code repository. Vaxine is a rich-CRDT database sys
 
 ![Erlang CI](https://github.com/vaxine-io/vaxine/workflows/Erlang%20CI/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/vaxine-io/vaxine/badge.svg?branch=main)](https://coveralls.io/github/vaxine-io/vaxine?branch=main)
+[![License - MIT](https://img.shields.io/badge/license-MIT-green)](./blob/main/LICENSE.md)
+![Status - Alpha](https://img.shields.io/badge/status-alpha-red)
 
 ## About Vaxine
 
-Vaxine is a rich-CRDT database system that extends Antidote with a relational-oriented data-model, the ability to maintain invariants, a query language and real-time subscriptions service. Vaxine enables developers to create applications that are scalable and maintain consistency, without making the typical availability sacrifices of CP systems.
+Vaxine is a rich-CRDT database system that extends Antidote with a relational data-model, invariant safety, query support and real-time subscriptions. Applications built on top of Vaxine offer:
 
-Applications built on top of Vaxine offer:
-
-* Geo-distributed deployments
-* Multi-writer, low-latency writes
-* Integrity constraints
-* Real-time update subscriptions
+* low-latency, active-active geo-distribution
+* transactional causal+ consistency
+* standard relational data model
+* standard database guarantees
+* real-time subscriptions
 
 More information:
 
 - [Vaxine website](https://vaxine.io)
-- [Vaxine documentation](https://vaxine.io/docs)
-- [Example applications](https://vaxine.io/demos) ([source code](https://github.com/vaxine-io/examples))
+- [Documentation](https://vaxine.io/docs)
+- [Example apps](https://vaxine.io/demos) ([source code](https://github.com/vaxine-io/examples))
 
 ## About Antidote
 
-AntidoteDB is a highly available geo-replicated key-value database based on Conflict-free replicated datatypes (*CRDTs*) and Highly Available Transactions. CRDTs are high-level replicated data types that are designed to work correctly in the presence of concurrent updates and partial failures. Highly Available Transactions provide atomic transactional updates and strong consistency within a data center, whilst still performing well in geo-replicated deployments.
+AntidoteDB is a planet scale, highly available, transactional database. Antidote implements the [Cure protocol](https://ieeexplore.ieee.org/document/7536539/) of Transactional Causal+ Consistency based on [CRDTs](https://crdt.tech).
 
 More information:
 
 - [Antidote website](https://www.antidotedb.eu)
-- [Antidote documentation](https://antidotedb.gitbook.io/documentation)
+- [Documentation](https://antidotedb.gitbook.io/documentation)
 
-Antidote is the reference platform of the [SyncFree European Project](https://syncfree.lip6.fr/) and the [LightKone European Project](https://www.lightkone.eu/).
+Antidote is the reference platform of the [SyncFree](https://syncfree.lip6.fr/) and the [LightKone](https://www.lightkone.eu/) european projects.
 
 ## Community Guidelines
 
