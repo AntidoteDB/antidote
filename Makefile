@@ -9,11 +9,21 @@ COVERPATH = $(shell pwd)/_build/test/cover
 
 all: compile
 
-compile:
+compile: compile-vaxine compile-vax
+
+compile-vaxine:
 	$(REBAR) compile
 
-clean:
+compile-vax:
+	make compile -C apps/vax
+
+clean: clean-vaxine clean-vax
+
+clean-vaxine:
 	$(REBAR) clean
+
+clean-vax:
+	make clean -C apps/vax
 
 distclean: clean relclean
 	$(REBAR) clean --all
@@ -49,8 +59,13 @@ relnocert: relclean rel
 stage :
 	$(REBAR) release -d
 
-test:
+test: test-vaxine test-vax
+
+test-vaxine:
 	${REBAR} eunit
+
+test-vax:
+	make test -C apps/vax
 
 proper:
 	${REBAR} proper

@@ -1,6 +1,4 @@
 %{
-  "antidote_pb_codec": {:hex, :antidote_pb_codec, "0.1.2", "ecf51f08ee1fee0d6e82d1b4ae68811a89660a3d65db90694a84275683aef106", [:rebar3], [], "hexpm", "b8f655b5c2d074deb1e170c9ee607a157b577f2db064d212643487aea684bb5b"},
-  "antidotec_pb": {:git, "https://github.com/vaxine-io/antidote-erlang-client.git", "348a89d45f8d93d6fa8f34f7c01109780b7730f9", []},
   "decimal": {:hex, :decimal, "2.0.0", "a78296e617b0f5dd4c6caf57c714431347912ffb1d0842e998e9792b5642d697", [:mix], [], "hexpm", "34666e9c55dea81013e77d9d87370fe6cb6291d1ef32f46a1600230b1d44f577"},
   "ecto": {:hex, :ecto, "3.8.3", "5e681d35bc2cbb46dcca1e2675837c7d666316e5ada14eca6c9c609b6232817c", [:mix], [{:decimal, "~> 1.6 or ~> 2.0", [hex: :decimal, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: true]}, {:telemetry, "~> 0.4 or ~> 1.0", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "af92dd7815967bcaea0daaaccf31c3b23165432b1c7a475d84144efbc703d105"},
   "nimble_pool": {:hex, :nimble_pool, "0.2.6", "91f2f4c357da4c4a0a548286c84a3a28004f68f05609b4534526871a22053cde", [:mix], [], "hexpm", "1c715055095d3f2705c4e236c18b618420a35490da94149ff8b580a2144f653f"},

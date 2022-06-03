@@ -7,7 +7,7 @@ defmodule Vax.MixProject do
       version: "0.1.0",
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
-      deps: deps(),
+      deps: deps(Mix.env()),
       package: package(),
       test_paths: ["test", "integration_test"]
     ] ++ docs()
@@ -21,10 +21,18 @@ defmodule Vax.MixProject do
   end
 
   # Run "mix help deps" to learn about dependencies.
-  defp deps do
+  defp deps(:publish) do
     [
       {:ecto, "~> 3.7"},
-      {:antidotec_pb, github: "vaxine-io/antidote-erlang-client"},
+      #
+      {:nimble_pool, "~> 0.2.6"}
+    ]
+  end
+  defp deps(_) do
+    [
+      {:ecto, "~> 3.7"},
+      {:antidote_pb_codec, path: "../antidote_pb_codec", override: true},
+      {:antidotec_pb, path: "../antidotec_pb"},
       {:nimble_pool, "~> 0.2.6"}
     ]
   end
