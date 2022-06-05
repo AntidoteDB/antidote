@@ -26,12 +26,11 @@
 -compile(export_all).
 -endif.
 
--define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg]).
+-define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg, antidotec_map, antidotec_flag]).
 
--export([
-    module_for_type/1,
-    module_for_term/1
-]).
+-export([module_for_type/1,
+         module_for_crdt_type/1,
+         module_for_term/1]).
 
 -export_type([datatype/0, update/0]).
 
@@ -42,7 +41,7 @@
 
 %% @doc Constructs a new container for the type with the specified
 %% value and key. This should only be used internally by the client code.
--callback new(Value :: term()) -> datatype().
+-callback new(Value::term()) -> datatype().
 
 %% @doc Returns the original, unmodified value of the object. This does
 %% not include the execution of any locally-queued operations.
@@ -64,11 +63,29 @@
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(set | counter | reg) ->
-    antidotec_counter | antidotec_set | antidotec_reg.
+-spec module_for_type(set | map | counter | flag | reg) ->
+    antidotec_counter | antidotec_set | antidote_map | antidotec_reg.
 module_for_type(set) -> antidotec_set;
-module_for_type(counter) -> antidotec_counter;
+module_for_type(map) -> antidotec_map;
+module_for_type(counter)  -> antidotec_counter;
+module_for_type(flag)  -> antidotec_flag;
 module_for_type(reg) -> antidotec_reg.
+
+%% @doc Returns the module name for the CRDT data-type.
+-spec module_for_crdt_type(atom()) -> antidotec_counter | antidotec_set | antidote_map | antidotec_reg.
+module_for_crdt_type(antidote_crdt_counter_pn) -> antidotec_counter;
+module_for_crdt_type(antidote_crdt_counter_b) -> antidotec_counter;
+module_for_crdt_type(antidote_crdt_counter_fat) -> antidotec_counter;
+module_for_crdt_type(antidote_crdt_map_rr) -> antidotec_map;
+module_for_crdt_type(antidote_crdt_map_go) -> antidotec_map;
+module_for_crdt_type(antidote_crdt_register_lww) -> antidotec_reg;
+module_for_crdt_type(antidote_crdt_register_mv) -> antidotec_reg;
+module_for_crdt_type(antidote_crdt_set_aw) -> antidotec_set;
+module_for_crdt_type(antidote_crdt_set_go) -> antidotec_set;
+module_for_crdt_type(antidote_crdt_set_rw) -> antidotec_set;
+module_for_crdt_type(antidote_crdt_flag_ew) -> antidotec_flag;
+module_for_crdt_type(antidote_crdt_flag_dw) -> antidotec_flag;
+module_for_crdt_type(_) -> error(invalid_crdt_type).
 
 %% @doc Returns the container module name for the given term.
 %% Returns undefined if the module is not known.

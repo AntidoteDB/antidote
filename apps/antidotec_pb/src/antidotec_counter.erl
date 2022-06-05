@@ -26,26 +26,24 @@
 
 -behaviour(antidotec_datatype).
 
--export([
-    new/0, new/1,
-    value/1,
-    to_ops/2,
-    is_type/1,
-    dirty_value/1,
-    type/0
-]).
+-export([new/0, new/1,
+         value/1,
+         to_ops/2,
+         is_type/1,
+         dirty_value/1,
+         type/0
+        ]).
 
--export([
-    increment/1,
-    increment/2,
-    decrement/1,
-    decrement/2
-]).
+-export([increment/1,
+         increment/2,
+         decrement/1,
+         decrement/2
+        ]).
 
 -record(counter, {
-    value :: integer(),
-    increment :: integer()
-}).
+          value :: integer(),
+          increment :: integer()
+         }).
 
 -export_type([antidotec_counter/0]).
 -opaque antidotec_counter() :: #counter{}.
@@ -73,9 +71,8 @@ increment(Counter) ->
 
 %% @doc Increments the counter with Amount units.
 -spec increment(integer(), antidotec_counter()) -> antidotec_counter().
-increment(Amount, #counter{increment = Increment} = Counter) when
-    is_integer(Amount)
-->
+increment(Amount, #counter{increment = Increment} = Counter)
+  when is_integer(Amount) ->
     Counter#counter{increment = Increment + Amount}.
 
 %% @doc Decrements the counter by 1.
@@ -85,9 +82,8 @@ decrement(Counter) ->
 
 %% @doc Decrements the counter by the passed amount.
 -spec decrement(integer(), antidotec_counter()) -> antidotec_counter().
-decrement(Amount, #counter{increment = Value} = Counter) when
-    is_integer(Amount)
-->
+decrement(Amount, #counter{increment = Value} = Counter)
+  when is_integer(Amount) ->
     Counter#counter{increment = Value - Amount}.
 
 -spec is_type(term()) -> boolean().
@@ -96,14 +92,16 @@ is_type(T) ->
 
 -spec type() -> counter.
 type() ->
-    counter.
+     counter.
 
-to_ops(_BoundObject, #counter{increment = 0}) ->
-    [];
+to_ops(_BoundObject, #counter{increment = 0}) -> [];
+
 to_ops(BoundObject, #counter{increment = Amount}) when Amount < 0 ->
     [{BoundObject, decrement, -Amount}];
+
 to_ops(BoundObject, #counter{increment = Amount}) ->
     [{BoundObject, increment, Amount}].
+
 
 %% ===================================================================
 %% EUnit tests
