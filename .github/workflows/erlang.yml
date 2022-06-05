@@ -1,65 +1,69 @@
-name: Erlang CI
-
+name: CI
 on:
   push:
-  pull_request:
-
+    branches:
+      - master
+  pull_request: null
 jobs:
-
   build:
     runs-on: ubuntu-latest
-    strategy: 
+    strategy:
+      fail-fast: false
       matrix:
-        elixir: [ "1.10", "1.11", "1.12" ]
-
+        elixir:
+          - '1.11'
+          - '1.12'
     container:
-      image: elixir:${{ matrix.elixir }}
-
+      image: 'elixir:${{ matrix.elixir }}'
     steps:
-    - uses: actions/checkout@v2
-    - run: make compile
-
+      - uses: actions/checkout@v2
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: make compile
   test:
     runs-on: ubuntu-latest
-    strategy: 
+    strategy:
+      fail-fast: false
       matrix:
-        elixir: [ "1.10", "1.11", "1.12" ]
-
+        elixir:
+          - '1.11'
+          - '1.12'
     container:
-      image: elixir:${{ matrix.elixir }}
-
+      image: 'elixir:${{ matrix.elixir }}'
     steps:
-    - uses: actions/checkout@v2
-    - run: make compile
-    - name: Run epmd
-      run: epmd -daemon
-    - name: Unit Tests
-      run: make test
-    - name: Property-Based Tests
-      run: make proper
-    - name: System Tests
-      run: make systests
-    - name: Coverage
-      run: make coverage
-    - name: Send Coverage
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: ./rebar3 as test coveralls send
-
+      - uses: actions/checkout@v2
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+      - run: make compile
+      - name: Run epmd
+        run: epmd -daemon
+      - name: Unit Tests
+        run: make test
+      - name: Property-Based Tests
+        run: make proper
+      - name: System Tests
+        run: make systests
+      - name: Coverage
+        run: make coverage
+      - name: Send Coverage
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        run: ./rebar3 as test coveralls send
   verify:
     runs-on: ubuntu-latest
-    strategy: 
+    strategy:
+      fail-fast: false
       matrix:
-        elixir: [ "1.10", "1.11", "1.12" ]
-
+        elixir:
+          - '1.11'
+          - '1.12'
     container:
-      image: elixir:${{ matrix.elixir }}
-
+      image: 'elixir:${{ matrix.elixir }}'
     steps:
-    - uses: actions/checkout@v2
-    - name: Xref
-      run: make xref
-    - name: Lint
-      run: make lint
-    - name: Dialyzer
-      run: make dialyzer
+      - uses: actions/checkout@v2
+      - name: Xref
+        run: make xref
+      - name: Lint
+        run: make lint
+      - name: Dialyzer
+        run: make dialyzer
