@@ -104,7 +104,7 @@ async_validate_or_read_data_item(
                 {ok, valid} ->
                     gen_statem:cast(Sender, {ok, {valid, Key, Type}});
                 {error, Reason} ->
-                     gen_statem:cast(Sender, {error, Reason})
+                    gen_statem:cast(Sender, {error, Reason})
             end
         }
     end),
