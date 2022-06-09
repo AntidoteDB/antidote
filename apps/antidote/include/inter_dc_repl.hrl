@@ -2,19 +2,17 @@
 
 -export_type([descriptor/0, interdc_txn/0, recvr_state/0, request_cache_entry/0]).
 
--record(recvr_state,
-    {
-        % TODO: this may not be required
-        lastRecvd :: orddict:orddict(),
-        lastCommitted :: orddict:orddict(),
-        %%Track timestamps from other DC which have been committed by this DC
+-record(recvr_state, {
+    % TODO: this may not be required
+    lastRecvd :: orddict:orddict(),
+    lastCommitted :: orddict:orddict(),
+    %%Track timestamps from other DC which have been committed by this DC
 
-        %% Holds receiving updates from each DC separately in causal order.
-        recQ :: orddict:orddict(),
-        statestore,
-        partition
-    }
-).
+    %% Holds receiving updates from each DC separately in causal order.
+    recQ :: orddict:orddict(),
+    statestore,
+    partition
+}).
 -type recvr_state() :: #recvr_state{}.
 
 -type socket_address() :: {inet:ip_address(), inet:port_number()}.
