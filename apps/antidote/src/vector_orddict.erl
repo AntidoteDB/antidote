@@ -121,7 +121,7 @@ insert(Vector, Val, {List, Size}) ->
 insert_internal(Vector, Val, [], Size, PrevList) ->
     {lists:reverse([{Vector, Val} | PrevList]), Size};
 insert_internal(Vector, Val, [{FirstClock, FirstVal} | Rest], Size, PrevList) ->
-    case vectorclock:all_dots_greater(Vector, FirstClock) of
+    case vectorclock:all_dots(Vector, FirstClock, fun erlang:'>='/2) of
         true ->
             {lists:reverse(PrevList, [{Vector, Val} | [{FirstClock, FirstVal} | Rest]]), Size};
         false ->
@@ -286,5 +286,20 @@ vector_orddict_conc_test() ->
 
     ?assertEqual(is_concurrent_with_any(VDict, CT1), false),
     ?assertEqual(is_concurrent_with_any(VDict, CT2), true).
+
+vector_orddict_simple_ordering_test() ->
+    Q0 = vector_orddict:new(),
+    Q1 = vector_orddict:insert(#{dc1 => 1, dc2 => 1}, val1, Q0),
+    Q2 = vector_orddict:insert(#{dc1 => 1, dc2 => 2}, val2, Q1),
+    ?assertEqual({#{dc1 => 1, dc2 => 2}, val2},
+                 vector_orddict:first(Q2)).
+
+vector_orddict_simple_ordering2_test() ->
+    Q0 = vector_orddict:new(),
+    Q1 = vector_orddict:insert(#{dc1 => 1, dc2 => 2}, val2, Q0),
+    Q2 = vector_orddict:insert(#{dc1 => 1, dc2 => 1}, val1, Q1),
+    ?assertEqual({#{dc1 => 1, dc2 => 2}, val2},
+                 vector_orddict:first(Q2)).
+
 
 -endif.
