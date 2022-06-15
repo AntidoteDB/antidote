@@ -30,6 +30,7 @@
 -include("antidote.hrl").
 
 -ifdef(TEST).
+-include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -301,5 +302,35 @@ vector_orddict_simple_ordering2_test() ->
     ?assertEqual({#{dc1 => 1, dc2 => 2}, val2},
                  vector_orddict:first(Q2)).
 
+vv_gen() ->
+    vector(3, range(1, 10)).
+
+prop_vector_orddict_ordering() ->
+    ?FORALL(VVs0, non_empty(list(vv_gen())),
+            begin
+                VVs1 = lists:foldl(
+                       fun(VVlist, Acc) ->
+                               VV0 = lists:zip(lists:seq(1, 3), VVlist),
+                               VV1 = vectorclock:from_list(VV0),
+                               vector_orddict:insert(VV1, none, Acc)
+                       end, vector_orddict:new(), VVs0),
+                %% Verify that monotonically decreasing value
+                {InitVV, _} = vector_orddict:first(VVs1),
+                _ = lists:foldl(fun({VV, _}, MonIncreaseVV) ->
+                                    case vectorclock:ge(MonIncreaseVV, VV) of
+                                        true -> VV;
+                                        false ->
+                                            case vectorclock:ge(VV, MonIncreaseVV) of
+                                                true -> erlang:error(order_failure);
+                                                false -> MonIncreaseVV
+                                            end
+                                    end
+                                end, InitVV, vector_orddict:to_list(VVs1)),
+                true
+            end).
+
+vector_orddict_ordering_test() ->
+    ?assertEqual(true, proper:quickcheck(
+                         prop_vector_orddict_ordering(), [1000, {to_file, user}])).
 
 -endif.
