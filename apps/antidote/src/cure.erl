@@ -173,39 +173,13 @@ obtain_objects(Clock, Properties, Objects, StateOrValue) ->
             ),
             {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
-            case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
-                    {ok, TxId} = clocksi_istart_tx(Clock, Properties),
-                    case obtain_objects(Objects, TxId, StateOrValue) of
-                        {ok, Res} ->
-                            {ok, CommitTime} = commit_transaction(TxId),
-                            {ok, Res, CommitTime};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                {ok, gr} ->
-                    case Objects of
-                        %% Single object read = read latest value
-                        [_Op] ->
-                            {ok, TxId} = clocksi_istart_tx(Clock, Properties),
-                            case obtain_objects(Objects, TxId, StateOrValue) of
-                                {ok, Res} ->
-                                    {ok, CommitTime} = commit_transaction(TxId),
-                                    {ok, Res, CommitTime};
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end;
-                        %% Read Multiple objects  = read from a snapshot
-                        [_ | _] ->
-                            %% Snapshot includes all updates committed at time GST
-                            %% from local and remote replicas
-                            case gr_snapshot_obtain(Clock, Objects, StateOrValue) of
-                                {ok, Result, CommitTime} ->
-                                    {ok, Result, CommitTime};
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end
-                    end
+            {ok, TxId} = clocksi_istart_tx(Clock, Properties),
+            case obtain_objects(Objects, TxId, StateOrValue) of
+                {ok, Res} ->
+                    {ok, CommitTime} = commit_transaction(TxId),
+                    {ok, Res, CommitTime};
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -254,33 +228,6 @@ clocksi_full_icommit(TxId) ->
             gen_statem:call(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
-    end.
-
-%%% Snapshot read for Gentlerain protocol
-gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
-    %% GST = scalar stable time
-    %% VST = vector stable time with entries for each dc
-    {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
-    DcId = dc_utilities:get_my_dc_id(),
-    Dt = vectorclock:get(DcId, ClientClock),
-    case Dt =< GST of
-        true ->
-            %% Set all entries in snapshot as GST
-            ST = vectorclock:set_all(GST, VST),
-            %% ST doesn't contain entry for local dc, hence explicitly
-            %% add it in snapshot time
-            SnapshotTime = vectorclock:set(DcId, GST, ST),
-            {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}]),
-            case obtain_objects(Objects, TxId, StateOrValue) of
-                {ok, Res} ->
-                    {ok, CommitTime} = commit_transaction(TxId),
-                    {ok, Res, CommitTime};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        false ->
-            timer:sleep(10),
-            gr_snapshot_obtain(ClientClock, Objects, StateOrValue)
     end.
 
 format_read_params(ReadObjects) ->
