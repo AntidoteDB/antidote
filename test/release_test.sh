@@ -18,4 +18,6 @@ cd "$SCRIPTDIR/.."
 ./test/release_test.escript
 
 # Stop Antidote
+echo "Stopping antidote ..."
 ./_build/default/rel/antidote/bin/antidote stop
+echo "Shutdown complete"

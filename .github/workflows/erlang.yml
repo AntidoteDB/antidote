@@ -37,6 +37,8 @@ jobs:
       run: make test
     - name: Property-Based Tests
       run: make proper
+    - name: Release Test
+      run: make reltest
     - name: System Tests
       run: make systests
     - name: Coverage
