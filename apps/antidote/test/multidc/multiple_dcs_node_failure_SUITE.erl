@@ -245,7 +245,7 @@ update_during_cluster_failure_test2(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Key = update_during_cluster_failure_test,
+    Key = update_during_cluster_failure_test2,
     Type = antidote_crdt_counter_pn,
 
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
@@ -299,7 +299,7 @@ update_during_cluster_failure_test3(Config) ->
     Bucket = ?BUCKET,
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Key = update_during_cluster_failure_test,
+    Key = update_during_cluster_failure_test3,
     Type = antidote_crdt_counter_pn,
 
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
