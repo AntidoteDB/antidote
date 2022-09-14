@@ -258,28 +258,12 @@ get_stable_snapshot() ->
             timer:sleep(10),
             get_stable_snapshot();
         SS ->
-            case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
-                    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-                    %% to riak core meta-data) otherwise will have to change this
-                    {ok, SS};
-                {ok, gr} ->
-                    %% For gentlerain use the same format as clocksi
-                    %% But, replicate GST to all entries in the dict
-                    StableSnapshot = SS,
-                    case vectorclock:size(StableSnapshot) of
-                        0 ->
-                            {ok, StableSnapshot};
-                        _ ->
-                            MembersInDc = dc_utilities:get_my_dc_nodes(),
-                            GST = vectorclock:min_clock(StableSnapshot, MembersInDc),
-                            {ok, vectorclock:set_all(GST, StableSnapshot)}
-                    end
-            end
+            %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+            %% to riak core meta-data) otherwise will have to change this
+            {ok, SS}
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
-%% Useful for gentlerain protocol.
 -spec get_scalar_stable_time() -> {ok, pos_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
