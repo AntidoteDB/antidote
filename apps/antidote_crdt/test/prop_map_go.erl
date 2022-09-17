@@ -64,15 +64,8 @@ op() -> ?SIZED(Size, op(Size)).
 op(Size) ->
   {update, oneof([
         nestedOp(Size),
-        ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
+        ?LET(L, list(nestedOp(Size div 2)), L)
       ])}.
-
-removeDuplicateKeys([], _) -> [];
-removeDuplicateKeys([{Key, Op}|Rest], Keys) ->
-  case lists:member(Key, Keys) of
-    true -> removeDuplicateKeys(Rest, Keys);
-    false -> [{Key, Op}|removeDuplicateKeys(Rest, [Key|Keys])]
-  end.
 
 nestedOp(Size) ->
   oneof(

@@ -99,25 +99,16 @@ op() -> ?SIZED(Size, op(Size)).
 op(Size) ->
   oneof([
     {update, nestedOp(Size)},
-    {update, ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))},
+    {update, ?LET(L, list(nestedOp(Size div 2)), L)},
     {remove, typed_key()},
-    {remove, ?LET(L, list(typed_key()), lists:usort(L))},
+    {remove, ?LET(L, list(typed_key()), L)},
     ?LET({Updates, Removes},
       {list(nestedOp(Size div 2)), list(typed_key())},
       begin
-        Removes2 = lists:usort(Removes),
-        Updates2 = removeDuplicateKeys(Updates, Removes2),
-        {batch, {Updates2, Removes2}}
+        {batch, {Updates, Removes}}
       end),
     {reset, {}}
   ]).
-
-removeDuplicateKeys([], _) -> [];
-removeDuplicateKeys([{Key, Op}|Rest], Keys) ->
-  case lists:member(Key, Keys) of
-    true -> removeDuplicateKeys(Rest, Keys);
-    false -> [{Key, Op}|removeDuplicateKeys(Rest, [Key|Keys])]
-  end.
 
 nestedOp(Size) ->
   oneof(
@@ -141,8 +132,3 @@ crdt_type() ->
 
 key() ->
   oneof([key1, key2, key3, key4]).
-
-
-
-
-
