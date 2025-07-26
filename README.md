@@ -49,7 +49,7 @@ Topics:
 * Deploying Antidote
   * [Natively](https://antidotedb.gitbook.io/documentation/deployment/native)
   * [Local Docker setup](https://antidotedb.gitbook.io/documentation/deployment/docker)
-  * [Docker compose setups](https://antidotedb.gitbook.io/documentation/deployment/docker-compose-setup)
+  * [Docker compose setups](https://antidotedb.gitbook.io/documentation/deployment/docker-compose-setups)
   * [Docker Swarm](https://antidotedb.gitbook.io/documentation/deployment/dockerswarm)
   * [Kubernetes](https://antidotedb.gitbook.io/documentation/deployment/kubernetes)
 * [Monitoring an Antidote instance or data center](https://github.com/AntidoteDB/antidote_stats)
