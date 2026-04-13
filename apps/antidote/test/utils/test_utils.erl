@@ -28,6 +28,8 @@
 
 -module(test_utils).
 
+-compile({nowarn_deprecated_function, [{ct_slave, start, 2}, {ct_slave, stop, 1}]}).
+
 -export([
     at_init_testsuite/0,
     pmap/2,

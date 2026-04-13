@@ -35,7 +35,7 @@
 
 -export_type([datatype/0, update/0]).
 
--type maybe(T) :: T | undefined.
+-type 'maybe'(T) :: T | undefined.
 -type datatype() :: term().
 -type typename() :: atom().
 -type update() :: [term()].
@@ -72,7 +72,7 @@ module_for_type(reg) -> antidotec_reg.
 
 %% @doc Returns the container module name for the given term.
 %% Returns undefined if the module is not known.
--spec module_for_term(datatype()) -> maybe(module()).
+-spec module_for_term(datatype()) -> 'maybe'(module()).
 module_for_term(T) ->
     lists:foldl(
         fun
