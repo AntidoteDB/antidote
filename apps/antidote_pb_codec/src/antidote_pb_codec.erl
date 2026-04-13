@@ -28,7 +28,7 @@
 -export([decode_request/1, decode_response/1, encode_request/1, encode_response/1]).
 
 % these are all top-level messages which can be sent on the wire
--export_type([request/0, response/0, update/0, read_result/0]).
+-export_type([request/0, response/0, update/0, read_result/0, error_code/0]).
 
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
 -type update() :: {Object :: bound_object(), Op :: atom(), Param :: any()}.
