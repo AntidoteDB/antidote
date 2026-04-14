@@ -26,7 +26,7 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
--module(clocksi_SUITE).
+-module(clocksi_single_SUITE).
 
 %% common_test callbacks
 -export([

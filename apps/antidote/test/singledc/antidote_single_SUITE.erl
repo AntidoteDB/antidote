@@ -26,11 +26,11 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
-%% @doc antidote_SUITE:
+%% @doc antidote_single_SUITE:
 %%    Test the basic api of antidote
 %%    static and interactive transactions with single and multiple Objects
 %%    interactive transaction with abort
--module(antidote_SUITE).
+-module(antidote_single_SUITE).
 
 %% common_test callbacks
 -export([
