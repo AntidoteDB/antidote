@@ -28,6 +28,12 @@ jobs:
 
     container:
       image: erlang:${{ matrix.erlang }}
+      # --init gives PID 1 a real init (tini) that reaps zombie children.
+      # Without it, BEAM exits cleanly but becomes a <defunct> zombie under
+      # the default `tail -f /dev/null` entrypoint, and `antidote stop`'s
+      # `while kill -0 $PID` polling loop hangs because kill -0 returns 0
+      # for zombie PIDs until they are reaped.
+      options: --init
 
     steps:
     - uses: actions/checkout@v2
