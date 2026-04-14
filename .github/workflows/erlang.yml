@@ -2,7 +2,7 @@ name: Erlang CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
@@ -40,7 +40,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    strategy: 
+    needs: build
+    strategy:
       matrix:
         erlang: [ 27,28 ]
 
@@ -68,7 +69,8 @@ jobs:
 
   verify:
     runs-on: ubuntu-latest
-    strategy: 
+    needs: build
+    strategy:
       matrix:
         erlang: [ 27,28 ]
 
