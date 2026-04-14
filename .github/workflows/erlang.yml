@@ -42,6 +42,7 @@ jobs:
     - name: Coverage
       run: make coverage
     - name: Send Coverage
+      if: matrix.erlang == 28
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: ./rebar3 as test coveralls send
