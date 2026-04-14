@@ -86,10 +86,12 @@ append_failure_test(Config) ->
     ?assertEqual(1, Val1),
 
     %% Partition the network.
-    ct:log("About to partition: ~p from: ~p", [A, Nodes -- A]),
-    test_utils:partition_cluster(A, Nodes -- A),
+    PartitionMs = 5000,
+    ct:log("About to partition: ~p from: ~p for ~pms", [A, Nodes -- A, PartitionMs]),
+    test_utils:partition_cluster(A, Nodes -- A, PartitionMs),
 
-    %% Heal the partition.
+    %% Wait for the partition to expire, then reconnect.
+    timer:sleep(PartitionMs),
     test_utils:heal_cluster(A, Nodes -- A),
 
     %% Read after the partition has been healed.
