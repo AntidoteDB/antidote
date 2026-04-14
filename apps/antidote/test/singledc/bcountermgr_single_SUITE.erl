@@ -26,7 +26,7 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
--module(bcountermgr_SUITE).
+-module(bcountermgr_single_SUITE).
 
 %% common_test callbacks
 -export([init_per_suite/1,

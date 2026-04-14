@@ -10,9 +10,12 @@
           formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
           config => #{type => standard_io}}},
 
+      %% Diagnostic for reltest CI hang: capture everything (incl. sasl
+      %% progress reports and debug) in info.log so we can see the exact
+      %% sequence of application/supervisor shutdowns.
       {handler, debug, logger_std_h,
-        #{level => info,
-          formatter => {logger_formatter, #{single_line => true, max_size => 2048}},
+        #{level => all,
+          formatter => {logger_formatter, #{single_line => true, max_size => 4096}},
           config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/info.log"}}}},
 
       {handler, errors, logger_std_h,
@@ -20,7 +23,7 @@
           formatter => {logger_formatter, #{single_line => false, max_size => 2048}},
           config => #{type => {file, "${ROOT_DIR_PREFIX}${LOGGER_DIR_PREFIX}logger_logs/errors.log"}}}}
     ]},
-    {logger_level, info}
+    {logger_level, all}
   ]},
 
 

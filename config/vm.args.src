@@ -4,5 +4,11 @@
 ## Cookie for distributed erlang
 -setcookie ${COOKIE}
 
+## Diagnostic for reltest CI hang: force init to halt the VM 30s after
+## init:stop is called, so `antidote stop` can't block indefinitely on a
+## slow application shutdown. Any app still alive after this deadline is
+## killed, which means the logs will show exactly who failed to stop in time.
+-shutdown_time 30000
+
 ## Enable time warp once Issue #226 is fixed
 ##+C multi_time_warp

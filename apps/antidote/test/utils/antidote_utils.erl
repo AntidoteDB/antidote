@@ -95,7 +95,7 @@ read_b_counter_commit(Node, Key, Bucket, CommitTime) ->
 
 
 %% ------------------
-%% From clocksi_SUITE
+%% From clocksi_single_SUITE
 %% ------------------
 
 check_read_key(Node, Key, Type, Expected, Clock, TxId, Bucket) ->
