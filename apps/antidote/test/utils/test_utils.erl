@@ -37,7 +37,8 @@
     get_node_name/1,
     web_ports/1,
     restart_nodes/2,
-    partition_cluster/2,
+    partition_cluster/3,
+    partition/2,
     heal_cluster/2,
     set_up_clusters_common/1,
     unpack/1
@@ -86,6 +87,17 @@ at_init_testsuite() ->
         {ok, _} -> ok;
         {error, {already_started, _}} -> ok;
         {error, {{already_started, _}, _}} -> ok
+    end,
+    %% ETS table to map node names to peer controller pids.
+    %% peer uses a TCP control channel that works even when Erlang
+    %% distribution is disconnected (for partition testing).
+    %% Owned by a dedicated holder process so it survives across suites.
+    case ets:info(test_peer_pids) of
+        undefined ->
+            Holder = spawn(fun() -> receive stop -> ok end end),
+            ets:new(test_peer_pids, [set, named_table, public, {heir, Holder, []}]);
+        _ ->
+            ok
     end.
 
 
@@ -94,10 +106,27 @@ at_init_testsuite() ->
 %% ===========================================
 
 start_node(Name, Config) ->
-    %% have the slave nodes monitor the runner node, so they can't outlive it
-    NodeConfig = [{monitor_master, true}],
-    case ct_slave:start(Name, NodeConfig) of
-        {ok, Node} ->
+    {ok, Hostname} = inet:gethostname(),
+    Node = list_to_atom(atom_to_list(Name) ++ "@" ++ Hostname),
+    %% Check if node is already running (reuse across suites)
+    case net_adm:ping(Node) of
+        pong ->
+            ct:log("Node ~p already started, reusing node", [Node]),
+            {ready, Node};
+        pang ->
+            start_node_fresh(Name, Node, Config)
+    end.
+
+start_node_fresh(Name, _Node, Config) ->
+    Cookie = atom_to_list(erlang:get_cookie()),
+    %% Start node using peer with a TCP control channel so we can
+    %% communicate with nodes even during simulated network partitions.
+    case peer:start(#{name => Name, connection => 0,
+                      args => ["-setcookie", Cookie]}) of
+        {ok, PeerPid, Node} ->
+            ets:insert(test_peer_pids, {Node, PeerPid}),
+            ets:insert(test_peer_pids, {Name, PeerPid}),
+
             %% code path for compiled dependencies
             CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()) ,
             lists:foreach(fun(P) -> rpc:call(Node, code, add_patha, [P]) end, CodePath),
@@ -152,12 +181,11 @@ start_node(Name, Config) ->
             ct:pal("Node ~p started with ports ~p-~p", [Node, Port, Port + 4]),
 
             {connect, Node};
-        {error, already_started, Node} ->
-            ct:log("Node ~p already started, reusing node", [Node]),
-            {ready, Node};
-        {error, Reason, Node} ->
+        {error, Reason} ->
+            {ok, Hostname} = inet:gethostname(),
+            Node = list_to_atom(atom_to_list(Name) ++ "@" ++ Hostname),
             ct:pal("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
-            ct_slave:stop(Name),
+            stop_peer(Name),
             time_utils:wait_until_offline(Node),
             start_node(Name, Config)
     end.
@@ -173,7 +201,11 @@ kill_and_restart_nodes(NodeList, Config) ->
 %% @doc Kills all given nodes, crashes if one node cannot be stopped
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
-    lists:map(fun(Node) -> {ok, Name} = ct_slave:stop(get_node_name(Node)), Name end, NodeList).
+    lists:map(fun(Node) ->
+        Name = get_node_name(Node),
+        stop_peer(Node),
+        Name
+    end, NodeList).
 
 
 %% @doc Send force kill signals to all given nodes
@@ -181,15 +213,28 @@ kill_nodes(NodeList) ->
 brutal_kill_nodes(NodeList) ->
     lists:map(fun(Node) ->
                   ct:pal("Killing node ~p", [Node]),
-                  OSPidToKill = rpc:call(Node, os, getpid, []),
-                  %% try a normal kill first, but set a timer to
-                  %% kill -9 after X seconds just in case
-%%                  rpc:cast(Node, timer, apply_after,
-%%                      [?FORCE_KILL_TIMER, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-                  ct_slave:stop(get_node_name(Node)),
-                  rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
+                  stop_peer(Node),
                   Node
               end, NodeList).
+
+
+%% @doc Stop a peer node by name or node atom.
+%% Uses peer:stop if a peer pid is available, otherwise kills via OS signal.
+stop_peer(NameOrNode) ->
+    case get_peer_pid(NameOrNode) of
+        {ok, PeerPid} ->
+            catch peer:stop(PeerPid),
+            catch ets:delete(test_peer_pids, NameOrNode);
+        none ->
+            %% No peer pid (node was reused from a previous suite).
+            %% Kill via OS signal.
+            case rpc:call(NameOrNode, os, getpid, []) of
+                OSPid when is_list(OSPid) ->
+                    os:cmd("kill -9 " ++ OSPid);
+                _ ->
+                    ok
+            end
+    end.
 
 
 %% @doc Restart nodes with given configuration
@@ -234,25 +279,60 @@ pmap(F, L) ->
     L3.
 
 
-partition_cluster(ANodes, BNodes) ->
-    pmap(fun({Node1, Node2}) ->
-                true = rpc:call(Node1, erlang, set_cookie, [Node2, canttouchthis]),
-                true = rpc:call(Node1, erlang, disconnect_node, [Node2]),
-                ok = time_utils:wait_until_disconnected(Node1, Node2)
-        end,
-         [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
-    ok.
-
-
-heal_cluster(ANodes, BNodes) ->
+%% @doc Partition BNodes from the cluster for DurationMs.
+%% Each B node changes its own cookie and disconnects from everyone,
+%% then restores the cookie after DurationMs. This avoids overlapping
+%% partitions that trigger global's disconnect behavior on OTP 25+.
+%% The caller should sleep for DurationMs before calling heal_cluster/2.
+partition_cluster(_ANodes, BNodes, DurationMs) ->
     GoodCookie = erlang:get_cookie(),
-    pmap(fun({Node1, Node2}) ->
-                true = rpc:call(Node1, erlang, set_cookie, [Node2, GoodCookie]),
-                ok = time_utils:wait_until_connected(Node1, Node2)
-        end,
-         [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
+    {Mod, Bin, File} = code:get_object_code(?MODULE),
+    lists:foreach(fun(Node) ->
+        case get_peer_pid(Node) of
+            {ok, PeerPid} ->
+                {module, Mod} = peer:call(PeerPid, code, load_binary, [Mod, File, Bin]),
+                peer:cast(PeerPid, ?MODULE, partition, [DurationMs, GoodCookie]);
+            none ->
+                %% Node was reused from a previous suite — no peer pid.
+                %% Use distribution (rpc) to load and trigger the partition.
+                {module, Mod} = rpc:call(Node, code, load_binary, [Mod, File, Bin]),
+                rpc:cast(Node, ?MODULE, partition, [DurationMs, GoodCookie])
+        end
+    end, BNodes),
+    %% Wait for B nodes to isolate themselves
+    timer:sleep(500),
     ok.
 
+
+%% @doc Isolate this node from the cluster for DurationMs.
+%% Changes the node's own cookie (rejecting all connections),
+%% disconnects from all peers, waits, then restores the cookie.
+partition(DurationMs, GoodCookie) ->
+    erlang:set_cookie(node(), canttouchthis),
+    [erlang:disconnect_node(N) || N <- nodes()],
+    timer:sleep(DurationMs),
+    erlang:set_cookie(node(), GoodCookie).
+
+
+%% @doc Reconnect nodes after the partition has expired.
+heal_cluster(ANodes, BNodes) ->
+    pmap(fun({Node1, Node2}) ->
+        rpc:call(Node1, net_adm, ping, [Node2]),
+        ok = time_utils:wait_until_connected(Node1, Node2)
+    end, [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
+    ok.
+
+
+%% @doc Look up the peer controller pid for a node (if available)
+get_peer_pid(Node) ->
+    case ets:info(test_peer_pids) of
+        undefined -> none;
+        _ ->
+            case ets:lookup(test_peer_pids, Node) of
+                [{_, PeerPid}] -> {ok, PeerPid};
+                [] -> none
+            end
+    end.
 
 
 web_ports(dev1) -> 10015;

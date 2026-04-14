@@ -732,7 +732,7 @@ read_internal(Log, Continuation, Ops) ->
     [{non_neg_integer(), log_record()}],
     log_opid()
 ) ->
-    {error, disklog:chunk_error_rsn()}
+    {error, term()}
     | {disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
 read_from_to_internal(Log, Node, Continuation, LastOpId, Ops, To) ->
     ?LOG_INFO("read_from_to_internal ~n Cont = ~p~n LastOpId = ~p~n To = ~p", [
@@ -766,7 +766,7 @@ read_from_to_internal(Log, Node, Continuation, LastOpId, Ops, To) ->
     [{non_neg_integer(), log_record()}],
     log_opid()
 ) ->
-    {error, disklog:chunk_error_rsn()}
+    {error, term()}
     | {disk_log:continuation(), log_opid(), [{non_neg_integer(), log_record()}]}.
 read_from_to_internal2(Log, Node, NewContinuation, LastContinuation, NewOps1, LastLOpId, Ops, To) ->
     NewOps = filter_local_node(Node, NewOps1),

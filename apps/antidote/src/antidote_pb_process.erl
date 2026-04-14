@@ -48,7 +48,7 @@ from_bin(Clock) ->
 encode_clock(TxId) ->
     term_to_binary(TxId).
 
--spec process(antidote_pb_codec:request()) -> antidote_pb_codec:response_in().
+-spec process(antidote_pb_codec:request()) -> antidote_pb_codec:response().
 process({start_transaction, Clock, Properties}) ->
     Response = antidote:start_transaction(from_bin(Clock), Properties),
     case Response of

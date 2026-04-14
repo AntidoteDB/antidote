@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy: 
       matrix:
-        erlang: [ 23,24 ]
+        erlang: [ 27,28 ]
 
     container:
       image: erlang:${{ matrix.erlang }}
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy: 
       matrix:
-        erlang: [ 23,24 ]
+        erlang: [ 27,28 ]
 
     container:
       image: erlang:${{ matrix.erlang }}
@@ -42,6 +42,7 @@ jobs:
     - name: Coverage
       run: make coverage
     - name: Send Coverage
+      if: matrix.erlang == 28
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: ./rebar3 as test coveralls send
@@ -50,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy: 
       matrix:
-        erlang: [ 23,24 ]
+        erlang: [ 27,28 ]
 
     container:
       image: erlang:${{ matrix.erlang }}
