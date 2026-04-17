@@ -141,6 +141,7 @@ generate_downstream_update({{Key, Type}, Op}, CurrentMap) ->
             false -> antidote_crdt:new(Type)
         end,
     {ok, DownstreamEffect} = antidote_crdt:downstream(Type, Op, CurrentState),
+    io:format("effect: ~p~n", [DownstreamEffect]),
     {{Key, Type}, {ok, DownstreamEffect}}.
 
 -spec generate_downstream_remove(typedKey(), state()) -> nested_downstream().
@@ -383,6 +384,19 @@ upd(Update, State) ->
     {ok, Downstream} = downstream(Update, State),
     {ok, Res} = update(Downstream, State),
     Res.
+
+multiple_ops_on_same_key_test() ->
+  M1 = new(),
+  Op = {update, [
+    {{a, antidote_crdt_set_rw}, {remove, <<"c">>}},
+    {{a, antidote_crdt_set_rw}, {add, <<"c">>}}
+  ]},
+  ?assert(is_operation(Op)),
+  M2 = upd(Op, M1),
+  Op2 = {update, {{a, antidote_crdt_set_rw}, {remove, <<"c">>}}},
+  Op3 = {update, {{a, antidote_crdt_set_rw}, {add, <<"c">>}}},
+  M3 = upd(Op3, upd(Op2, M1)),
+  ?assertEqual(value(M3), value(M2)).
 
 remove_test() ->
     M1 = new(),
