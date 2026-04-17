@@ -26,7 +26,7 @@
 %% Description and complete License: see LICENSE file.
 %% -------------------------------------------------------------------
 
--module(append_SUITE).
+-module(append_single_SUITE).
 
 %% common_test callbacks
 -export([

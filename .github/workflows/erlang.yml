@@ -2,6 +2,7 @@ name: Erlang CI
 
 on:
   push:
+    branches: [master]
   pull_request:
 
 jobs:
@@ -16,12 +17,31 @@ jobs:
       image: erlang:${{ matrix.erlang }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: make compile
+
+  reltest:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        erlang: [ 27,28 ]
+
+    container:
+      image: erlang:${{ matrix.erlang }}
+      # without this, BEAM exits and becomes a zombie
+      options: --init
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: make compile
+    - name: Release Test
+      run: make reltest
 
   test:
     runs-on: ubuntu-latest
-    strategy: 
+    needs: build
+    strategy:
       matrix:
         erlang: [ 27,28 ]
 
@@ -29,7 +49,7 @@ jobs:
       image: erlang:${{ matrix.erlang }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: make compile
     - name: Run epmd
       run: epmd -daemon
@@ -49,7 +69,8 @@ jobs:
 
   verify:
     runs-on: ubuntu-latest
-    strategy: 
+    needs: build
+    strategy:
       matrix:
         erlang: [ 27,28 ]
 
@@ -57,7 +78,7 @@ jobs:
       image: erlang:${{ matrix.erlang }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Xref
       run: make xref
     - name: Lint
