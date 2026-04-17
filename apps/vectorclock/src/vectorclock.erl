@@ -28,6 +28,7 @@
 -export([
     all_dots_greater/2,
     all_dots_smaller/2,
+    all_dots/3,
     conc/2,
     eq/2,
     fold/3,
@@ -179,6 +180,11 @@ all_dots_smaller(V1, V2) ->
 -spec all_dots_greater(vectorclock(), vectorclock()) -> boolean().
 all_dots_greater(V1, V2) ->
     for_all_keys(fun(A, B) -> A > B end, V1, V2).
+
+-spec all_dots(vectorclock(), vectorclock(), fun((integer(), integer()) -> boolean())) ->
+          boolean().
+all_dots(V1, V2, CompFun) ->
+    for_all_keys(fun(A, B) -> CompFun(A, B) end, V1, V2).
 
 -spec gt(vectorclock(), vectorclock()) -> boolean().
 gt(V1, V2) -> lt(V2, V1).
